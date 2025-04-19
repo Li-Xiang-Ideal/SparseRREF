@@ -1,7 +1,7 @@
 /*
 	Copyright (C) 2024 Zhenjie Li (Li, Zhenjie)
 
-	This file is part of Sparse_rref. The Sparse_rref is free software:
+	This file is part of SparseRREF. The SparseRREF is free software:
 	you can redistribute it and/or modify it under the terms of the MIT
 	License.
 */
@@ -124,10 +124,10 @@ namespace Flint {
 			auto len = fmpz_sizeinbase(_data, base) + 3;
 
 			if (thread_safe || len > MAX_STR_LEN - 4) {
-				char* str = sparse_rref::s_malloc<char>(len);
+				char* str = SparseRREF::s_malloc<char>(len);
 				fmpz_get_str(str, base, _data);
 				std::string result(str);
-				sparse_rref::s_free(str);
+				SparseRREF::s_free(str);
 				return result;
 			}
 			else {
@@ -267,9 +267,9 @@ namespace Flint {
 	T& operator<< (T& os, const int_t& i) {
 		auto len = fmpz_sizeinbase(i._data, 10);
 		if (len > MAX_STR_LEN - 4) {
-			char* str = sparse_rref::s_malloc<char>(len + 10);
+			char* str = SparseRREF::s_malloc<char>(len + 10);
 			os << fmpz_get_str(str, 10, i._data);
-			sparse_rref::s_free(str);
+			SparseRREF::s_free(str);
 		}
 		else {
 			fmpz_get_str(_buf, 10, i._data);
@@ -284,9 +284,9 @@ namespace Flint {
 			+ fmpz_sizeinbase(fmpq_denref(r._data), 10) + 3;
 
 		if (len > MAX_STR_LEN - 4) {
-			char* str = sparse_rref::s_malloc<char>(len + 10);
+			char* str = SparseRREF::s_malloc<char>(len + 10);
 			os << fmpq_get_str(str, 10, r._data);
-			sparse_rref::s_free(str);
+			SparseRREF::s_free(str);
 		}
 		else {
 			fmpq_get_str(_buf, 10, r._data);
@@ -352,9 +352,9 @@ namespace Flint {
 		fmpz_CRT(result._data, r1._data, m1._data, r2._data, m2._data, 0);
 		return result;
 	}
-}
+} // namespace Flint
 
-namespace sparse_rref {
+namespace SparseRREF {
 
 	// field
 	enum RING {
@@ -414,6 +414,6 @@ namespace sparse_rref {
 		return nmod_div(b, c, field->mod);
 	}
 	static inline rat_t scalar_div(const rat_t& b, const rat_t& c, const field_t field) { return b / c; }
-}
+} // namespace SparseRREF
 
 #endif

@@ -1,7 +1,7 @@
 /*
 	Copyright (C) 2024 Zhenjie Li (Li, Zhenjie)
 
-	This file is part of Sparse_rref. The Sparse_rref is free software:
+	This file is part of SparseRREF. The SparseRREF is free software:
 	you can redistribute it and/or modify it under the terms of the MIT
 	License.
 */
@@ -11,10 +11,9 @@
 
 #include "flint/nmod_vec.h"
 
-#include "sparse_rref.h"
 #include "scalar.h"
 
-namespace sparse_rref {
+namespace SparseRREF {
 	// sparse vector
 	template <typename index_type, typename T> struct sparse_vec {
 		index_type* indices = NULL;
@@ -340,7 +339,7 @@ namespace sparse_rref {
 			return NULL;
 		index_type* ptr;
 		if (isbinary)
-			ptr = sparse_rref::binarysearch(vec.indices, vec.indices + vec.nnz(), index);
+			ptr = SparseRREF::binarysearch(vec.indices, vec.indices + vec.nnz(), index);
 		else
 			ptr = std::find(vec.indices, vec.indices + vec.nnz(), index);
 		if (ptr == vec.indices + vec.nnz())
@@ -607,5 +606,6 @@ namespace sparse_rref {
 		std::cout << std::endl;
 	}
 
-}
+} // namespace SparseRREF
+
 #endif

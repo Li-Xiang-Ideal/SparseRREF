@@ -1,7 +1,7 @@
 /*
 	Copyright (C) 2024 Zhenjie Li (Li, Zhenjie)
 
-	This file is part of Sparse_rref. The Sparse_rref is free software:
+	This file is part of SparseRREF. The SparseRREF is free software:
 	you can redistribute it and/or modify it under the terms of the MIT
 	License.
 */
@@ -40,9 +40,15 @@
 #endif
 #define NULL nullptr
 
-namespace sparse_rref {
-	// Memory management
+namespace SparseRREF {
+	enum SPARSE_FILE_TYPE {
+		SPARSE_FILE_TYPE_PLAIN,
+		SPARSE_FILE_TYPE_SMS,
+		SPARSE_FILE_TYPE_MTX,
+		SPARSE_FILE_TYPE_BIN
+	};
 
+	// Memory management
 	template <typename T>
 	inline T* s_malloc(const size_t size) {
 		return (T*)std::malloc(size * sizeof(T));
@@ -85,7 +91,7 @@ namespace sparse_rref {
 	using rref_option_t = rref_option[1];
 
 	// version
-	constexpr static const char version[] = "v0.3.0";
+	constexpr static const char version[] = "v0.3.1";
 
 	inline size_t ctz(ulong x) {
 		return std::countr_zero(x);
@@ -329,7 +335,7 @@ namespace sparse_rref {
 	}
 
 	template <typename T> inline T* binarysearch(T* begin, T* end, uint16_t rank, T* val) {
-		auto ptr = sparse_rref::lower_bound(begin, end, rank, val);
+		auto ptr = SparseRREF::lower_bound(begin, end, rank, val);
 		if (ptr == end || std::equal(ptr, ptr + rank, val))
 			return ptr;
 		else
@@ -492,64 +498,6 @@ namespace sparse_rref {
 		}
 	};
 
-	// IO
-	using DataTuple = std::vector<std::tuple<slong, slong, std::string>>;
-
-	std::tuple<ulong, ulong, std::string> read_lines(const std::string& str) {
-		std::istringstream iss(str);
-		char c;
-		std::string token;
-		slong t1 = -1;
-		slong t2 = -1;
-		std::string t3("");
-		int count = 0;
-		bool skip_space = true;
-		while (iss.get(c)) {
-			bool is_space = std::isspace(c);
-			if (skip_space) {
-				if (is_space)
-					continue;
-				else
-					skip_space = false;
-			}
-			if (!is_space) {
-				token.push_back(c);
-			}
-			else {
-				if (count == 0)
-					t1 = std::stoull(token);
-				else if (count == 1)
-					t2 = std::stoull(token);
-				else
-					t3 = token;
-				count++;
-				token.clear();
-				skip_space = true;
-			}
-			if (count == 3)
-				break;
-		}
-		return std::make_tuple(t1, t2, t3);
-	}
-
-	std::string read_file_buffer(std::string filename) {
-		std::ifstream file(filename);
-		if (!file.is_open()) {
-			std::cerr << "Failed to open file: " << filename << std::endl;
-			return "";
-		}
-		std::stringstream buffer;
-		buffer << file.rdbuf();
-		file.close();
-		return buffer.str();
-	}
-
-	enum SPARSE_FILE_TYPE {
-		SPARSE_FILE_TYPE_PLAIN,
-		SPARSE_FILE_TYPE_SMS,
-		SPARSE_FILE_TYPE_MTX,
-		SPARSE_FILE_TYPE_BIN
-	};
-}
+} // namespace SparseRREF
 
 #endif

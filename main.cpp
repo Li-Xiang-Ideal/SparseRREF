@@ -1,7 +1,7 @@
 /*
 	Copyright (C) 2024 Zhenjie Li (Li, Zhenjie)
 
-	This file is part of Sparse_rref. The Sparse_rref is free software:
+	This file is part of SparseRREF. The SparseRREF is free software:
 	you can redistribute it and/or modify it under the terms of the MIT
 	License.
 */
@@ -18,11 +18,11 @@
 #include "argparse.hpp"
 #include "sparse_mat.h"
 
-using namespace sparse_rref;
+using namespace SparseRREF;
 
 #define printtime(str)                                                         \
     std::cout << (str) << " spent " << std::fixed << std::setprecision(6)      \
-              << sparse_rref::usedtime(start, end) << " seconds." << std::endl
+              << SparseRREF::usedtime(start, end) << " seconds." << std::endl
 
 #define printmatinfo(mat)                                                      \
     std::cout << "nnz: " << sparse_mat_nnz(mat) << " ";                        \
@@ -30,9 +30,9 @@ using namespace sparse_rref;
     std::cout << "ncol: " << (mat).ncol << std::endl
 
 int main(int argc, char** argv) {
-	argparse::ArgumentParser program("SparseRREF", sparse_rref::version);
+	argparse::ArgumentParser program("SparseRREF", SparseRREF::version);
 	program.set_usage_max_line_width(80);
-	program.add_description("(exact) Sparse Reduced Row Echelon Form " + std::string(sparse_rref::version));
+	program.add_description("(exact) Sparse Reduced Row Echelon Form " + std::string(SparseRREF::version));
 	program.add_argument("input_file")
 		.help("input file in the Matrix Market exchange formats (MTX) or\nSparse/Symbolic Matrix Storage (SMS)");
 	program.add_argument("-o", "--output")
@@ -142,13 +142,13 @@ int main(int argc, char** argv) {
 	auto& pool = opt->pool;
 	std::cout << "using " << nthread << " threads" << std::endl;
 
-	sparse_rref::field_t F;
+	SparseRREF::field_t F;
 	if (prime == 0)
-		field_init(F, sparse_rref::RING::FIELD_QQ, 1);
+		field_init(F, SparseRREF::RING::FIELD_QQ, 1);
 	else
-		field_init(F, sparse_rref::RING::FIELD_Fp, prime);
+		field_init(F, SparseRREF::RING::FIELD_Fp, prime);
 
-	auto start = sparse_rref::clocknow();
+	auto start = SparseRREF::clocknow();
 	auto input_file = program.get<std::string>("input_file");
 	std::filesystem::path filePath = input_file;
 	if (!std::filesystem::exists(filePath)) {
@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
 	}
 	file.close();
 
-	auto end = sparse_rref::clocknow();
+	auto end = SparseRREF::clocknow();
 	std::cout << "-------------------" << std::endl;
 	printtime("read");
 
@@ -188,7 +188,7 @@ int main(int argc, char** argv) {
 		std::cout << ">> RREFing: " << std::endl;
 	}
 
-	start = sparse_rref::clocknow();
+	start = SparseRREF::clocknow();
 	std::vector<std::vector<std::pair<slong, slong>>> pivots;
 	if (prime == 0) {
 		// pivots = sparse_mat_rref(mat_Q, F, pool, opt);
@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
 		pivots = sparse_mat_rref(mat_Zp, F, opt);
 	}
 
-	end = sparse_rref::clocknow();
+	end = SparseRREF::clocknow();
 	std::cout << "-------------------" << std::endl;
 	printtime("RREF");
 
@@ -214,7 +214,7 @@ int main(int argc, char** argv) {
 		printmatinfo(mat_Zp);
 	}
 
-	start = sparse_rref::clocknow();
+	start = SparseRREF::clocknow();
 	std::ofstream file2;
 	std::string outname, outname_add("");
 	if (program.get<std::string>("--output") == "<input_file>.rref")
@@ -239,15 +239,15 @@ int main(int argc, char** argv) {
 
 	file2.open(outname + outname_add);
 	if (prime == 0) {
-		sparse_mat_write(mat_Q, file2, sparse_rref::SPARSE_FILE_TYPE_PLAIN);
+		sparse_mat_write(mat_Q, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
 	}
 	else {
 		if (prime > (1ULL << 32)) {
 			std::cout << "Warning: the prime is too large, use plain format." << std::endl;
-			sparse_mat_write(mat_Zp, file2, sparse_rref::SPARSE_FILE_TYPE_PLAIN);
+			sparse_mat_write(mat_Zp, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
 		}
 		else
-			sparse_mat_write(mat_Zp, file2, sparse_rref::SPARSE_FILE_TYPE_MTX);
+			sparse_mat_write(mat_Zp, file2, SparseRREF::SPARSE_FILE_TYPE_MTX);
 	}
 	file2.close();
 
@@ -257,7 +257,7 @@ int main(int argc, char** argv) {
 		if (prime == 0) {
 			auto K = sparse_mat_rref_kernel(mat_Q, pivots, F, opt);
 			if (K.nrow > 0)
-				sparse_mat_write(K, file2, sparse_rref::SPARSE_FILE_TYPE_PLAIN);
+				sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
 			else
 				std::cout << "Kernel is empty." << std::endl;
 		}
@@ -265,9 +265,9 @@ int main(int argc, char** argv) {
 			auto K = sparse_mat_rref_kernel(mat_Zp, pivots, F, opt);
 			if (K.nrow > 0) {
 				if (prime > (1ULL << 32))
-					sparse_mat_write(K, file2, sparse_rref::SPARSE_FILE_TYPE_PLAIN);
+					sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
 				else
-					sparse_mat_write(K, file2, sparse_rref::SPARSE_FILE_TYPE_MTX);
+					sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_MTX);
 			}
 			else
 				std::cout << "Kernel is empty." << std::endl;
@@ -275,7 +275,7 @@ int main(int argc, char** argv) {
 		file2.close();
 	}
 
-	end = sparse_rref::clocknow();
+	end = SparseRREF::clocknow();
 	printtime("write files");
 
 	return 0;

@@ -1,7 +1,7 @@
 /*
 	Copyright (C) 2024 Zhenjie Li (Li, Zhenjie)
 
-	This file is part of Sparse_rref. The Sparse_rref is free software:
+	This file is part of SparseRREF. The SparseRREF is free software:
 	you can redistribute it and/or modify it under the terms of the MIT
 	License.
 */
@@ -23,7 +23,7 @@ enum SPARSE_TYPE {
 	SPARSE_LR  // List of rows
 };
 
-namespace sparse_rref {
+namespace SparseRREF {
 
 	// CSR format for sparse tensor
 	template <typename index_type, typename T> struct sparse_tensor_struct {
@@ -174,7 +174,7 @@ namespace sparse_rref {
 		}
 
 		std::vector<size_t> row_nums() {
-			return sparse_rref::difference(rowptr);
+			return SparseRREF::difference(rowptr);
 		}
 
 		size_t row_nnz(size_t i) {
@@ -209,7 +209,7 @@ namespace sparse_rref {
 			auto end = row(l[0] + 1).first;
 			if (begin == end)
 				return end;
-			return sparse_rref::lower_bound(begin, end, l + 1, rank - 1);
+			return SparseRREF::lower_bound(begin, end, l + 1, rank - 1);
 		}
 
 		index_p entry_lower_bound(const index_v& l) {
@@ -1042,11 +1042,11 @@ namespace sparse_rref {
 					if (i1i2_size == 1) {
 						while (ptrA < endA && ptrB < endB) {
 							if (*pA < *pB) {
-								pA = sparse_rref::lower_bound(pA, eA, pB, 1);
+								pA = SparseRREF::lower_bound(pA, eA, pB, 1);
 								ptrA = pA - index_A_cache.data();
 							}
 							else if (*pA > *pB) {
-								pB = sparse_rref::lower_bound(pB, eB, pA, 1);
+								pB = SparseRREF::lower_bound(pB, eB, pA, 1);
 								ptrB = pB - index_B_cache.data();
 							}
 							else {
@@ -1060,11 +1060,11 @@ namespace sparse_rref {
 						while (ptrA < endA && ptrB < endB) {
 							auto t1 = lexico_compare(pA, pB, i1i2_size);
 							if (t1 < 0) {
-								pA = sparse_rref::lower_bound(pA, eA, pB, i1i2_size);
+								pA = SparseRREF::lower_bound(pA, eA, pB, i1i2_size);
 								ptrA = ((pA - index_A_cache.data()) / i1i2_size);
 							}
 							else if (t1 > 0) {
-								pB = sparse_rref::lower_bound(pB, eB, pA, i1i2_size);
+								pB = SparseRREF::lower_bound(pB, eB, pA, i1i2_size);
 								ptrB = ((pB - index_B_cache.data()) / i1i2_size);
 							}
 							else {
@@ -1690,6 +1690,6 @@ namespace sparse_rref {
 		}
 	}
 
-} // namespace sparse_rref
+} // namespace SparseRREF
 
 #endif
