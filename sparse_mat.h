@@ -111,9 +111,16 @@ namespace sparse_rref {
 			}
 			return res;
 		}
-	};
 
-	using snmod_mat = sparse_mat<ulong>;
+		template <typename U = T> requires std::is_same_v<U, rat_t>
+		sparse_mat<ulong> operator%(const nmod_t mod) const {
+			sparse_mat<ulong> result(nrow, ncol);
+			for (size_t i = 0; i < nrow; i++) {
+				result[i] = rows[i] % mod;
+			}
+			return result;
+		}
+	};
 
 	template <typename T>
 	inline T* sparse_mat_entry(sparse_mat<T>& mat, size_t r, slong c, bool isbinary = true) {
@@ -1033,7 +1040,7 @@ namespace sparse_rref {
 					tran_tmp(i);
 			}
 			else {
-				pool.detach_loop<slong>(0, leftrows.size(), tran_tmp);
+				pool.detach_sequence<slong>(0, leftrows.size(), tran_tmp);
 				pool.wait();
 			}
 
@@ -1044,16 +1051,6 @@ namespace sparse_rref {
 			std::cout << "\n** Rank: " << rank << " nnz: " << mat.nnz() << std::endl;
 
 		return pivots;
-	}
-
-	// convert
-	sparse_mat<ulong> snmod_mat_from_sfmpq(const sparse_mat<rat_t>& src, nmod_t p) {
-		sparse_mat<ulong> mat(src.nrow, src.ncol);
-
-		for (size_t i = 0; i < src.nrow; i++)
-			snmod_vec_from_sfmpq(mat[i], src[i], p);
-
-		return mat;
 	}
 
 	template <typename T>
@@ -1090,7 +1087,7 @@ namespace sparse_rref {
 
 		sparse_mat<ulong> matul(mat.nrow, mat.ncol);
 		pool.detach_loop<slong>(0, mat.nrow, [&](slong i) {
-			snmod_vec_from_sfmpq(matul[i], mat[i], F->mod);
+			matul[i] = mat[i] % F->mod;
 			});
 		pool.wait();
 
@@ -1140,7 +1137,7 @@ namespace sparse_rref {
 				std::cout << ">> Reconstruct failed, try next prime: " << prime << '\r' << std::flush;
 			int_t mod1 = mod * prime;
 			field_init(F, FIELD_Fp, prime);
-			matul = snmod_mat_from_sfmpq(mat, F->mod);
+			matul = mat % F->mod;
 			sparse_mat_direct_rref(matul, pivots, F, opt);
 			if (opt->is_back_sub) {
 				opt->verbose = false;

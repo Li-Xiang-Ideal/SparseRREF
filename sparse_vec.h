@@ -151,7 +151,7 @@ namespace sparse_rref {
 		std::pair<index_type&, T&> at(index_type pos) { return std::make_pair(indices[pos], entries[pos]); }
 		const std::pair<index_type&, T&> at(index_type pos) const { return std::make_pair(indices[pos], entries[pos]); }
 
-		template <typename U = T> requires Flint::IsOneOf<U, unsigned long, int_t>
+		template <typename U = T> requires std::is_integral_v<U> || std::is_same_v<U, int_t>
 		operator sparse_vec<index_type, rat_t>() {
 			sparse_vec<index_type, rat_t> result;
 			result.reserve(_nnz);
@@ -162,13 +162,24 @@ namespace sparse_rref {
 			return result;
 		}
 
-		template <typename U = T> requires Flint::IsOneOf<U, size_t>
+		template <typename U = T> requires std::is_integral_v<U>
 		operator sparse_vec<index_type, int_t>() {
 			sparse_vec<index_type, int_t> result;
 			result.reserve(_nnz);
 			result.zero();
 			for (size_t i = 0; i < _nnz; i++) {
 				result.push_back(indices[i], int_t(entries[i]));
+			}
+			return result;
+		}
+
+		template <typename U = T> requires std::is_same_v<U, rat_t>
+		sparse_vec<index_type, ulong> operator%(const nmod_t mod) const {
+			sparse_vec<index_type, ulong> result;
+			result.reserve(_nnz);
+			result.zero();
+			for (size_t i = 0; i < _nnz; i++) {
+				result.push_back(indices[i], entries[i] % mod);
 			}
 			return result;
 		}
@@ -348,19 +359,6 @@ namespace sparse_rref {
 		else if constexpr (Flint::IsOneOf<T, int_t, rat_t>) {
 			for (size_t i = 0; i < vec.nnz(); i++)
 				vec.entries[i] *= scalar;
-		}
-	}
-
-	template <typename index_type>
-	static void snmod_vec_from_sfmpq(snmod_vec<index_type>& vec, const sfmpq_vec<index_type>& src, nmod_t p) {
-		if (vec.alloc() < src.nnz())
-			vec.reserve(src.nnz());
-		vec.zero();
-		for (size_t i = 0; i < src.nnz(); i++) {
-			ulong num = src[i].num() % p;
-			ulong den = src[i].den() % p;
-			ulong val = nmod_div(num, den, p);
-			vec.push_back(src(i), val);
 		}
 	}
 
