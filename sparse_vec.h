@@ -21,6 +21,46 @@ namespace SparseRREF {
 		size_t _nnz = 0;
 		size_t _alloc = 0;
 
+		struct de_iterator {
+			// use ref if need to modify the value
+			index_type& ind;
+			T& val;
+		};
+
+		struct iterator {
+			index_type* ind_ptr;
+			T* val_ptr;
+
+			iterator& operator++() { ind_ptr++; val_ptr++; return *this; }
+			iterator operator++(int) { iterator tmp = *this; ind_ptr++; val_ptr++; return tmp; }
+			iterator& operator--() { ind_ptr--; val_ptr--; return *this; }
+			iterator operator--(int) { iterator tmp = *this; ind_ptr--; val_ptr--; return tmp; }
+			iterator& operator+=(size_t n) { ind_ptr += n; val_ptr += n; return *this; }
+			iterator& operator-=(size_t n) { ind_ptr -= n; val_ptr -= n; return *this; }
+			iterator operator+(size_t n) const { iterator tmp = *this; tmp += n; return tmp; }
+			iterator operator-(size_t n) const { iterator tmp = *this; tmp -= n; return tmp; }
+			bool operator==(const iterator& other) const { return ind_ptr == other.ind_ptr; }
+			bool operator!=(const iterator& other) const { return ind_ptr != other.ind_ptr; }
+
+			de_iterator operator*() const { return { *ind_ptr, *val_ptr }; }
+		};
+
+		// functions of iterator 
+		iterator begin() { return { indices, entries }; }
+		iterator end() { return { indices + _nnz, entries + _nnz }; }
+		iterator begin() const { return { indices, entries }; }
+		iterator end() const { return { indices + _nnz, entries + _nnz }; }
+		iterator cbegin() const { return { indices, entries }; }
+		iterator cend() const { return { indices + _nnz, entries + _nnz }; }
+
+		auto index_span() const { return std::span<index_type>(indices, _nnz); }
+		auto entry_span() const { return std::span<T>(entries, _nnz); }
+
+		// C++23 is needed for zip_view
+		// auto index_view() const { return std::ranges::subrange(indices, indices + _nnz); }
+		// auto entry_view() const { return std::ranges::subrange(entries, entries + _nnz); }
+		// auto combine_view() const { return std::ranges::zip_view(index_view(), entry_view()); }
+
 		sparse_vec() {
 			indices = NULL;
 			entries = NULL;
@@ -74,9 +114,8 @@ namespace SparseRREF {
 			_alloc = n;
 		}
 
-		void resize(size_t n) {
-			_nnz = n;
-		}
+		inline void zero() { _nnz = 0; }
+		inline void resize(size_t n) { _nnz = n; }
 
 		inline void copy(const sparse_vec& l) {
 			if (this == &l)
@@ -90,12 +129,11 @@ namespace SparseRREF {
 			_nnz = l._nnz;
 		}
 
-		sparse_vec(const sparse_vec& l) {
-			copy(l);
-		}
+		inline sparse_vec(const sparse_vec& l) { copy(l); }
 
-		size_t nnz() const { return _nnz; }
-		size_t alloc() const { return _alloc; }
+		inline size_t nnz() const { return _nnz; }
+		inline size_t size() const { return _nnz; }
+		inline size_t alloc() const { return _alloc; }
 
 		sparse_vec(sparse_vec&& l) noexcept {
 			indices = l.indices;
@@ -140,19 +178,20 @@ namespace SparseRREF {
 			_nnz++;
 		}
 
-		inline void zero() { _nnz = 0; }
 		index_type& operator()(const size_t pos) { return indices[pos]; }
 		const index_type& operator()(const size_t pos) const { return indices[pos]; }
 		T& operator[](const size_t pos) { return entries[pos]; }
 		const T& operator[](const size_t pos) const { return entries[pos]; }
 
+		// conversion functions
 		template <typename U = T> requires std::is_integral_v<U> || std::is_same_v<U, int_t>
 		operator sparse_vec<index_type, rat_t>() {
 			sparse_vec<index_type, rat_t> result;
 			result.reserve(_nnz);
-			result.zero();
+			result.resize(_nnz);
 			for (size_t i = 0; i < _nnz; i++) {
-				result.push_back(indices[i], rat_t(entries[i]));
+				result.indices[i] = indices[i];
+				result.entries[i] = entries[i];
 			}
 			return result;
 		}
@@ -161,9 +200,10 @@ namespace SparseRREF {
 		operator sparse_vec<index_type, int_t>() {
 			sparse_vec<index_type, int_t> result;
 			result.reserve(_nnz);
-			result.zero();
+			result.resize(_nnz);
 			for (size_t i = 0; i < _nnz; i++) {
-				result.push_back(indices[i], int_t(entries[i]));
+				result.indices[i] = indices[i];
+				result.entries[i] = entries[i];
 			}
 			return result;
 		}
@@ -172,9 +212,10 @@ namespace SparseRREF {
 		sparse_vec<index_type, ulong> operator%(const nmod_t mod) const {
 			sparse_vec<index_type, ulong> result;
 			result.reserve(_nnz);
-			result.zero();
+			result.resize(_nnz);
 			for (size_t i = 0; i < _nnz; i++) {
-				result.push_back(indices[i], entries[i] % mod);
+				result.indices[i] = indices[i];
+				result.entries[i] = entries[i] % mod;
 			}
 			return result;
 		}
@@ -237,6 +278,8 @@ namespace SparseRREF {
 		index_type* indices = NULL;
 		size_t _nnz = 0;
 		size_t _alloc = 0;
+
+		auto index_span() const { return std::span<index_type>(indices, _nnz); }
 
 		sparse_vec() {
 			indices = NULL;

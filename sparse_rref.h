@@ -24,6 +24,7 @@
 #include <list>
 #include <numeric>
 #include <queue>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <string>

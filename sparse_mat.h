@@ -149,10 +149,7 @@ namespace SparseRREF {
 					if constexpr (std::is_same_v<S, T>) {
 						tranmat[col].push_back(rows[i], mat[rows[i]][j]);
 					}
-					else if constexpr (std::is_same_v<S, T*>) {
-						tranmat[col].push_back(rows[i], &(mat[rows[i]][j]));
-					}
-					else {
+					else if constexpr (std::is_same_v<S, bool>) {
 						tranmat[col].push_back(rows[i], true);
 					}
 				}
@@ -169,10 +166,7 @@ namespace SparseRREF {
 				if constexpr (std::is_same_v<S, T>) {
 					tranmat[col].push_back(rows[i], mat[rows[i]][j]);
 				}
-				else if constexpr (std::is_same_v<S, T*>) {
-					tranmat[col].push_back(rows[i], &(mat[rows[i]][j]));
-				}
-				else {
+				else if constexpr (std::is_same_v<S, bool>) {
 					tranmat[col].push_back(rows[i], true);
 				}
 			}
@@ -218,12 +212,12 @@ namespace SparseRREF {
 
 		opt->pool.detach_loop(0, mat.nrow, [&](size_t i) {
 			bool is_changed = false;
-			for (size_t j = 0; j < mat[i].nnz(); j++) {
-				if (collist[mat[i](j)]) {
-					if (pivlist.contains(i) && pivlist[i] == mat[i](j))
-						mat[i][j] = 1;
+			for (auto [col, val] : mat[i]) {
+				if (collist[col]) {
+					if (pivlist.contains(i) && pivlist[i] == col)
+						val = 1;
 					else {
-						mat[i][j] = 0;
+						val = 0;
 						is_changed = true;
 					}
 				}
@@ -296,36 +290,35 @@ namespace SparseRREF {
 
 		// rightlook first
 		for (auto dir = start; dir < end; dir++) {
-			auto& thecol = tranmat[*dir];
-			if (thecol.nnz() == 0)
+			if (tranmat[*dir].nnz() == 0)
 				continue;
 
 			slong rdiv;
 			size_t mnnz = SIZE_MAX;
 			bool flag = true;
 
-			for (size_t i = 0; i < thecol.nnz(); i++) {
-				flag = (dict.count(thecol(i)) == 0);
+			for (auto col : tranmat[*dir].index_span()) {
+				flag = (dict.count(col) == 0);
 				if (!flag)
 					break;
-				if (rowpivs[thecol(i)] != -1)
+				if (rowpivs[col] != -1)
 					continue;
-				size_t newnnz = mat[thecol(i)].nnz();
+				size_t newnnz = mat[col].nnz();
 				if (newnnz < mnnz) {
 					// negative weight means that we do not want to select this column
-					if (col_weight(thecol(i)) < 0)
+					if (col_weight(col) < 0)
 						continue;
-					rdiv = thecol(i);
+					rdiv = col;
 					mnnz = newnnz;
 				}
 				// make the result stable
 				else if (newnnz == mnnz) {
-					if (col_weight(thecol(i)) < 0)
+					if (col_weight(col) < 0)
 						continue;
-					if (col_weight(thecol(i)) < col_weight(rdiv))
-						rdiv = thecol(i);
-					else if (col_weight(thecol(i)) == col_weight(rdiv) && thecol(i) < rdiv)
-						rdiv = thecol(i);
+					if (col_weight(col) < col_weight(rdiv))
+						rdiv = col;
+					else if (col_weight(col) == col_weight(rdiv) && col < rdiv)
+						rdiv = col;
 				}
 			}
 			if (!flag)
@@ -356,29 +349,27 @@ namespace SparseRREF {
 			size_t mnnz = SIZE_MAX;
 			bool flag = true;
 
-			auto& tc = mat[row];
-
-			for (size_t j = 0; j < tc.nnz(); j++) {
-				if (colptrs[tc(j)] == -1)
+			for (auto col : mat[row].index_span()) {
+				if (colptrs[col] == -1)
 					continue;
-				flag = (dict.count(tc(j)) == 0);
+				flag = (dict.count(col) == 0);
 				if (!flag)
 					break;
-				if (tranmat[tc(j)].nnz() < mnnz) {
+				if (tranmat[col].nnz() < mnnz) {
 					// negative weight means that we do not want to select this column
-					if (col_weight(tc(j)) < 0)
+					if (col_weight(col) < 0)
 						continue;
-					mnnz = tranmat[tc(j)].nnz();
-					dir = tc(j);
+					mnnz = tranmat[col].nnz();
+					dir = col;
 				}
 				// make the result stable
-				else if (tranmat[tc(j)].nnz() == mnnz) {
-					if (col_weight(tc(j)) < 0)
+				else if (tranmat[col].nnz() == mnnz) {
+					if (col_weight(col) < 0)
 						continue;
-					if (col_weight(tc(j)) < col_weight(dir))
-						dir = tc(j);
-					else if (col_weight(tc(j)) == col_weight(dir) && tc(j) < dir)
-						dir = tc(j);
+					if (col_weight(col) < col_weight(dir))
+						dir = col;
+					else if (col_weight(col) == col_weight(dir) && col < dir)
+						dir = col;
 				}
 			}
 			if (!flag)
@@ -406,13 +397,11 @@ namespace SparseRREF {
 
 		// we only need to compute the transpose of the submatrix involving pivots
 
-		for (size_t i = 0; i < pivots.size(); i++) {
-			auto& therow = mat[pivots[i].first];
-			for (size_t j = 0; j < therow.nnz(); j++) {
-				if (therow[j] == 0)
+		for (auto p : pivots) {
+			for (auto [ind, val] : mat[p.first]) {
+				if (val == 0)
 					continue;
-				auto col = therow(j);
-				tranmat[col].push_back(pivots[i].first);
+				tranmat[ind].push_back(p.first);
 			}
 		}
 
@@ -556,33 +545,33 @@ namespace SparseRREF {
 		// SparseRREF::uset nonzero_c(mat.ncol);
 		nonzero_c.clear();
 
-		for (size_t i = 0; i < mat[k].nnz(); i++) {
-			nonzero_c.insert(mat[k](i));
-			tmpvec[mat[k](i)] = mat[k][i];
+		for (auto [ind, val] : mat[k]) {
+			nonzero_c.insert(ind);
+			tmpvec[ind] = val;
 		}
+
 		ulong e_pr;
 		for (auto [r, c] : pivots) {
 			if (!nonzero_c.count(c))
 				continue;
 			T entry = tmpvec[c];
-			auto& row = mat[r];
 			if constexpr (std::is_same_v<T, ulong>) {
 				e_pr = n_mulmod_precomp_shoup(tmpvec[c], F->mod.n);
 			}
-			for (size_t i = 0; i < row.nnz(); i++) {
-				if (!nonzero_c.count(row(i))) {
-					nonzero_c.insert(row(i));
-					tmpvec[row(i)] = 0;
+			for (auto [ind, val] : mat[r]) {
+				if (!nonzero_c.count(ind)) {
+					nonzero_c.insert(ind);
+					tmpvec[ind] = 0;
 				}
 				if constexpr (std::is_same_v<T, ulong>) {
-					tmpvec[row(i)] = _nmod_sub(tmpvec[row(i)],
-						n_mulmod_shoup(entry, row[i], e_pr, F->mod.n), F->mod);
+					tmpvec[ind] = _nmod_sub(tmpvec[ind],
+						n_mulmod_shoup(entry, val, e_pr, F->mod.n), F->mod);
 				}
 				else if constexpr (std::is_same_v<T, rat_t>) {
-					tmpvec[row(i)] -= entry * (row[i]);
+					tmpvec[ind] -= entry * val;
 				}
-				if (tmpvec[row(i)] == 0)
-					nonzero_c.erase(row(i));
+				if (tmpvec[ind] == 0)
+					nonzero_c.erase(ind);
 			}
 		}
 
@@ -679,11 +668,10 @@ namespace SparseRREF {
 		// we only need to compute the transpose of the submatrix involving pivots
 		std::vector<std::vector<slong>> tranmat(mat.ncol);
 		for (size_t i = 0; i < pivots.size(); i++) {
-			auto& therow = mat[pivots[i].first];
-			for (size_t j = 0; j < therow.nnz(); j++) {
-				if (therow[j] == 0)
+			for (auto [col, val] : mat[pivots[i].first]) {
+				if (val == 0)
 					continue;
-				tranmat[therow(j)].push_back(pivots[i].first);
+				tranmat[col].push_back(pivots[i].first);
 			}
 		}
 
@@ -1031,8 +1019,7 @@ namespace SparseRREF {
 			auto tran_tmp = [&](slong i) {
 				if (flags[i]) {
 					auto row = leftrows[i];
-					for (size_t j = 0; j < mat[row].nnz(); j++) {
-						auto col = mat[row](j);
+					for (auto col : mat[row].index_span()) {
 						std::lock_guard<std::mutex> lock(mtxes[col % mtx_size]);
 						tranmat[col].push_back(row, true);
 					}
@@ -1439,19 +1426,19 @@ namespace SparseRREF {
 		char num_buf[32];
 
 		for (size_t i = 0; i < mat.nrow; ++i) {
-			for (size_t j = 0; j < mat[i].nnz(); ++j) {
-				if (mat[i][j] == 0) {
+			for (auto [ind, val] : mat[i]) {
+				if (val == 0) {
 					continue;
 				}
 				auto [ptr1, ec1] = std::to_chars(num_buf, num_buf + sizeof(num_buf), i + 1);
 				st.write(num_buf, ptr1 - num_buf);
 				st.put(' ');
 
-				auto [ptr2, ec2] = std::to_chars(num_buf, num_buf + sizeof(num_buf), mat[i](j) + 1);
+				auto [ptr2, ec2] = std::to_chars(num_buf, num_buf + sizeof(num_buf), ind + 1);
 				st.write(num_buf, ptr2 - num_buf);
 				st.put(' ');
 
-				st << mat[i][j];
+				st << val;
 				st.put('\n');
 			}
 		}
