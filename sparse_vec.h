@@ -170,8 +170,8 @@ namespace SparseRREF {
 			return *this;
 		}
 
-		void push_back(const index_type index, const T& val) {
-			if (_nnz + 1 > _alloc)
+		inline void push_back(const index_type index, const T& val) {
+			if (_nnz + 1 > _alloc) 
 				reserve((1 + _alloc) * 2); // +1 to avoid _alloc = 0
 			indices[_nnz] = index;
 			entries[_nnz] = val;
@@ -288,7 +288,7 @@ namespace SparseRREF {
 		}
 
 		void clear() {
-			if (indices)
+			if (_alloc != 0)
 				s_free(indices);
 			_alloc = 0;
 			_nnz = 0;

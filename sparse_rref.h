@@ -9,7 +9,6 @@
 #ifndef SPARSE_RREF_H
 #define SPARSE_RREF_H
 
-#include "thread_pool.hpp"
 #include <algorithm>
 #include <bit>
 #include <bitset>
@@ -32,6 +31,8 @@
 #include <tuple>
 #include <unordered_set>
 #include <vector>
+
+#include "thread_pool.hpp"
 
 // flint 
 #include "flint/nmod.h"

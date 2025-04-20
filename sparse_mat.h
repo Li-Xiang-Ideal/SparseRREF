@@ -281,8 +281,8 @@ namespace SparseRREF {
 		auto start = leftcols.begin();
 		auto end = leftcols.end();
 
-		auto ncol = tranmat.nrow;
 		auto nrow = mat.nrow;
+		auto ncol = mat.ncol;
 
 		std::list<std::pair<slong, slong>> pivots;
 		std::unordered_set<slong> dict;
@@ -919,10 +919,7 @@ namespace SparseRREF {
 		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 3;
 		int bitlen_ncol = (int)std::floor(std::log(mat.ncol) / std::log(10)) + 1;
 
-		std::unordered_set<slong> tmp_set(mat.ncol);
-
-		constexpr size_t mtx_size = 128;
-		std::mutex mtxes[mtx_size];
+		uset tmp_set(mat.ncol);
 
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
@@ -943,6 +940,7 @@ namespace SparseRREF {
 				auto [r, c] = n_pivots[i];
 				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
 				sparse_vec_rescale(mat[r], scalar, F);
+				tranmat[c].clear();
 				});
 
 			size_t n_leftrows = 0;
@@ -956,46 +954,45 @@ namespace SparseRREF {
 			leftrows.resize(n_leftrows);
 
 			pool.wait();
-			std::atomic<size_t> loop_done_count = 0;
 			std::vector<int> flags(leftrows.size(), 0);
 			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 				auto id = SparseRREF::thread_id();
 				for (size_t i = s; i < e; i++) {
 					schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 					flags[i] = 1;
-					loop_done_count++;
 				}
 				}, (leftrows.size() < 20 * nthreads ? 0 : leftrows.size() / 10));
 
-			// reorder the cols, move ps to the front
+			// remove used cols
+			size_t localcount = 0;
 			tmp_set.clear();
 			for (auto [r, c] : ps)
 				tmp_set.insert(c);
-			std::vector<slong> result;
-			result.reserve(leftcols.size());
 			for (auto it : leftcols) {
-				if (tmp_set.count(it) == 0)
-					result.push_back(it);
+				if (!tmp_set.count(it)) {
+					leftcols[localcount] = it;
+					localcount++;
+					tranmat[it].zero();
+				}
 			}
-			leftcols = std::move(result);
-			std::vector<slong> donelist(rowpivs);
+			leftcols.resize(localcount);
 
 			bool print_once = true; // print at least once
-			// we need first set the transpose matrix zero
-			tranmat.zero();
 
-			while (loop_done_count < leftrows.size()) {
-				for (size_t i = 0; i < leftrows.size(); i++) {
+			localcount = 0;
+			while (localcount < leftrows.size()) {
+				for (size_t i = 0; i < leftrows.size() && localcount < leftrows.size(); i++) {
 					if (flags[i]) {
 						auto row = leftrows[i];
 						for (size_t j = 0; j < mat[row].nnz(); j++) {
 							tranmat[mat[row](j)].push_back(row, true);
 						}
 						flags[i] = 0;
+						localcount++;
 					}
 				}
 
-				double pr = kk + (1.0 * ps.size() * loop_done_count) / leftrows.size();
+				double pr = kk + (1.0 * ps.size() * localcount) / leftrows.size();
 				if (verbose && (print_once || pr - oldpr > printstep)) {
 					auto end = SparseRREF::clocknow();
 					now_nnz = mat.nnz();
@@ -1014,26 +1011,6 @@ namespace SparseRREF {
 				}
 			}
 			pool.wait();
-
-			// parallel elimination is done, we can parallel compute the transpose
-			auto tran_tmp = [&](slong i) {
-				if (flags[i]) {
-					auto row = leftrows[i];
-					for (auto col : mat[row].index_span()) {
-						std::lock_guard<std::mutex> lock(mtxes[col % mtx_size]);
-						tranmat[col].push_back(row, true);
-					}
-				}
-				};
-
-			if (leftrows.size() - loop_done_count < mtx_size) {
-				for (size_t i = 0; i < leftrows.size(); i++)
-					tran_tmp(i);
-			}
-			else {
-				pool.detach_sequence<slong>(0, leftrows.size(), tran_tmp);
-				pool.wait();
-			}
 
 			kk += ps.size();
 		}
