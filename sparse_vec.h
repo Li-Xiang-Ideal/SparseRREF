@@ -141,14 +141,10 @@ namespace SparseRREF {
 		}
 
 		inline void zero() { _nnz = 0; }
-		inline void push_back(const std::pair<index_type, T>& a) { push_back(a.first, a.second); }
 		index_type& operator()(const size_t pos) { return indices[pos]; }
 		const index_type& operator()(const size_t pos) const { return indices[pos]; }
 		T& operator[](const size_t pos) { return entries[pos]; }
 		const T& operator[](const size_t pos) const { return entries[pos]; }
-
-		std::pair<index_type&, T&> at(index_type pos) { return std::make_pair(indices[pos], entries[pos]); }
-		const std::pair<index_type&, T&> at(index_type pos) const { return std::make_pair(indices[pos], entries[pos]); }
 
 		template <typename U = T> requires std::is_integral_v<U> || std::is_same_v<U, int_t>
 		operator sparse_vec<index_type, rat_t>() {

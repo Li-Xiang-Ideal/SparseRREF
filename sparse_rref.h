@@ -371,7 +371,6 @@ namespace SparseRREF {
 		size_t n = Pt.size();
 		std::vector<bool> visited(n, false);
 		auto P = perm_inverse(Pt);
-		std::vector<T> temp(block_size);
 
 		for (size_t i = 0; i < n; i++) {
 			if (!visited[i]) {
@@ -394,7 +393,6 @@ namespace SparseRREF {
 		size_t n = Pt.size();
 		std::vector<bool> visited(n, false);
 		auto P = perm_inverse(Pt);
-		std::vector<T> temp(block_size);
 
 		for (size_t i = 0; i < n; i++) {
 			if (!visited[i]) {
