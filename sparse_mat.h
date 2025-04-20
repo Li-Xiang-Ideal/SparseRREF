@@ -282,7 +282,7 @@ namespace SparseRREF {
 	std::vector<std::pair<slong, slong>> findmanypivots(
 		const sparse_mat<T>& mat, const sparse_mat<S>& tranmat,
 		std::vector<slong>& rowpivs, std::vector<slong>& leftcols,
-		std::function<slong(slong)> col_weight = [](slong i) {return i; }) {
+		const std::function<slong(slong)>& col_weight = [](slong i) { return i; }) {
 
 		auto start = leftcols.begin();
 		auto end = leftcols.end();
@@ -899,6 +899,8 @@ namespace SparseRREF {
 				auto row = tranmat[leftcols[kk]](0);
 				if (rowpivs[row] != -1)
 					continue;
+				if (opt->col_weight(leftcols[kk]) < 0)
+					continue;
 				rowpivs[row] = leftcols[kk];
 				T scalar = scalar_inv(*sparse_mat_entry(mat, row, rowpivs[row]), F);
 				sparse_vec_rescale(mat[row], scalar, F);
@@ -1072,9 +1074,9 @@ namespace SparseRREF {
 	// TODO: check!!! 
 	// parallel version !!!
 	// output some information !!!
-	
+	// checkrank only used for sparse_mat_inverse
 	std::vector<std::vector<std::pair<slong, slong>>> sparse_mat_rref_reconstruct(sparse_mat<rat_t>& mat,
-		rref_option_t opt) {
+		rref_option_t opt, const bool checkrank = false) {
 		std::vector<std::vector<std::pair<slong, slong>>> pivots;
 
 		auto& pool = opt->pool;
@@ -1094,6 +1096,14 @@ namespace SparseRREF {
 		pool.wait();
 
 		pivots = sparse_mat_rref_c(matul, F, opt);
+
+		if (checkrank) {
+			size_t rank = 0;
+			for (auto& p : pivots) 
+				rank += p.size();
+			if (rank != mat.nrow) 
+				return pivots;
+		}
 
 		if (opt->is_back_sub)
 			triangular_solver_2(matul, pivots, F, opt);
@@ -1234,11 +1244,97 @@ namespace SparseRREF {
 		return sparse_mat_rref_kernel(M, n_pivots, F, opt);
 	}
 
+	template <typename T>
+	sparse_mat<T> sparse_mat_inverse(const sparse_mat<T>& M, field_t F, SparseRREF::rref_option_t opt) {
+		if (M.nrow != M.ncol) {
+			std::cerr << "Error: sparse_mat_inverse: matrix is not square" << std::endl;
+			return sparse_mat<T>();
+		}
+
+		auto& pool = opt->pool;
+
+		// define the Augmented matrix
+		auto M1 = M;
+		M1.compress();
+		for (size_t i = 0; i < M1.nrow; i++) {
+			if (M1[i].nnz() == 0) {
+				std::cerr << "Error: sparse_mat_inverse: matrix is not invertible" << std::endl;
+				return sparse_mat<T>();
+			}
+			M1[i].push_back(i + M.ncol, (T)1);
+		}
+		M1.ncol *= 2;
+
+		// backup the option
+		auto old_col_weight = opt->col_weight;
+		std::function<slong(slong)> new_col_weight = [&](slong i) {
+			if (i < M.nrow)
+				return old_col_weight(i);
+			else
+				return -1LL;
+			};
+		opt->col_weight = new_col_weight;
+		bool is_back_sub = opt->is_back_sub;
+		opt->is_back_sub = true;
+
+		std::vector<std::vector<std::pair<slong, slong>>> pivots;
+		if (F->ring == RING::FIELD_Fp)
+			pivots = sparse_mat_rref(M1, F, opt);
+		else if (F->ring == RING::FIELD_QQ)
+			pivots = sparse_mat_rref_reconstruct(M1, opt, true);
+		else {
+			std::cerr << "Error: sparse_mat_inverse: field not supported" << std::endl;
+			return sparse_mat<T>();
+		}
+
+		std::vector<std::pair<slong, slong>> flatten_pivots;
+		size_t rank = 0;
+		for (auto& p : pivots) {
+			rank += p.size();
+			flatten_pivots.insert(flatten_pivots.end(), p.begin(), p.end());
+		}
+			
+		if (rank != M.nrow) {
+			std::cerr << "Error: sparse_mat_inverse: matrix is not invertible" << std::endl;
+			return sparse_mat<T>();
+		}
+
+		auto perm = perm_init(M.nrow);
+		std::sort(perm.begin(), perm.end(),
+			[&](size_t a, size_t b) {
+				return flatten_pivots[a].second < flatten_pivots[b].second;
+			});
+		for (size_t i = 0; i < M.nrow; i++) {
+			perm[i] = flatten_pivots[perm[i]].first;
+		}
+
+		permute(perm, M1.rows);
+
+		for (size_t i = 0; i < M1.nrow; i++) {
+			// the firt ncol columns is the identity matrix,
+			// we need to remove it
+			for (size_t j = 0; j < M1[i].nnz() - 1; j++) {
+				M1[i][j] = M1[i][j + 1];
+				M1[i](j) = M1[i](j + 1) - M.ncol;
+			}
+			M1[i].resize(M1[i].nnz() - 1);
+		}
+		M1.ncol = M.ncol;
+
+		// restore the option
+		opt->col_weight = old_col_weight;
+		opt->is_back_sub = is_back_sub;
+
+		return M1;
+	}
+
 	// IO
 	template <typename ScalarType, typename T>
 	sparse_mat<ScalarType> sparse_mat_read(T& st, const field_t F) {
-		if (!st.is_open())
+		if (!st.is_open()) {
+			std::cerr << "Error: sparse_mat_read: file not open." << std::endl;
 			return sparse_mat<ScalarType>();
+		}
 
 		std::string line;
 		std::vector<size_t> dims;
@@ -1260,7 +1356,8 @@ namespace SparseRREF {
 			if (start < line.size()) {
 				// size_t nnz = string_to_ull(line.substr(start));
 				if (dims.size() != 2) {
-					throw std::runtime_error("Error: wrong format in the matrix file");
+					std::cerr << "Error: sparse_mat_read: wrong format in the matrix file" << std::endl;
+					return sparse_mat<ScalarType>();
 				}
 				mat = sparse_mat<ScalarType>(dims[0], dims[1]);
 			}
@@ -1288,7 +1385,8 @@ namespace SparseRREF {
 			}
 
 			if (count != 2) {
-				throw std::runtime_error("Error: wrong format in the matrix file");
+				std::cerr << "Error: sparse_mat_read: wrong format in the matrix file" << std::endl;
+				return sparse_mat<ScalarType>();
 			}
 
 			ScalarType val;
