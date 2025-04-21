@@ -127,29 +127,11 @@ namespace WXF_PARSER {
 				|| type == WXF_HEAD::bigreal
 				|| type == WXF_HEAD::string
 				|| type == WXF_HEAD::binary_string) {
-				if (str == nullptr)
-					return;
-
-				delete[] str;
+				free(str);
 			}
-			else if (type == WXF_HEAD::array) {
-				if (dimensions == nullptr)
-					return;
-
-				delete[] dimensions;
-				delete[] i_arr;
-			}
-			else if (type == WXF_HEAD::narray) {
-				if (dimensions == nullptr)
-					return;
-
-				if (dimensions[0] >= 16 && dimensions[0] <= 20) { // unsigned type
-					delete[] u_arr;
-				}
-				else if (dimensions[0] >= 0 && dimensions[0] <= 3) { // signed type
-					delete[] i_arr;
-				}
-				delete[] dimensions;
+			else if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
+				free(i_arr);
+				free(dimensions);
 			}
 			// no need to clear i, length, rank, type, as they are just basic types
 		}
@@ -322,7 +304,7 @@ namespace WXF_PARSER {
 			WXF_TOKEN node;
 			node.type = type;
 			node.length = ReadVarint();
-			node.str = new char[node.length + 1];
+			node.str = (char*)malloc((node.length + 1) * sizeof(char)); // +1 for null terminator
 			std::memcpy(node.str, buffer + pos, node.length);
 			node.str[node.length] = '\0'; // add null terminator
 			pos += node.length;
@@ -369,16 +351,16 @@ namespace WXF_PARSER {
 			WXF_TOKEN node;
 			node.type = WXF_HEAD::array;
 			node.rank = (int)ReadVarint();
-			node.dimensions = new uint64_t[node.rank + 2];
+			node.dimensions = (uint64_t*)malloc((node.rank + 2) * sizeof(uint64_t));
 			size_t all_len = 1;
-			for (auto i = 0; i < node.rank; i++) {
+			for (int i = 0; i < node.rank; i++) {
 				node.dimensions[i + 2] = ReadVarint();
 				all_len *= node.dimensions[i + 2];
 			}
 			node.dimensions[0] = num_type;
 			node.dimensions[1] = all_len;
 			if (num_type >= 34 && num_type <= 52) {
-				node.d_arr = new double[all_len];
+				node.d_arr = (double*)malloc(all_len * sizeof(double));
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
 					T val;
@@ -391,7 +373,7 @@ namespace WXF_PARSER {
 				, select_type(num_type));
 			}
 			else {
-				node.i_arr = new int64_t[all_len];
+				node.i_arr = (int64_t*)malloc(all_len * sizeof(int64_t));
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
 					T val;
@@ -437,7 +419,7 @@ namespace WXF_PARSER {
 			WXF_TOKEN node;
 			node.type = WXF_HEAD::narray;
 			node.rank = (int)ReadVarint();
-			node.dimensions = new uint64_t[node.rank + 2];
+			node.dimensions = (uint64_t*)malloc((node.rank + 2) * sizeof(uint64_t));
 			size_t all_len = 1;
 			for (int i = 0; i < node.rank; i++) {
 				node.dimensions[i + 2] = ReadVarint();
@@ -446,7 +428,7 @@ namespace WXF_PARSER {
 			node.dimensions[0] = num_type;
 			node.dimensions[1] = all_len;
 			if (num_type >= 16 && num_type < 20) {
-				node.u_arr = new uint64_t[all_len];
+				node.u_arr = (uint64_t*)malloc(all_len * sizeof(uint64_t));
 
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
@@ -460,7 +442,7 @@ namespace WXF_PARSER {
 				, select_type(num_type));
 			}
 			else if (num_type < 10){
-				node.i_arr = new int64_t[all_len];
+				node.i_arr = (int64_t*)malloc(all_len * sizeof(int64_t));
 
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
@@ -474,7 +456,7 @@ namespace WXF_PARSER {
 				, select_type(num_type));
 			}
 			else if (num_type >= 34 && num_type <= 35) {
-				node.d_arr = new double[all_len];
+				node.d_arr = (double*)malloc(all_len * sizeof(double));
 
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
@@ -548,12 +530,12 @@ namespace WXF_PARSER {
 				auto num_type = token.dimensions[0];
 				std::cout << "data: ";
 				if (num_type < 4) {
-					for (int i = 0; i < all_len; i++) {
+					for (size_t i = 0; i < all_len; i++) {
 						std::cout << token.i_arr[i] << " ";
 					}
 				}
 				else if (num_type >= 34 && num_type <= 35) {
-					for (int i = 0; i < all_len; i++) {
+					for (size_t i = 0; i < all_len; i++) {
 						std::cout << token.d_arr[i] << " ";
 					}
 				}
