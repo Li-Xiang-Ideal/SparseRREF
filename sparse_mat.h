@@ -11,6 +11,7 @@
 #define SPARSE_MAT_H
 
 #include "sparse_vec.h"
+#include "wxf_support.h"
 
 namespace SparseRREF {
 	// new sparse matrix
@@ -1368,12 +1369,138 @@ namespace SparseRREF {
 		return mat;
 	}
 
-	template <typename T, typename S>
-	void sparse_mat_write(sparse_mat<T>& mat, S& st, enum SPARSE_FILE_TYPE type) {
-		if (!st.is_open()) {
-			return;
+	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
+	// TODO: more check!!!
+	template <typename T>
+	sparse_mat<T> sparse_mat_read_wxf(const WXF_PARSER::ExprTree& expr_tree, const field_t F) {
+		auto& tokens = expr_tree.tokens;
+
+		std::string tmp_str(tokens[1].str);
+
+		if (tmp_str != "SparseArray") { 
+			std::cerr << "Error: sparse_mat_read: not a SparseArray with rational/integer entries" << std::endl;
+			return sparse_mat<T>();
 		}
 
+		auto tmp_index = expr_tree.root.children[1].index;
+		std::vector<slong> dims(tokens[tmp_index].i_arr, tokens[tmp_index].i_arr + tokens[tmp_index].dimensions[2]);
+
+		if (tokens[expr_tree.root.children[2].index].i != 0) {
+			std::cerr << "Error: sparse_mat_read: the implicit value is not 0" << std::endl;
+			return sparse_mat<T>();
+		}
+
+		auto& node = expr_tree.root.children[3];
+		tmp_str = tokens[node.index].str;
+
+		// node.children[0] should be 1, what's the meaning of this?
+		auto& list = node.children[1];
+		tmp_str = tokens[list.index].str;
+
+		tmp_index = list.children[0].index;
+		std::vector<slong> rowptr(tokens[tmp_index].i_arr, tokens[tmp_index].i_arr + tokens[tmp_index].dimensions[2]);
+
+		tmp_index = list.children[1].index;
+		std::vector<slong> colindex(tokens[tmp_index].i_arr, tokens[tmp_index].i_arr + tokens[tmp_index].dimensions[2]);
+
+		auto& val_list_node = node.children[2];
+		
+		std::vector<T> vals;
+		if (tokens[val_list_node.index].type == WXF_PARSER::array ||
+			tokens[val_list_node.index].type == WXF_PARSER::narray) {
+
+			auto ptr = tokens[val_list_node.index].i_arr;
+			auto nnz = tokens[val_list_node.index].dimensions[2];
+
+			vals.resize(nnz);
+			for (size_t i = 0; i < nnz; i++) {
+				vals[i] = ptr[i];
+			}
+		}
+		else {
+			auto nnz = val_list_node.size;
+			vals.resize(nnz);
+
+			std::function<int_t(const WXF_PARSER::WXF_TOKEN&)> parser_integer = [](const WXF_PARSER::WXF_TOKEN& token) {
+				int_t result;
+				switch (token.type) {
+				case WXF_PARSER::i8:
+				case WXF_PARSER::i16:
+				case WXF_PARSER::i32:
+				case WXF_PARSER::i64:
+					result = token.i;
+					break;
+				case WXF_PARSER::bigint:
+					result = int_t(std::string(token.str));
+					break;
+				default:
+					std::cerr << "not a integer" << std::endl;
+					break;
+				}
+				return result;
+				};
+
+			for (size_t i = 0; i < nnz; i++) {
+				auto& val_node = val_list_node.children[i];
+				auto& token = tokens[val_node.index];
+
+				switch (token.type) {
+				case WXF_PARSER::i8:
+				case WXF_PARSER::i16:
+				case WXF_PARSER::i32:
+				case WXF_PARSER::i64:
+					vals[i] = token.i;
+					break;
+				case WXF_PARSER::bigint: {
+					if constexpr (std::is_same_v<T, rat_t>) {
+						vals[i] = rat_t(std::string(token.str));
+					}
+					else if constexpr (std::is_same_v<T, ulong>) {
+						int_t tmp_int(std::string(token.str));
+						vals[i] = tmp_int % F->mod;
+					}
+					break;
+				}
+				case WXF_PARSER::symbol: {
+					tmp_str = token.str;
+					if (tmp_str == "Rational") {
+						int_t num = parser_integer(tokens[val_node.children[0].index]);
+						int_t den = parser_integer(tokens[val_node.children[1].index]);
+						if constexpr (std::is_same_v<T, rat_t>) {
+							vals[i] = num / den;
+						}
+						else if constexpr (std::is_same_v<T, ulong>) {
+							rat_t tmp_rat = num / den;
+							vals[i] = tmp_rat % F->mod;
+						}
+					}
+					else {
+						std::cerr << "Error: sparse_mat_read: not a SparseArray with rational/integer entries" << std::endl;
+						return sparse_mat<T>();
+					}
+					break;
+				}
+				default: {
+					std::cerr << "Error: sparse_mat_read: not a SparseArray with rational/integer entries" << std::endl;
+					return sparse_mat<T>();
+				}
+				}
+			}
+		}
+
+		sparse_mat<T> mat(dims[0], dims[1]);
+		for (size_t i = 0; i < rowptr.size() - 1; i++) {
+			for (size_t j = rowptr[i]; j < rowptr[i + 1]; j++) {
+				// mathematica is 1-indexed
+				mat[i].push_back(colindex[j] - 1, vals[j]);
+			}
+		}
+
+		return mat;
+	}
+
+	template <typename T, typename S>
+	void sparse_mat_write(sparse_mat<T>& mat, S& st, enum SPARSE_FILE_TYPE type) {
 		switch (type) {
 		case SPARSE_FILE_TYPE_PLAIN: {
 			st << mat.nrow << ' ' << mat.ncol << ' ' << mat.nnz() << '\n';
