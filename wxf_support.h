@@ -44,10 +44,11 @@
 #pragma once
 
 #include <iostream>
+#include <filesystem>
 #include <fstream>
+#include <functional>
 #include <vector>
 #include <string>
-#include <memory>
 #include <cstdint>
 #include <cstring>
 #include <variant>
@@ -160,17 +161,122 @@ namespace WXF_PARSER {
 			}
 		}
 
+		void print() const {
+			auto& token = *this;
+			switch (token.type) {
+				case WXF_HEAD::i8:
+					std::cout << "i8: " << token.i << std::endl;
+					break;
+				case WXF_HEAD::i16:
+					std::cout << "i16: " << token.i << std::endl;
+					break;
+				case WXF_HEAD::i32:
+					std::cout << "i32: " << token.i << std::endl;
+					break;
+				case WXF_HEAD::i64:
+					std::cout << "i64: " << token.i << std::endl;
+					break;
+				case WXF_HEAD::f64:
+					std::cout << "f64: " << token.d << std::endl;
+					break;
+				case WXF_HEAD::symbol:
+					std::cout << "symbol: " << token.str << std::endl;
+					break;
+				case WXF_HEAD::bigint:
+					std::cout << "bigint: " << token.str << std::endl;
+					break;
+				case WXF_HEAD::bigreal:
+					std::cout << "bigreal: " << token.str << std::endl;
+					break;
+				case WXF_HEAD::string:
+					std::cout << "string: " << token.str << std::endl;
+					break;
+				case WXF_HEAD::binary_string:
+					std::cout << "binary_string: " << token.str << std::endl;
+					break;
+				case WXF_HEAD::func:
+					std::cout << "func: " << token.length << " vars" << std::endl;
+					break;
+				case WXF_HEAD::association:
+					std::cout << "association: " << token.length << " rules" << std::endl;
+					break;
+				case WXF_HEAD::delay_rule:
+					std::cout << "delay_rule: " << token.length << std::endl;
+					break;
+				case WXF_HEAD::rule:
+					std::cout << "rule: " << token.length << std::endl;
+					break;
+				case WXF_HEAD::array: {
+					std::cout << "array: rank = " << token.rank << ", dimensions = ";
+					size_t all_len = token.dimensions[1];
+					for (int i = 0; i < token.rank; i++) {
+						std::cout << token.dimensions[i + 2] << " ";
+					}
+					std::cout << std::endl;
+
+					auto num_type = token.dimensions[0];
+					std::cout << "data: ";
+					if (num_type < 4) {
+						for (size_t i = 0; i < all_len; i++) {
+							std::cout << token.i_arr[i] << " ";
+						}
+					}
+					else if (num_type >= 34 && num_type <= 35) {
+						for (size_t i = 0; i < all_len; i++) {
+							std::cout << token.d_arr[i] << " ";
+						}
+					}
+					else {
+						std::cerr << "Unknown type" << std::endl;
+					}
+					std::cout << std::endl;
+					break;
+				}
+				case WXF_HEAD::narray: {
+					std::cout << "narray: rank = " << token.rank << ", dimensions = ";
+					for (int i = 0; i < token.rank; i++) {
+						std::cout << token.dimensions[i + 2] << " ";
+					}
+					std::cout << std::endl;
+
+					size_t num_type = token.dimensions[0];
+					size_t all_len = token.dimensions[1];
+
+					std::cout << "data: ";
+					if (num_type >= 16 && num_type < 20) {
+						for (size_t i = 0; i < all_len; i++)
+							std::cout << token.u_arr[i] << " ";
+					}
+					else if (num_type < 4) {
+						for (size_t i = 0; i < all_len; i++)
+							std::cout << token.i_arr[i] << " ";
+					}
+					else if (num_type >= 34 && num_type <= 35) {
+						for (size_t i = 0; i < all_len; i++)
+							std::cout << token.d_arr[i] << " ";
+					}
+					else {
+						std::cerr << "Unknown type" << std::endl;
+					}
+					std::cout << std::endl;
+					break;
+				}
+				default:
+					std::cerr << "Unknown type" << std::endl;
+			}
+		}
+
 	};
 
 
 	struct Parser {
-		uint8_t* buffer = nullptr; // the buffer to read
+		const uint8_t* buffer; // the buffer to read
 		size_t pos = 0;
 		size_t size = 0; // the size of the buffer
 		std::vector<WXF_TOKEN> tokens; // the tokens read from the buffer
 
-		Parser(uint8_t* buf, const size_t len) : buffer(buf), pos(0), size(len) {}
-		Parser(std::vector<uint8_t>& buf) : buffer(buf.data()), pos(0), size(buf.size()) {}
+		Parser(const uint8_t* buf, const size_t len) : buffer(buf), pos(0), size(len) {}
+		Parser(const std::vector<uint8_t>& buf) : buffer(buf.data()), pos(0), size(buf.size()) {}
 
 		// we suppose that the length does not exceed 2^64 - 1 .. 
 		uint64_t ReadVarint() {
@@ -222,29 +328,17 @@ namespace WXF_PARSER {
 						tokens.push_back(makeNumber<double>());
 						break;
 					case WXF_HEAD::symbol: 
-						tokens.push_back(makeString(type));
-						break;
 					case WXF_HEAD::bigint:
-						tokens.push_back(makeString(type));
-						break;
 					case WXF_HEAD::bigreal:
-						tokens.push_back(makeString(type));
-						break;
 					case WXF_HEAD::string:
-						tokens.push_back(makeString(type));
-						break;
 					case WXF_HEAD::binary_string:
 						tokens.push_back(makeString(type));
 						break;
 					case WXF_HEAD::func: 
-						tokens.push_back(makeFunction(type));
-						break;
 					case WXF_HEAD::association:
 						tokens.push_back(makeFunction(type));
 						break;
 					case WXF_HEAD::delay_rule:
-						tokens.push_back(makeRule(type));
-						break;
 					case WXF_HEAD::rule:
 						tokens.push_back(makeRule(type));
 						break;
@@ -474,114 +568,275 @@ namespace WXF_PARSER {
 		}
 	};
 
-	void print_tokens(const std::vector<WXF_TOKEN>& tokens) {
-		for (auto& token : tokens) {
-			switch (token.type) {
-			case WXF_HEAD::i8:
-				std::cout << "i8: " << token.i << std::endl;
-				break;
-			case WXF_HEAD::i16:
-				std::cout << "i16: " << token.i << std::endl;
-				break;
-			case WXF_HEAD::i32:
-				std::cout << "i32: " << token.i << std::endl;
-				break;
-			case WXF_HEAD::i64:
-				std::cout << "i64: " << token.i << std::endl;
-				break;
-			case WXF_HEAD::f64:
-				std::cout << "f64: " << token.d << std::endl;
-				break;
-			case WXF_HEAD::symbol:
-				std::cout << "symbol: " << token.str << std::endl;
-				break;
-			case WXF_HEAD::bigint:
-				std::cout << "bigint: " << token.str << std::endl;
-				break;
-			case WXF_HEAD::bigreal:
-				std::cout << "bigreal: " << token.str << std::endl;
-				break;
-			case WXF_HEAD::string:
-				std::cout << "string: " << token.str << std::endl;
-				break;
-			case WXF_HEAD::binary_string:
-				std::cout << "binary_string: " << token.str << std::endl;
-				break;
-			case WXF_HEAD::func:
-				std::cout << "func: " << token.length << " vars" << std::endl;
-				break;
-			case WXF_HEAD::association:
-				std::cout << "association: " << token.length << " rules" << std::endl;
-				break;
-			case WXF_HEAD::delay_rule:
-				std::cout << "delay_rule: " << token.length << std::endl;
-				break;
-			case WXF_HEAD::rule:
-				std::cout << "rule: " << token.length << std::endl;
-				break;
-			case WXF_HEAD::array: {
-				std::cout << "array: rank = " << token.rank << ", dimensions = ";
-				size_t all_len = token.dimensions[1];
-				for (int i = 0; i < token.rank; i++) {
-					std::cout << token.dimensions[i + 2] << " ";
-				}
-				std::cout << std::endl;
+	struct ExprNode {
+		size_t index; // the index of the token in the tokens vector
+		size_t size; // the size of the children
+		std::unique_ptr<ExprNode[]> children; // the children of the node
 
-				auto num_type = token.dimensions[0];
-				std::cout << "data: ";
-				if (num_type < 4) {
-					for (size_t i = 0; i < all_len; i++) {
-						std::cout << token.i_arr[i] << " ";
-					}
-				}
-				else if (num_type >= 34 && num_type <= 35) {
-					for (size_t i = 0; i < all_len; i++) {
-						std::cout << token.d_arr[i] << " ";
-					}
-				}
-				else {
-					std::cerr << "Unknown type" << std::endl;
-				}
-				std::cout << std::endl;
-				break;
-			}
-			case WXF_HEAD::narray: {
-				std::cout << "narray: rank = " << token.rank << ", dimensions = ";
-				for (int i = 0; i < token.rank; i++) {
-					std::cout << token.dimensions[i + 2] << " ";
-				}
-				std::cout << std::endl;
+		ExprNode() : index(0), size(0), children(nullptr) {} // default constructor
 
-				size_t num_type = token.dimensions[0];
-				size_t all_len = token.dimensions[1];
-
-				std::cout << "data: ";
-				if (num_type >= 16 && num_type < 20) {
-					for (size_t i = 0; i < all_len; i++) 
-						std::cout << token.u_arr[i] << " ";
-				}
-				else if (num_type < 4){
-					for (size_t i = 0; i < all_len; i++) 
-						std::cout << token.i_arr[i] << " ";
-				}
-				else if (num_type >= 34 && num_type <= 35) {
-					for (size_t i = 0; i < all_len; i++) 
-						std::cout << token.d_arr[i] << " ";
-				}
-				else {
-					std::cerr << "Unknown type" << std::endl;
-				}
-				std::cout << std::endl;
-				break;
-			}
-			default:
-				std::cerr << "Unknown type" << std::endl;
+		ExprNode(size_t idx, size_t sz) : index(idx), size(sz) {
+			if (size > 0) {
+				children = std::make_unique<ExprNode[]>(size);
 			}
 		}
+
+		ExprNode(const ExprNode&) = delete; // disable copy constructor
+		ExprNode& operator=(const ExprNode&) = delete; // disable copy assignment operator
+		// move constructor
+		ExprNode(ExprNode&& other) noexcept : index(other.index), size(other.size), children(std::move(other.children)) {
+			other.size = 0;
+			other.index = 0;
+			other.children = nullptr;
+		}
+		// move assignment operator
+		ExprNode& operator=(ExprNode&& other) noexcept {
+			if (this != &other) {
+				index = other.index;
+				size = other.size;
+				children = std::move(other.children);
+				other.size = 0;
+				other.index = 0;
+				other.children = nullptr;
+			}
+			return *this;
+		}
+
+		// destructor
+		~ExprNode() {
+			if (children) {
+				children.reset();
+			}
+		}
+
+		// clear the children
+		void clear() {
+			if (children) {
+				for (size_t i = 0; i < size; i++) {
+					children[i].clear();
+				}
+				children.reset();
+			}
+		}
+	};
+
+	//// debug only, print the small tree 
+	//void printPrettyTree(const ExprNode& node, const std::string& prefix = "", bool isLast = true) {
+	//	std::cout << prefix;
+	//	std::cout << (isLast ? "└── " : "├── ");
+	//	std::cout << node.index << std::endl;
+
+	//	for (size_t i = 0; i < node.size; ++i) {
+	//		bool lastChild = (i == node.size - 1);
+	//		printPrettyTree(node.children[i], prefix + (isLast ? "    " : "│   "), lastChild);
+	//	}
+	//}
+
+	struct ExprTree {
+		std::vector<WXF_TOKEN> tokens;
+		ExprNode root;
+
+		ExprTree() {} // default constructor
+		ExprTree(Parser parser, size_t index, size_t size) : root(index, size) {
+			tokens = std::move(parser.tokens);
+		}
+
+		ExprTree(const ExprTree&) = delete; // disable copy constructor
+		ExprTree& operator=(const ExprTree&) = delete; // disable copy assignment operator
+
+		// move constructor
+		ExprTree(ExprTree&& other) noexcept : tokens(std::move(other.tokens)), root(std::move(other.root)) {
+			other.root.size = 0;
+			other.root.index = 0;
+			other.root.children = nullptr;
+		}
+
+		// move assignment operator
+		ExprTree& operator=(ExprTree&& other) noexcept {
+			if (this != &other) {
+				tokens = std::move(other.tokens);
+				root = std::move(other.root);
+				other.root.size = 0;
+				other.root.index = 0;
+				other.root.children = nullptr;
+			}
+			return *this;
+		}
+
+		//void plot() const {
+		//	printPrettyTree(root);
+		//}
+	};
+
+	ExprTree MakeExprTree(Parser& parser) {
+		ExprTree tree;
+		tree.tokens = std::move(parser.tokens);
+		auto total_len = tree.tokens.size();
+		auto& tokens = tree.tokens;
+
+		std::vector<ExprNode*> expr_stack; // the stack to store the current father nodes
+		std::vector<size_t> node_stack; // the vector to store the node index
+
+		std::function<void(void)> move_to_next_node = [&]() {
+			if (node_stack.empty())
+				return;
+
+			node_stack.back()++; // move to the next node
+			if (node_stack.back() >= expr_stack.back()->size) {
+				expr_stack.pop_back(); // pop the current node
+				node_stack.pop_back(); // pop the current node index
+				move_to_next_node();
+			}
+			};
+
+		// first we need to find the root node
+		size_t pos = 0;
+		auto& token = tokens[pos];
+		if (token.type == WXF_HEAD::func || token.type == WXF_HEAD::association) {
+			// i + 1 is the head of the function (a symbol)
+			tree.root = ExprNode(pos + 1, token.length);
+			pos += 2; // skip the head
+		}
+		else {
+			// if the token is not a function type, only one token is allowed
+			tree.root = ExprNode(pos, 0);
+			return tree;
+		}
+
+		expr_stack.push_back(&(tree.root));
+		node_stack.push_back(0);
+
+		// now we need to parse the expression
+		for (; pos < total_len; pos++) {
+			auto& token = tokens[pos];
+			if (token.type == WXF_HEAD::func || token.type == WXF_HEAD::association) {
+				// if the token is a function type, we need to create a new node
+				auto node_pos = node_stack.back();
+				auto parent = expr_stack.back();
+				auto& node = parent->children[node_pos];
+				node = ExprNode(pos + 1, token.length);
+				pos++; // skip the head
+				expr_stack.push_back(&(node)); // push the new node to the stack
+				node_stack.push_back(0); // push the new node index to the stack
+			}
+			else if (token.type == WXF_HEAD::delay_rule || token.type == WXF_HEAD::rule) {
+				// if the token is a rule type, we need to create a new node
+				auto node_pos = node_stack.back();
+				auto parent = expr_stack.back();
+				auto& node = parent->children[node_pos];
+				node = ExprNode(pos, 2);
+				expr_stack.push_back(&(node)); // push the new node to the stack
+				node_stack.push_back(0); // push the new node index to the stack
+			}
+			else {
+				// if the token is not a function type, we need to move to the next node
+				auto node_pos = node_stack.back();
+				auto parent = expr_stack.back();
+				auto& node = parent->children[node_pos];
+				node = ExprNode(pos, 0);
+
+				move_to_next_node();
+			}
+		}
+
+		if (!node_stack.empty()) {
+			std::cerr << "Error: not all nodes are parsed" << std::endl;
+			for (auto& node : expr_stack) {
+				node->clear();
+			}
+		}
+
+		return tree;
+	}
+
+	ExprTree MakeExprTree(const std::vector<uint8_t>& str) {
+		Parser parser(str);
+		parser.parseExpr();
+		return MakeExprTree(parser);
+	}
+
+	ExprTree MakeExprTree(const std::filesystem::path filename) {
+		if (!std::filesystem::exists(filename)) {
+			std::cerr << "Error: File does not exist!" << std::endl;
+			return ExprTree();
+		}
+		ExprTree expr_tree;
+		std::ifstream file(filename, std::ios::binary | std::ios::ate);
+		std::streamsize size = file.tellg();
+		file.seekg(0, std::ios::beg);
+
+		std::vector<uint8_t> buffer(size);
+		if (!file.read((char*)buffer.data(), size)) {
+			std::cerr << "Failed to read file!" << std::endl;
+			return ExprTree();
+		}
+
+		return MakeExprTree(buffer);
+	}
+
+	// debug only: convert the expression tree to DOT format of Graphviz
+	template <typename SS>
+	void toDotFormat(const ExprTree& tree, SS& oss) {
+		oss << "digraph ExprTree {\n";
+		oss << "  node [shape=box];\n";
+
+		auto& tokens = tree.tokens;
+
+		int nodeId = 0;
+		std::function<void(const ExprNode&)> traverse = [&](const ExprNode& node) {
+			int currentId = nodeId++;
+
+			oss << "  n" << currentId << " [label=\"";
+			switch (tokens[node.index].type) {
+			case WXF_HEAD::symbol:
+				oss << tokens[node.index].str;
+				break;
+			case WXF_HEAD::i8:
+			case WXF_HEAD::i16:
+			case WXF_HEAD::i32:
+			case WXF_HEAD::i64:
+				oss << tokens[node.index].i;
+				break;
+			case WXF_HEAD::f64:
+				oss << tokens[node.index].d;
+				break;
+			case WXF_HEAD::bigint:
+				oss << "bigint " << node.index;
+				break;
+			case WXF_HEAD::bigreal:
+				oss << "bigreal " << node.index;
+				break;
+			case WXF_HEAD::string:
+				oss << "string " << node.index;
+				break;
+			case WXF_HEAD::binary_string:
+				oss << "binary_string " << node.index;
+				break;
+			case WXF_HEAD::array:
+				oss << "array " << node.index;
+				break;
+			case WXF_HEAD::narray:
+				oss << "narray " << node.index;
+				break;
+			default:
+				oss << node.index;
+				break;
+			}
+			oss << "\"];\n";
+
+			for (size_t i = 0; i < node.size; ++i) {
+				int childId = nodeId;
+				traverse(node.children[i]);
+				oss << "  n" << currentId << " -> n" << childId << ";\n";
+			}
+			};
+
+		traverse(tree.root);
+		oss << "}\n";
 	}
 
 	/*
-		test:
+		an example to test:
 			SparseArray[{{1, 1} -> 1/3.0, {1, 23133} -> 
 			N[Pi, 100] + I N[E, 100], {44, 2} -> -(4/
 			 33333333333333444333333335), {_, _} -> 0}]
@@ -597,6 +852,33 @@ namespace WXF_PARSER {
 			2.7182818284590452353602874713526624977572470936999595749669676277
 			240766303535475945713821785251664274274663919320031`100.],
 			Rational[-4,33333333333333444333333335]]]]
+
+		std::vector<uint8_t> test{ 56, 58, 102, 4, 115, 11, 83, 112, 97, 114, 115, 101, 65, 114, 114, \
+								97, 121, 115, 9, 65, 117, 116, 111, 109, 97, 116, 105, 99, 193, 1, 1, \
+								2, 44, 0, 93, 90, 67, 0, 102, 3, 115, 4, 76, 105, 115, 116, 67, 1, \
+								102, 2, 115, 4, 76, 105, 115, 116, 193, 0, 1, 45, 0, 2, 2, 2, 2, 2, \
+								2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, \
+								2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 193, 1, 2, 3, 1, 1, \
+								0, 93, 90, 2, 0, 102, 3, 115, 4, 76, 105, 115, 116, 114, 85, 85, 85, \
+								85, 85, 85, 213, 63, 102, 2, 115, 7, 67, 111, 109, 112, 108, 101, \
+								120, 82, 122, 51, 46, 49, 52, 49, 53, 57, 50, 54, 53, 51, 53, 56, 57, \
+								55, 57, 51, 50, 51, 56, 52, 54, 50, 54, 52, 51, 51, 56, 51, 50, 55, \
+								57, 53, 48, 50, 56, 56, 52, 49, 57, 55, 49, 54, 57, 51, 57, 57, 51, \
+								55, 53, 49, 48, 53, 56, 50, 48, 57, 55, 52, 57, 52, 52, 53, 57, 50, \
+								51, 48, 55, 56, 49, 54, 52, 48, 54, 50, 56, 54, 50, 48, 56, 57, 57, \
+								56, 54, 50, 56, 48, 51, 52, 56, 50, 53, 51, 52, 50, 49, 49, 55, 48, \
+								54, 55, 57, 56, 50, 49, 52, 56, 48, 56, 54, 53, 49, 57, 49, 57, 55, \
+								54, 96, 49, 48, 48, 46, 82, 122, 50, 46, 55, 49, 56, 50, 56, 49, 56, \
+								50, 56, 52, 53, 57, 48, 52, 53, 50, 51, 53, 51, 54, 48, 50, 56, 55, \
+								52, 55, 49, 51, 53, 50, 54, 54, 50, 52, 57, 55, 55, 53, 55, 50, 52, \
+								55, 48, 57, 51, 54, 57, 57, 57, 53, 57, 53, 55, 52, 57, 54, 54, 57, \
+								54, 55, 54, 50, 55, 55, 50, 52, 48, 55, 54, 54, 51, 48, 51, 53, 51, \
+								53, 52, 55, 53, 57, 52, 53, 55, 49, 51, 56, 50, 49, 55, 56, 53, 50, \
+								53, 49, 54, 54, 52, 50, 55, 52, 50, 55, 52, 54, 54, 51, 57, 49, 57, \
+								51, 50, 48, 48, 51, 49, 96, 49, 48, 48, 46, 102, 2, 115, 8, 82, 97, \
+								116, 105, 111, 110, 97, 108, 67, 252, 73, 26, 51, 51, 51, 51, 51, 51, \
+								51, 51, 51, 51, 51, 51, 51, 51, 52, 52, 52, 51, 51, 51, 51, 51, 51, \
+								51, 51, 53 };
 
 		print_tokens(example_test()):
 			func: 4 vars
@@ -626,38 +908,5 @@ namespace WXF_PARSER {
 			i8: -4
 			bigint: 33333333333333444333333335
 	*/
-
-	std::vector<WXF_TOKEN> test() {
-		std::vector<uint8_t> test{ 56, 58, 102, 4, 115, 11, 83, 112, 97, 114, 115, 101, 65, 114, 114, \
-								97, 121, 115, 9, 65, 117, 116, 111, 109, 97, 116, 105, 99, 193, 1, 1, \
-								2, 44, 0, 93, 90, 67, 0, 102, 3, 115, 4, 76, 105, 115, 116, 67, 1, \
-								102, 2, 115, 4, 76, 105, 115, 116, 193, 0, 1, 45, 0, 2, 2, 2, 2, 2, \
-								2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, \
-								2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 193, 1, 2, 3, 1, 1, \
-								0, 93, 90, 2, 0, 102, 3, 115, 4, 76, 105, 115, 116, 114, 85, 85, 85, \
-								85, 85, 85, 213, 63, 102, 2, 115, 7, 67, 111, 109, 112, 108, 101, \
-								120, 82, 122, 51, 46, 49, 52, 49, 53, 57, 50, 54, 53, 51, 53, 56, 57, \
-								55, 57, 51, 50, 51, 56, 52, 54, 50, 54, 52, 51, 51, 56, 51, 50, 55, \
-								57, 53, 48, 50, 56, 56, 52, 49, 57, 55, 49, 54, 57, 51, 57, 57, 51, \
-								55, 53, 49, 48, 53, 56, 50, 48, 57, 55, 52, 57, 52, 52, 53, 57, 50, \
-								51, 48, 55, 56, 49, 54, 52, 48, 54, 50, 56, 54, 50, 48, 56, 57, 57, \
-								56, 54, 50, 56, 48, 51, 52, 56, 50, 53, 51, 52, 50, 49, 49, 55, 48, \
-								54, 55, 57, 56, 50, 49, 52, 56, 48, 56, 54, 53, 49, 57, 49, 57, 55, \
-								54, 96, 49, 48, 48, 46, 82, 122, 50, 46, 55, 49, 56, 50, 56, 49, 56, \
-								50, 56, 52, 53, 57, 48, 52, 53, 50, 51, 53, 51, 54, 48, 50, 56, 55, \
-								52, 55, 49, 51, 53, 50, 54, 54, 50, 52, 57, 55, 55, 53, 55, 50, 52, \
-								55, 48, 57, 51, 54, 57, 57, 57, 53, 57, 53, 55, 52, 57, 54, 54, 57, \
-								54, 55, 54, 50, 55, 55, 50, 52, 48, 55, 54, 54, 51, 48, 51, 53, 51, \
-								53, 52, 55, 53, 57, 52, 53, 55, 49, 51, 56, 50, 49, 55, 56, 53, 50, \
-								53, 49, 54, 54, 52, 50, 55, 52, 50, 55, 52, 54, 54, 51, 57, 49, 57, \
-								51, 50, 48, 48, 51, 49, 96, 49, 48, 48, 46, 102, 2, 115, 8, 82, 97, \
-								116, 105, 111, 110, 97, 108, 67, 252, 73, 26, 51, 51, 51, 51, 51, 51, \
-								51, 51, 51, 51, 51, 51, 51, 51, 52, 52, 52, 51, 51, 51, 51, 51, 51, \
-								51, 51, 53 };
-		Parser parser(test);
-		parser.parseExpr();
-
-		return std::move(parser.tokens);
-	}
 
 } // namespace WXF_PARSER
