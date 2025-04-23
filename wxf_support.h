@@ -103,7 +103,7 @@ namespace WXF_PARSER {
 
 	struct WXF_TOKEN {
 		WXF_HEAD type;
-		int rank;
+		int rank = 0;
 		union { 
 			// for number, string, symbol, bigint
 			uint64_t length;
@@ -121,6 +121,12 @@ namespace WXF_PARSER {
 		};
 
 		WXF_TOKEN() : type(WXF_HEAD::i8), rank(0), length(0), i(0) {}
+
+		uint64_t dim(int i) const {
+			if (rank > 0) 
+				return dimensions[i + 2];
+			return length;
+		}
 
 		void clear() {
 			if (type == WXF_HEAD::symbol 
@@ -618,6 +624,14 @@ namespace WXF_PARSER {
 				children.reset();
 			}
 		}
+
+		bool has_children() const {
+			return size > 0;
+		}
+
+		const ExprNode& operator[] (size_t i) const {
+			return children[i];
+		}
 	};
 
 	//// debug only, print the small tree 
@@ -661,6 +675,10 @@ namespace WXF_PARSER {
 				other.root.children = nullptr;
 			}
 			return *this;
+		}
+
+		const WXF_TOKEN& operator[](const ExprNode& node) const {
+			return tokens[node.index];
 		}
 
 		//void plot() const {
