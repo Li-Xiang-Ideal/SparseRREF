@@ -59,6 +59,10 @@ namespace Flint {
 		template <signed_builtin_integral T> int_t(const T a) { fmpz_init(_data); fmpz_set_si(_data, a); }
 		template <unsigned_builtin_integral T> int_t(const T a) { fmpz_init(_data); fmpz_set_ui(_data, a); }
 
+		bool fits_si() const { return fmpz_fits_si(_data); }
+		slong to_si() const { return fmpz_get_si(_data); }
+		ulong to_ui() const { return fmpz_get_ui(_data); }
+
 		void set_str(const std::string& str, int base = 10) { fmpz_set_str(_data, str.c_str(), base); }
 		void set_str(const char* str, int base = 10) { fmpz_set_str(_data, str, base); }
 		explicit int_t(const std::string& str) { set_str(str); }

@@ -101,7 +101,7 @@ namespace WXF_PARSER {
 		}
 	}
 
-	struct WXF_TOKEN {
+	struct TOKEN {
 		WXF_HEAD type;
 		int rank = 0;
 		union { 
@@ -120,7 +120,7 @@ namespace WXF_PARSER {
 			char* str; 
 		};
 
-		WXF_TOKEN() : type(WXF_HEAD::i8), rank(0), length(0), i(0) {}
+		TOKEN() : type(WXF_HEAD::i8), rank(0), length(0), i(0) {}
 
 		uint64_t dim(int i) const {
 			if (rank > 0) 
@@ -143,14 +143,14 @@ namespace WXF_PARSER {
 			// no need to clear i, length, rank, type, as they are just basic types
 		}
 
-		~WXF_TOKEN() { clear(); }
+		~TOKEN() { clear(); }
 
 		// disable copy constructor and copy assignment operator
-		WXF_TOKEN(const WXF_TOKEN&) = delete; 
-		WXF_TOKEN& operator=(const WXF_TOKEN&) = delete; 
+		TOKEN(const TOKEN&) = delete; 
+		TOKEN& operator=(const TOKEN&) = delete; 
 
 		// move constructor
-		WXF_TOKEN(WXF_TOKEN&& other) noexcept : type(other.type), rank(other.rank), length(other.length), i(other.i) {
+		TOKEN(TOKEN&& other) noexcept : type(other.type), rank(other.rank), length(other.length), i(other.i) {
 			if (type == WXF_HEAD::symbol 
 				|| type == WXF_HEAD::bigint 
 				|| type == WXF_HEAD::bigreal
@@ -274,12 +274,24 @@ namespace WXF_PARSER {
 
 	};
 
+	std::vector<uint8_t> toVarint(const uint64_t val) {
+		std::vector<uint8_t> bytes;
+		auto tmp_val = val;
+		bytes.reserve(10); // 10 bytes is the maximum length of varint
+		while (tmp_val > 0) {
+			uint8_t byte = tmp_val & 127;
+			tmp_val >>= 7;
+			if (tmp_val > 0) byte |= 128; // set the continuation bit
+			bytes.push_back(byte);
+		}
+		return bytes;
+	}
 
 	struct Parser {
 		const uint8_t* buffer; // the buffer to read
 		size_t pos = 0;
 		size_t size = 0; // the size of the buffer
-		std::vector<WXF_TOKEN> tokens; // the tokens read from the buffer
+		std::vector<TOKEN> tokens; // the tokens read from the buffer
 
 		Parser(const uint8_t* buf, const size_t len) : buffer(buf), pos(0), size(len) {}
 		Parser(const std::vector<uint8_t>& buf) : buffer(buf.data()), pos(0), size(buf.size()) {}
@@ -363,8 +375,8 @@ namespace WXF_PARSER {
 
 		// machine number, val (length is given by the sizeof(val))
 		template <typename T>
-		WXF_TOKEN makeNumber() {
-			WXF_TOKEN node;
+		TOKEN makeNumber() {
+			TOKEN node;
 			node.length = 0;
 
 			T val;
@@ -400,8 +412,8 @@ namespace WXF_PARSER {
 		}
 
 		// symbol/bigint/string/binary_string, length, str
-		WXF_TOKEN makeString(WXF_HEAD type) {
-			WXF_TOKEN node;
+		TOKEN makeString(WXF_HEAD type) {
+			TOKEN node;
 			node.type = type;
 			node.length = ReadVarint();
 			node.str = (char*)malloc((node.length + 1) * sizeof(char)); // +1 for null terminator
@@ -412,15 +424,15 @@ namespace WXF_PARSER {
 		}
 
 		// func/association, length
-		WXF_TOKEN makeFunction(WXF_HEAD type) {
-			WXF_TOKEN node;
+		TOKEN makeFunction(WXF_HEAD type) {
+			TOKEN node;
 			node.type = type;
 			node.length = ReadVarint();
 			return node;
 		}
 
-		WXF_TOKEN makeRule(WXF_HEAD type) {
-			WXF_TOKEN node;
+		TOKEN makeRule(WXF_HEAD type) {
+			TOKEN node;
 			node.type = type;
 			node.length = 2;
 			return node;
@@ -434,11 +446,11 @@ namespace WXF_PARSER {
 		// 51 complex float 52 complex double
 		// we only support int8_t, int16_t, int32_t, int64_t, float, double
 
-		WXF_TOKEN makeArray() {
+		TOKEN makeArray() {
 			auto num_type = (int)ReadVarint();
 			if (num_type > 50) {
 				std::cerr << "Unsupported type: " << num_type << std::endl;
-				return WXF_TOKEN();
+				return TOKEN();
 			}
 			size_t size_of_type;
 			if (num_type >= 34 && num_type <= 52) {
@@ -448,7 +460,7 @@ namespace WXF_PARSER {
 				size_of_type = (size_t)1 << num_type;
 			}
 
-			WXF_TOKEN node;
+			TOKEN node;
 			node.type = WXF_HEAD::array;
 			node.rank = (int)ReadVarint();
 			node.dimensions = (uint64_t*)malloc((node.rank + 2) * sizeof(uint64_t));
@@ -498,11 +510,11 @@ namespace WXF_PARSER {
 		// 34 float         35 double
 		// 51 complex float 52 complex double
 		// we only support int8_t, int16_t, int32_t, int64_t, float, double
-		WXF_TOKEN makeNArray() {
+		TOKEN makeNArray() {
 			auto num_type = (int)ReadVarint();
 			if (num_type > 50) {
 				std::cerr << "Unsupported type: " << num_type << std::endl;
-				return WXF_TOKEN();
+				return TOKEN();
 			}
 
 			size_t size_of_type;
@@ -516,7 +528,7 @@ namespace WXF_PARSER {
 				size_of_type = (size_t)1 << num_type;
 			}
 
-			WXF_TOKEN node;
+			TOKEN node;
 			node.type = WXF_HEAD::narray;
 			node.rank = (int)ReadVarint();
 			node.dimensions = (uint64_t*)malloc((node.rank + 2) * sizeof(uint64_t));
@@ -647,7 +659,7 @@ namespace WXF_PARSER {
 	//}
 
 	struct ExprTree {
-		std::vector<WXF_TOKEN> tokens;
+		std::vector<TOKEN> tokens;
 		ExprNode root;
 
 		ExprTree() {} // default constructor
@@ -677,7 +689,7 @@ namespace WXF_PARSER {
 			return *this;
 		}
 
-		const WXF_TOKEN& operator[](const ExprNode& node) const {
+		const TOKEN& operator[](const ExprNode& node) const {
 			return tokens[node.index];
 		}
 
