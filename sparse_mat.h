@@ -121,6 +121,34 @@ namespace SparseRREF {
 			}
 			return result;
 		}
+
+		template <typename U = T> requires std::is_same_v<U, rat_t>
+		ulong height_bits() const {
+			ulong max_height = 0;
+			for (size_t i = 0; i < nrow; i++) {
+				for (size_t j = 0; j < rows[i].nnz(); j++) {
+					auto rr = rows[i][j].height_bits();
+					if (rr > max_height)
+						max_height = rr;
+				}
+			}
+
+			return max_height;
+		}
+
+		// denominator bits
+		template <typename U = T> requires std::is_same_v<U, rat_t>
+		ulong den_bits() const {
+			int_t den = 1;
+			for (size_t i = 0; i < nrow; i++) {
+				for (size_t j = 0; j < rows[i].nnz(); j++) {
+					if (rows[i][j] != 0 && !(rows[i][j].is_den_one()))
+						den = LCM(den, rows[i][j].den());
+				}
+			}
+
+			return den.bits();
+		}
 	};
 
 	template <typename T>
@@ -1037,9 +1065,13 @@ namespace SparseRREF {
 	}
 
 	// TODO: check!!! 
-	// parallel version !!!
-	// output some information !!!
 	// checkrank only used for sparse_mat_inverse
+
+	// TODO: if the height of initial matrix is too large, the result may be wrong,
+	// since it need to more primes to reconstruct the matrix. 
+	// The correct condition: H(d*E)*H(mat)*ncol < product of primes
+	// where H is the height of a matrix, E is the reconstracted rref matrix
+	// d the denominartor of E such that d*E is a integer matrix
 	std::vector<std::vector<std::pair<slong, slong>>> sparse_mat_rref_reconstruct(sparse_mat<rat_t>& mat,
 		rref_option_t opt, const bool checkrank = false) {
 		std::vector<std::vector<std::pair<slong, slong>>> pivots;
@@ -1059,6 +1091,8 @@ namespace SparseRREF {
 			matul[i] = mat[i] % F->mod;
 			});
 		pool.wait();
+
+		ulong mat_height_bits = mat.height_bits() + 64 - std::countl_zero(mat.ncol);
 
 		pivots = sparse_mat_rref_c(matul, F, opt);
 
@@ -1090,13 +1124,13 @@ namespace SparseRREF {
 			for (size_t j = 0; j < nnz; j++) {
 				matq[i](j) = matul[i](j);
 				int_t mod1 = matul[i][j];
-				if (isok)
+				if (isok) 
 					isok = rational_reconstruct(matq[i][j], mod1, mod);
 			}
 		}
 
 		sparse_mat<int_t> matz(mat.nrow, mat.ncol);
-		if (!isok) {
+		if (!isok || mod.bits() < mat_height_bits) {
 			for (auto i = 0; i < mat.nrow; i++)
 				matz[i] = matul[i];
 		}
@@ -1107,7 +1141,9 @@ namespace SparseRREF {
 			std::cout << std::endl;
 		}
 
-		while (!isok) {
+		ulong old_height = matq.height_bits();
+
+		while (!isok || mod.bits() < mat_height_bits) {
 			isok = true;
 			prime = n_nextprime(prime, 0);
 			if (verbose)
@@ -1137,12 +1173,17 @@ namespace SparseRREF {
 				isok = isok && f;
 
 			mod = mod1;
+
+			if (matq.height_bits() > old_height) {
+				isok = false;
+				old_height = matq.height_bits();
+			}
 		}
 		opt->verbose = verbose;
 
 		if (opt->verbose) {
 			std::cout << "** Reconstruct success! Using mod ~ "
-				<< "2^" << fmpz_clog_ui(mod._data, 2) << ".                " << std::endl;
+				<< "2^" << mod.bits() << ".                " << std::endl;
 		}
 
 		mat = matq;
@@ -1403,9 +1444,10 @@ namespace SparseRREF {
 			+ tree[last_node[1][0]].dim(0));
 		std::vector<slong> colindex(tree[last_node[1][1]].i_arr, tree[last_node[1][1]].i_arr 
 			+ tree[last_node[1][1]].dim(0));
-		
+	
 		// last_node[2] is vals
 		std::vector<T> vals;
+		T val;
 		if (tree[last_node[2]].type == WXF_PARSER::array ||
 			tree[last_node[2]].type == WXF_PARSER::narray) {
 
@@ -1421,57 +1463,36 @@ namespace SparseRREF {
 			auto nnz = last_node[2].size;
 			vals.resize(nnz);
 
-			std::function<int_t(const WXF_PARSER::TOKEN&)> parser_integer = 
-				[](const WXF_PARSER::TOKEN& token) {
-				int_t result;
-				switch (token.type) {
-				case WXF_PARSER::i8:
-				case WXF_PARSER::i16:
-				case WXF_PARSER::i32:
-				case WXF_PARSER::i64:
-					result = token.i;
-					break;
-				case WXF_PARSER::bigint:
-					result = int_t(token.str);
-					break;
-				default:
-					std::cerr << "not a integer" << std::endl;
-					break;
-				}
-				return result;
-				};
-
 			for (size_t i = 0; i < nnz; i++) {
 				auto& val_node = last_node[2][i];
 				auto& token = tree[val_node];
 
-				switch (token.type) {
+				switch (tree[val_node].type) {
 				case WXF_PARSER::i8:
 				case WXF_PARSER::i16:
 				case WXF_PARSER::i32:
 				case WXF_PARSER::i64:
-					vals[i] = token.i;
+					val = token.i;
 					break;
-				case WXF_PARSER::bigint: {
-					if constexpr (std::is_same_v<T, rat_t>) {
-						vals[i] = rat_t(token.str);
+				case WXF_PARSER::bigint:
+					if (std::is_same_v<T, rat_t>) {
+						val = token.toInteger();
 					}
-					else if constexpr (std::is_same_v<T, ulong>) {
-						vals[i] = int_t(token.str) % F->mod;
+					else if (std::is_same_v<T, ulong>) {
+						val = int_t(token.str) % F->mod;
 					}
 					break;
-				}
-				case WXF_PARSER::symbol: {
+				case WXF_PARSER::symbol:
 					tmp_str = token.str;
 					if (tmp_str == "Rational") {
-						int_t num = parser_integer(tree[val_node[0]]);
-						int_t den = parser_integer(tree[val_node[1]]);
-						if constexpr (std::is_same_v<T, rat_t>) {
-							vals[i] = num / den;
+						int_t n_1 = tree[val_node[0]].toInteger();
+						int_t d_1 = tree[val_node[1]].toInteger();
+						rat_t tmp_rat = n_1 / d_1;
+						if (std::is_same_v<T, rat_t>) {
+							val = tmp_rat;
 						}
-						else if constexpr (std::is_same_v<T, ulong>) {
-							rat_t tmp_rat = num / den;
-							vals[i] = tmp_rat % F->mod;
+						else if (std::is_same_v<T, ulong>) {
+							val = tmp_rat % F->mod;
 						}
 					}
 					else {
@@ -1480,13 +1501,13 @@ namespace SparseRREF {
 						return sparse_mat<T>();
 					}
 					break;
-				}
-				default: {
+				default:
 					std::cerr << "Error: sparse_mat_read: ";
 					std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
 					return sparse_mat<T>();
+					break;
 				}
-				}
+				vals[i] = val;
 			}
 		}
 
@@ -1511,7 +1532,7 @@ namespace SparseRREF {
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	// TODO: more check!!!
 	template <typename T>
-	std::vector<uint8_t> sparse_mat_write_wxf(const sparse_mat<T>& mat) {
+	std::vector<uint8_t> sparse_mat_write_wxf(const sparse_mat<T>& mat, bool include_head = true) {
 		std::vector<uint8_t> buffer;
 		std::vector<uint8_t> short_buffer;
 		short_buffer.reserve(16);
@@ -1562,7 +1583,9 @@ namespace SparseRREF {
 			};
 
 		// header
-		buffer.push_back(56); buffer.push_back(58); 
+		if (include_head) {
+			buffer.push_back(56); buffer.push_back(58);
+		}
 		// function, 4, "SparseArray"
 		push_function("SparseArray", 4);
 		// symbol, 9, "Automatic"

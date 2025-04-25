@@ -167,104 +167,105 @@ namespace WXF_PARSER {
 			}
 		}
 
-		void print() const {
+		template<typename T>
+		void print(T& ss) const {
 			auto& token = *this;
 			switch (token.type) {
 				case WXF_HEAD::i8:
-					std::cout << "i8: " << token.i << std::endl;
+					ss << "i8: " << token.i << std::endl;
 					break;
 				case WXF_HEAD::i16:
-					std::cout << "i16: " << token.i << std::endl;
+					ss << "i16: " << token.i << std::endl;
 					break;
 				case WXF_HEAD::i32:
-					std::cout << "i32: " << token.i << std::endl;
+					ss << "i32: " << token.i << std::endl;
 					break;
 				case WXF_HEAD::i64:
-					std::cout << "i64: " << token.i << std::endl;
+					ss << "i64: " << token.i << std::endl;
 					break;
 				case WXF_HEAD::f64:
-					std::cout << "f64: " << token.d << std::endl;
+					ss << "f64: " << token.d << std::endl;
 					break;
 				case WXF_HEAD::symbol:
-					std::cout << "symbol: " << token.str << std::endl;
+					ss << "symbol: " << token.str << std::endl;
 					break;
 				case WXF_HEAD::bigint:
-					std::cout << "bigint: " << token.str << std::endl;
+					ss << "bigint: " << token.str << std::endl;
 					break;
 				case WXF_HEAD::bigreal:
-					std::cout << "bigreal: " << token.str << std::endl;
+					ss << "bigreal: " << token.str << std::endl;
 					break;
 				case WXF_HEAD::string:
-					std::cout << "string: " << token.str << std::endl;
+					ss << "string: " << token.str << std::endl;
 					break;
 				case WXF_HEAD::binary_string:
-					std::cout << "binary_string: " << token.str << std::endl;
+					ss << "binary_string: " << token.str << std::endl;
 					break;
 				case WXF_HEAD::func:
-					std::cout << "func: " << token.length << " vars" << std::endl;
+					ss << "func: " << token.length << " vars" << std::endl;
 					break;
 				case WXF_HEAD::association:
-					std::cout << "association: " << token.length << " rules" << std::endl;
+					ss << "association: " << token.length << " rules" << std::endl;
 					break;
 				case WXF_HEAD::delay_rule:
-					std::cout << "delay_rule: " << token.length << std::endl;
+					ss << "delay_rule: " << token.length << std::endl;
 					break;
 				case WXF_HEAD::rule:
-					std::cout << "rule: " << token.length << std::endl;
+					ss << "rule: " << token.length << std::endl;
 					break;
 				case WXF_HEAD::array: {
-					std::cout << "array: rank = " << token.rank << ", dimensions = ";
+					ss << "array: rank = " << token.rank << ", dimensions = ";
 					size_t all_len = token.dimensions[1];
 					for (int i = 0; i < token.rank; i++) {
-						std::cout << token.dimensions[i + 2] << " ";
+						ss << token.dimensions[i + 2] << " ";
 					}
-					std::cout << std::endl;
+					ss << std::endl;
 
 					auto num_type = token.dimensions[0];
-					std::cout << "data: ";
+					ss << "data: ";
 					if (num_type < 4) {
 						for (size_t i = 0; i < all_len; i++) {
-							std::cout << token.i_arr[i] << " ";
+							ss << token.i_arr[i] << " ";
 						}
 					}
 					else if (num_type >= 34 && num_type <= 35) {
 						for (size_t i = 0; i < all_len; i++) {
-							std::cout << token.d_arr[i] << " ";
+							ss << token.d_arr[i] << " ";
 						}
 					}
 					else {
 						std::cerr << "Unknown type" << std::endl;
 					}
-					std::cout << std::endl;
+					ss << std::endl;
 					break;
 				}
 				case WXF_HEAD::narray: {
-					std::cout << "narray: rank = " << token.rank << ", dimensions = ";
+					ss << "narray: rank = " << token.rank << ", dimensions = ";
 					for (int i = 0; i < token.rank; i++) {
-						std::cout << token.dimensions[i + 2] << " ";
+						ss << token.dimensions[i + 2] << " ";
 					}
-					std::cout << std::endl;
+					ss << std::endl;
 
 					size_t num_type = token.dimensions[0];
 					size_t all_len = token.dimensions[1];
 
-					std::cout << "data: ";
+					ss << "data: ";
 					if (num_type >= 16 && num_type < 20) {
 						for (size_t i = 0; i < all_len; i++)
-							std::cout << token.u_arr[i] << " ";
+							ss << token.u_arr[i] << " ";
 					}
 					else if (num_type < 4) {
 						for (size_t i = 0; i < all_len; i++)
-							std::cout << token.i_arr[i] << " ";
+							ss << token.i_arr[i] << " ";
 					}
 					else if (num_type >= 34 && num_type <= 35) {
 						for (size_t i = 0; i < all_len; i++)
-							std::cout << token.d_arr[i] << " ";
+							ss << token.d_arr[i] << " ";
 					}
 					else {
 						std::cerr << "Unknown type" << std::endl;
 					}
-					std::cout << std::endl;
+					ss << std::endl;
 					break;
 				}
 				default:
@@ -272,6 +273,24 @@ namespace WXF_PARSER {
 			}
 		}
 
+		void print() const {
+			print(std::cout);
+		}
+
+		Flint::int_t toInteger() const {
+			switch (type) {
+			case WXF_PARSER::i8:
+			case WXF_PARSER::i16:
+			case WXF_PARSER::i32:
+			case WXF_PARSER::i64:
+				return Flint::int_t(i);
+			case WXF_PARSER::bigint:
+				return Flint::int_t(str);
+			default:
+				std::cerr << "not a integer" << std::endl;
+				return Flint::int_t(0);
+			}
+		}
 	};
 
 	std::vector<uint8_t> toVarint(const uint64_t val) {
@@ -286,6 +305,8 @@ namespace WXF_PARSER {
 		}
 		return bytes;
 	}
+
+
 
 	struct Parser {
 		const uint8_t* buffer; // the buffer to read
@@ -777,6 +798,12 @@ namespace WXF_PARSER {
 		}
 
 		return tree;
+	}
+
+	ExprTree MakeExprTree(const uint8_t* str, const size_t len) {
+		Parser parser(str, len);
+		parser.parseExpr();
+		return MakeExprTree(parser);
 	}
 
 	ExprTree MakeExprTree(const std::vector<uint8_t>& str) {

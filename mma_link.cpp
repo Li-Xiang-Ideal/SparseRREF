@@ -16,33 +16,45 @@
 
     ```mathematica
 
-    rreflib = LibraryFunctionLoad[
-        "rreflib.dll", "modrref",
-        {{LibraryDataType[SparseArray],
-          "Constant"}, {Integer}, {Integer}, {Integer}}, {LibraryDataType[SparseArray],
-          "Shared"}
-    ];
+    modrreflib = 
+    LibraryFunctionLoad[
+        "rreflib.dll",
+        "modrref", {{LibraryDataType[SparseArray], 
+          "Constant"}, {Integer}, {Integer}, {Integer}}, {LibraryDataType[
+          SparseArray], Automatic}];
+
+    ratrreflib = LibraryFunctionLoad[
+        "rreflib.dll",
+        "rational_rref", {{LibraryDataType[ByteArray],
+          "Constant"}, {Integer}, {Integer}}, {LibraryDataType[ByteArray],
+         Automatic}];
     
     (* the first matrix is the result of rref, and the second is its kernel *)
-    modprref[mat_SparseArray, p_Integer, nthread_ : 1, method_ : 1] := 
-        With[{joinedmat = rreflib[mat, p, nthread, method]},
-         {joinedmat[[;; Length@mat]], joinedmat[[Length@mat + 1 ;;]]}];
+    modprref[mat_SparseArray, p_Integer, method_ : 1, nthread_ : 1] := 
+        With[{joinedmat = modrreflib[mat, p, method, nthread]},
+         If[method =!= 0, {joinedmat[[;; Length@mat]], 
+           joinedmat[[Length@mat + 1 ;;]]}, joinedmat]];
+
+    ratrref[mat_SparseArray, method_ : 1, nthread_ : 1] := 
+        BinaryDeserialize[ratrreflib[BinarySerialize[mat], method, nthread]];
 
     ```
 */
 
 #include <string>
 #include "sparse_mat.h"
+#include "wxf_support.h"
 #include "mma/WolframLibrary.h"
 #include "mma/WolframSparseLibrary.h"
+#include "mma/WolframNumericArrayLibrary.h"
 
-using namespace sparse_rref;
+using namespace SparseRREF;
 
 EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args, MArgument Res) {
     auto mat = MArgument_getMSparseArray(Args[0]);
     auto p = MArgument_getInteger(Args[1]);
-    auto nthreads = MArgument_getInteger(Args[2]);
-    auto method = MArgument_getInteger(Args[3]);
+	auto output_kernel = MArgument_getInteger(Args[2]);
+    auto nthreads = MArgument_getInteger(Args[3]);
 
     auto sf = ld->sparseLibraryFunctions;
 
@@ -89,9 +101,12 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
     field_init(F, FIELD_Fp, p);
 
     auto pivots = sparse_mat_rref(A, F, opt);
-    auto K = sparse_mat_rref_kernel(A, pivots, F, opt);
-    auto len = K.nrow;
-    auto rank = pivots.size();
+    sparse_mat<ulong> K;
+    size_t len = 0;
+    if (output_kernel) {
+        K = sparse_mat_rref_kernel(A, pivots, F, opt);
+        len = K.nrow;
+    } 
     
 	if (len == 0) 
         nnz = sparse_mat_nnz(A);
@@ -148,4 +163,82 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
     // MArgument_setMTensor(Res, pos);
 
     return LIBRARY_NO_ERROR;
+}
+
+EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+    auto na_in = MArgument_getMNumericArray(Args[0]);
+	auto output_kernel = MArgument_getInteger(Args[1]);
+    auto nthreads = MArgument_getInteger(Args[2]);
+
+    numericarray_data_t type = MNumericArray_Type_Undef;
+    auto naFuns = ld->numericarrayLibraryFunctions;
+
+	type = naFuns->MNumericArray_getType(na_in);
+    if (type != MNumericArray_Type_UBit8)
+		return LIBRARY_FUNCTION_ERROR;
+
+	auto in_str = (uint8_t*)(naFuns->MNumericArray_getData(na_in));
+	auto length = naFuns->MNumericArray_getFlattenedLength(na_in);
+
+    std::vector<uint8_t> res_str;
+	uint8_t* out_str = nullptr;
+	mint out_len = 0;
+    auto err = LIBRARY_NO_ERROR;
+    MNumericArray na_out = NULL;
+    {
+        field_t F;
+        field_init(F, FIELD_QQ, 1);
+
+        WXF_PARSER::ExprTree expr_tree;
+        expr_tree = WXF_PARSER::MakeExprTree(in_str, (size_t)length);
+        auto mat = sparse_mat_read_wxf<rat_t>(expr_tree, F);
+
+        rref_option_t opt;
+        opt->pool.reset(nthreads);
+
+        auto pivots = sparse_mat_rref_reconstruct(mat, opt);
+
+        sparse_mat<rat_t> K;
+        size_t len = 0;
+        if (output_kernel) {
+            K = sparse_mat_rref_kernel(mat, pivots, F, opt);
+            len = K.nrow;
+        }
+
+        {
+            std::vector<uint8_t> m_str, K_str;
+            if (len == 0) {
+                res_str = sparse_mat_write_wxf(mat, true);
+            }
+            else {
+                m_str = sparse_mat_write_wxf(mat, false);
+                K_str = sparse_mat_write_wxf(K, false);
+                res_str.push_back(56); res_str.push_back(58);
+                // function, List, 2
+                res_str.push_back(WXF_PARSER::WXF_HEAD::func);
+                res_str.push_back(2);
+                res_str.push_back(WXF_PARSER::WXF_HEAD::symbol);
+                res_str.push_back(4); // length of List
+                std::string name = "List";
+                res_str.insert(res_str.end(), name.begin(), name.end());
+                res_str.insert(res_str.end(), m_str.begin(), m_str.end());
+                res_str.insert(res_str.end(), K_str.begin(), K_str.end());
+            }
+        }
+
+        // output the result(bitarray)
+        out_len = res_str.size();
+        auto err = naFuns->MNumericArray_new(type, 1, &out_len, &na_out);
+
+        if (err)
+            return LIBRARY_FUNCTION_ERROR;
+
+        out_str = (uint8_t*)(naFuns->MNumericArray_getData(na_out));
+    }
+
+	std::memcpy(out_str, res_str.data(), res_str.size() * sizeof(uint8_t));
+
+	MArgument_setMNumericArray(Res, na_out);
+
+    return err;
 }
