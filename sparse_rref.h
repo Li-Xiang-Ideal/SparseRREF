@@ -23,6 +23,7 @@
 #include <list>
 #include <numeric>
 #include <queue>
+#include <random>
 #include <ranges>
 #include <set>
 #include <span>
@@ -34,22 +35,25 @@
 
 #include "thread_pool.hpp"
 
-// flint 
-#include "flint/nmod.h"
-#include "flint/ulong_extras.h"
-
 #ifdef NULL
 #undef NULL
 #endif
 #define NULL nullptr
 
 namespace SparseRREF {
+	// version
+	static const char version[] = "v0.3.1";
+
 	enum SPARSE_FILE_TYPE {
 		SPARSE_FILE_TYPE_PLAIN,
 		SPARSE_FILE_TYPE_SMS,
 		SPARSE_FILE_TYPE_MTX,
+		SPARSE_FILE_TYPE_WXF,
 		SPARSE_FILE_TYPE_BIN
 	};
+
+	using slong = long long;
+	using ulong = unsigned long long;
 
 	// Memory management
 	template <typename T>
@@ -93,9 +97,6 @@ namespace SparseRREF {
 	};
 	using rref_option_t = rref_option[1];
 
-	// version
-	constexpr static const char version[] = "v0.3.1";
-
 	inline size_t ctz(ulong x) {
 		return std::countr_zero(x);
 	}
@@ -126,8 +127,8 @@ namespace SparseRREF {
 		return result;
 	}
 
-	unsigned long long string_to_ull(std::string_view sv) {
-		unsigned long long result;
+	ulong string_to_ull(std::string_view sv) {
+		ulong result;
 		auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 		if (ec != std::errc()) {
 			throw std::runtime_error("Failed to parse number");
@@ -220,7 +221,7 @@ namespace SparseRREF {
 
 	// uset
 	struct uset {
-		constexpr static size_t bitset_size = std::numeric_limits<unsigned long long>::digits; // 64 or 32
+		constexpr static size_t bitset_size = std::numeric_limits<ulong>::digits; // 64 or 32
 		std::vector<std::bitset<bitset_size>> data;
 
 		uset() {}
@@ -279,12 +280,6 @@ namespace SparseRREF {
 			tmp.reserve(bitset_size);
 			for (size_t i = 0; i < data.size(); i++) {
 				if (data[i].any()) {
-					//// naive version
-					// for (size_t j = 0; j < bitset_size; j++) {
-					// 	if (data[i].test(j))
-					// 		result.push_back(i * bitset_size + j);
-					// }
-
 					tmp.clear();
 					ulong c = data[i].to_ullong();
 
@@ -311,7 +306,7 @@ namespace SparseRREF {
 		}
 	};
 
-	template <typename T> inline T* binarysearch(T* begin, T* end, T val) {
+	template <typename T> inline T* binary_search(T* begin, T* end, T val) {
 		auto ptr = std::lower_bound(begin, end, val);
 		if (ptr == end || *ptr == val)
 			return ptr;
@@ -337,7 +332,7 @@ namespace SparseRREF {
 		return begin + rank * left;
 	}
 
-	template <typename T> inline T* binarysearch(T* begin, T* end, uint16_t rank, T* val) {
+	template <typename T> inline T* binary_search(T* begin, T* end, uint16_t rank, T* val) {
 		auto ptr = SparseRREF::lower_bound(begin, end, rank, val);
 		if (ptr == end || std::equal(ptr, ptr + rank, val))
 			return ptr;
@@ -360,6 +355,16 @@ namespace SparseRREF {
 		return result;
 	}
 
+	std::vector<size_t> random_perm(size_t n) {
+		auto permutation = perm_init(n);
+
+		std::random_device rd;
+		std::mt19937 g(rd());
+
+		std::shuffle(permutation.begin(), permutation.end(), g);
+		return permutation;
+	}
+
 	bool is_identity_perm(const std::vector<size_t>& perm) {
 		size_t n = perm.size();
 		for (size_t i = 0; i < n; i++) {
@@ -369,48 +374,78 @@ namespace SparseRREF {
 		return true;
 	}
 
+	//template <typename T>
+	//void permute(const std::vector<size_t>& Pt, T* A, size_t block_size = 1) {
+	//	size_t n = Pt.size();
+	//	std::vector<bool> visited(n, false);
+	//	auto P = perm_inverse(Pt);
+
+	//	for (size_t i = 0; i < n; i++) {
+	//		if (!visited[i]) {
+	//			size_t current = i;
+	//			T* temp = &(A[i * block_size]);
+
+	//			do {
+	//				int next = P[current];
+	//				for (size_t j = 0; j < block_size; j++)
+	//					std::swap(A[next * block_size + j], temp[j]);
+	//				visited[current] = true;
+	//				current = next;
+	//			} while (current != i);
+	//		}
+	//	}
+	//}
+
+	//template <typename T>
+	//void permute(const std::vector<size_t>& Pt, std::vector<T>& A, size_t block_size = 1) {
+	//	permute(Pt, A.data(), block_size);
+	//}
+
 	template <typename T>
-	void permute(const std::vector<size_t>& Pt, std::vector<T>& A, size_t block_size = 1) {
-		size_t n = Pt.size();
-		std::vector<bool> visited(n, false);
-		auto P = perm_inverse(Pt);
+	void permute(const std::vector<size_t>& P, T* A, size_t block_size = 1) {
+		std::vector<bool> visited(P.size(), false);
 
-		for (size_t i = 0; i < n; i++) {
-			if (!visited[i]) {
-				size_t current = i;
-				T* temp = &(A[i * block_size]);
+		auto permute_it = [&](auto& temp_block) {
+			for (size_t i = 0; i < P.size(); ++i) {
+				if (visited[i] || P[i] == i)
+					continue;
 
-				do {
-					int next = P[current];
-					for (size_t j = 0; j < block_size; j++)
-						std::swap(A[next * block_size + j], temp[j]);
-					visited[current] = true;
-					current = next;
-				} while (current != i);
+				size_t j = i;
+				for (size_t k = 0; k < block_size; ++k) 
+					temp_block[k] = std::move(A[j * block_size + k]);
+
+				while (!visited[j]) {
+					visited[j] = true;
+					size_t k = P[j];
+
+					if (k == i) {
+						for (size_t m = 0; m < block_size; ++m)
+							A[j * block_size + m] = std::move(temp_block[m]);
+						break;
+					}
+
+					for (size_t m = 0; m < block_size; ++m)
+						A[j * block_size + m] = std::move(A[k * block_size + m]);
+					j = k;
+				}
 			}
+			};
+
+		if (block_size < 32) {
+			// Use a fixed-size array for small block sizes
+			T temp_block[32];
+			permute_it(temp_block);
 		}
+		else {
+			std::vector<T> temp_block(block_size);
+			permute_it(temp_block);
+		}
+
 	}
 
 	template <typename T>
-	void permute(const std::vector<size_t>& Pt, T* A, size_t block_size = 1) {
-		size_t n = Pt.size();
-		std::vector<bool> visited(n, false);
-		auto P = perm_inverse(Pt);
-
-		for (size_t i = 0; i < n; i++) {
-			if (!visited[i]) {
-				size_t current = i;
-				T* temp = &(A[i * block_size]);
-
-				do {
-					int next = P[current];
-					for (size_t j = 0; j < block_size; j++)
-						std::swap(A[next * block_size + j], temp[j]);
-					visited[current] = true;
-					current = next;
-				} while (current != i);
-			}
-		}
+	void permute(const std::vector<size_t>& P, std::vector<T>& A, size_t block_size = 1) {
+		permute(P, A.data(), block_size);
 	}
 
 	inline std::vector<size_t> swap_perm(size_t a, size_t b, size_t n) {
@@ -421,83 +456,6 @@ namespace SparseRREF {
 		perm[b] = a;
 		return perm;
 	}
-
-	// LockFreeQueue
-	template <typename T>
-	class LockFreeQueue {
-	private:
-		struct Node {
-			std::shared_ptr<T> data;
-			std::atomic<Node*> next;
-
-			Node(T const& value) : data(std::make_shared<T>(value)), next(nullptr) {}
-		};
-
-		std::atomic<Node*> head;
-		std::atomic<Node*> tail;
-
-	public:
-		LockFreeQueue() {
-			Node* dummy = new Node(T());  
-			head.store(dummy);
-			tail.store(dummy);
-		}
-
-		~LockFreeQueue() {
-			while (Node* old_head = head.load()) {
-				head.store(old_head->next);
-				delete old_head;
-			}
-		}
-
-		void enqueue(T const& value) {
-			Node* new_node = new Node(value);
-			Node* old_tail = tail.load();
-			Node* null_ptr = nullptr;
-
-			while (true) {
-				Node* old_next = old_tail->next.load();
-
-				if (old_next == nullptr) {
-					if (old_tail->next.compare_exchange_weak(null_ptr, new_node)) {
-						tail.compare_exchange_weak(old_tail, new_node);
-						break;
-					}
-				}
-				else {
-					tail.compare_exchange_weak(old_tail, old_next);
-				}
-			}
-		}
-
-		std::shared_ptr<T> dequeue() {
-			Node* old_head;
-			Node* old_tail;
-			std::shared_ptr<T> result;
-
-			while (true) {
-				old_head = head.load();
-				old_tail = tail.load();
-				Node* next = old_head->next.load();
-
-				if (old_head == head.load()) {
-					if (old_head == old_tail) {
-						if (next == nullptr) {
-							return std::shared_ptr<T>();  
-						}
-						tail.compare_exchange_weak(old_tail, next);
-					}
-					else {
-						result = next->data;
-						if (head.compare_exchange_weak(old_head, next)) {
-							delete old_head;
-							return result;
-						}
-					}
-				}
-			}
-		}
-	};
 
 } // namespace SparseRREF
 

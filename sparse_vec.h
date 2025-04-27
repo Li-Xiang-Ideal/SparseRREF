@@ -243,28 +243,8 @@ namespace SparseRREF {
 				return indices[a] < indices[b];
 				});
 
-			// apply permutation in-place using cycle swapping
-			auto apply_permutation = [&](auto& data) {
-				std::vector<bool> visited(_nnz, false);
-				for (size_t i = 0; i < _nnz; ++i) {
-					if (visited[i] || perm[i] == i) continue;
-					size_t j = i;
-					auto tmp = std::move(data[i]);
-					while (!visited[j]) {
-						visited[j] = true;
-						size_t k = perm[j];
-						if (k == i) {
-							data[j] = std::move(tmp);
-							break;
-						}
-						data[j] = std::move(data[k]);
-						j = k;
-					}
-				}
-				};
-
-			apply_permutation(indices);
-			apply_permutation(entries);
+			permute(perm, indices);
+			permute(perm, entries);
 		}
 
 		void compress() {
@@ -378,7 +358,7 @@ namespace SparseRREF {
 			return NULL;
 		index_type* ptr;
 		if (isbinary)
-			ptr = SparseRREF::binarysearch(vec.indices, vec.indices + vec.nnz(), index);
+			ptr = SparseRREF::binary_search(vec.indices, vec.indices + vec.nnz(), index);
 		else
 			ptr = std::find(vec.indices, vec.indices + vec.nnz(), index);
 		if (ptr == vec.indices + vec.nnz())

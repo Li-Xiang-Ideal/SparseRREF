@@ -19,7 +19,7 @@
 namespace Flint {
 	// for to_string, get_str and output, caution: the buffer is shared
 	// multi-threading should be careful
-	constexpr size_t MAX_STR_LEN = 1024;
+	constexpr size_t MAX_STR_LEN = 256;
 	static char _buf[MAX_STR_LEN];
 
 	// some concepts
