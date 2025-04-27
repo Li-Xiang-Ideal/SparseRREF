@@ -52,9 +52,6 @@ namespace SparseRREF {
 		SPARSE_FILE_TYPE_BIN
 	};
 
-	using slong = long long;
-	using ulong = unsigned long long;
-
 	// Memory management
 	template <typename T>
 	inline T* s_malloc(const size_t size) {
@@ -275,8 +272,8 @@ namespace SparseRREF {
 		}
 
 		std::vector<size_t> nonzero() {
-			std::vector<ulong> result;
-			std::vector<ulong> tmp;
+			std::vector<size_t> result;
+			std::vector<size_t> tmp;
 			tmp.reserve(bitset_size);
 			for (size_t i = 0; i < data.size(); i++) {
 				if (data[i].any()) {
