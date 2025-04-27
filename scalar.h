@@ -109,6 +109,13 @@ namespace Flint {
 		template <unsigned_builtin_integral T> int_t operator%(const T other) const { int_t result; fmpz_mod_ui(&result._data, &_data, other); return result; }
 		ulong operator%(const nmod_t other) const { return fmpz_get_nmod(&_data, other); }
 
+		int_t operator<<(ulong n) const { int_t result; fmpz_mul_2exp(&result._data, &_data, n); return result; }
+		int_t operator>>(ulong n) const { int_t result; fmpz_fdiv_q_2exp(&result._data, &_data, n); return result; }
+		int_t operator&(const int_t& other) const { int_t result; fmpz_and(&result._data, &_data, &other._data); return result; }
+		int_t operator|(const int_t& other) const { int_t result; fmpz_or(&result._data, &_data, &other._data); return result; }
+		int_t operator^(const int_t& other) const { int_t result; fmpz_xor(&result._data, &_data, &other._data); return result; }
+		int_t operator~() const { int_t result; fmpz_complement(&result._data, &_data); return result; }
+
 		void operator+=(const int_t& other) { fmpz_add(&_data, &_data, &other._data); }
 		template <unsigned_builtin_integral T> void operator+=(const T other) { fmpz_add_ui(&_data, &_data, other); }
 		template <signed_builtin_integral T> void operator+=(const T other) { fmpz_add_si(&_data, &_data, other); }
@@ -347,11 +354,24 @@ namespace Flint {
 		return result;
 	}
 
+	std::pair<int_t, int_t> quotient_remainder(const int_t& a, const int_t& b) {
+		int_t q, r;
+		fmpz_fdiv_qr(&q._data, &r._data, &a._data, &b._data);
+		return { q, r };
+	}
+
+
 	// other functions
 
 	int_t factorial(const ulong n) {
 		int_t result;
 		fmpz_fac_ui(&result._data, n);
+		return result;
+	}
+
+	int_t binomial(const ulong a, const ulong b) {
+		int_t result;
+		fmpz_bin_uiui(&result._data, a, b);
 		return result;
 	}
 

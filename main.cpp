@@ -6,11 +6,6 @@
 	License.
 */
 
-// // use mimalloc to replace the default malloc
-// #include <cstdlib>
-// #include "mimalloc-override.h"
-// #include "mimalloc-new-delete.h"
-
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -92,7 +87,6 @@ int main(int argc, char** argv) {
 	}
 
 	ulong prime;
-	nmod_t p;
 	if (program.get<std::string>("--field") == "QQ") {
 		prime = 0;
 		std::cout << "RREF on the rational field. Using the reconstruction method." << std::endl;
@@ -103,19 +97,15 @@ int main(int argc, char** argv) {
 		}
 		else {
 			auto str = program.get<std::string>("--prime");
-			fmpz_t prep;
-			fmpz_init(prep);
-			fmpz_set_str(prep, str.c_str(), 10);
-			int is_max = fmpz_cmp_ui(prep, 1ULL << ((FLINT64) ? 63 : 31));
-			if (is_max > 0) {
+			int_t prep(str);
+			if (prep > (1ULL << ((FLINT64) ? 63 : 31))) {
 				std::cerr << "The prime number is too large: " << str
 					<< std::endl;
 				std::cerr << "It should be less than " << 2 << "^"
 					<< ((FLINT64) ? 63 : 31) << std::endl;
 				std::exit(1);
 			}
-			prime = fmpz_get_ui(prep);
-			fmpz_clear(prep);
+			prime = prep.to_ui();
 			if (!n_is_prime(prime)) {
 				prime = n_nextprime(prime - 1, 0);
 				std::cerr
@@ -123,13 +113,12 @@ int main(int argc, char** argv) {
 					<< std::endl;
 			}
 		}
-		nmod_init(&p, prime);
 		std::cout << "Using prime: " << prime << std::endl;
 	}
 	else {
 		std::cerr << "The field is not valid: "
 			<< program.get<std::string>("--field") << std::endl;
-		std::exit(1);
+		return 1;
 	}
 
 	rref_option_t opt;
@@ -139,7 +128,6 @@ int main(int argc, char** argv) {
 	else
 		opt->pool.reset(nthread);
 
-	auto& pool = opt->pool;
 	std::cout << "using " << nthread << " threads" << std::endl;
 
 	SparseRREF::field_t F;
@@ -157,15 +145,14 @@ int main(int argc, char** argv) {
 	}
 
 	std::ifstream file(filePath);
-	sparse_mat<rat_t> mat_Q;
-	sparse_mat<ulong> mat_Zp;
 
-	if (prime == 0) {
-		mat_Q = sparse_mat_read<rat_t>(file, F);
-	} 
-	else {
-		mat_Zp = sparse_mat_read<ulong>(file, F);
-	}
+	std::variant<sparse_mat<rat_t>, sparse_mat<ulong>> mat;
+
+	if (prime == 0) 
+		mat = sparse_mat_read<rat_t>(file, F);
+	else 
+		mat = sparse_mat_read<ulong>(file, F);
+
 	file.close();
 
 	auto end = SparseRREF::clocknow();
@@ -173,10 +160,10 @@ int main(int argc, char** argv) {
 	printtime("read");
 
 	if (prime == 0) {
-		printmatinfo(mat_Q);
+		printmatinfo(std::get<0>(mat));
 	}
 	else {
-		printmatinfo(mat_Zp);
+		printmatinfo(std::get<1>(mat));
 	}
 
 	opt->verbose = (program["--verbose"] == true);
@@ -191,11 +178,10 @@ int main(int argc, char** argv) {
 	start = SparseRREF::clocknow();
 	std::vector<std::vector<std::pair<slong, slong>>> pivots;
 	if (prime == 0) {
-		// pivots = sparse_mat_rref(mat_Q, F, pool, opt);
-		pivots = sparse_mat_rref_reconstruct(mat_Q, opt);
+		pivots = sparse_mat_rref_reconstruct(std::get<sparse_mat<rat_t>>(mat), opt);
 	}
 	else {
-		pivots = sparse_mat_rref(mat_Zp, F, opt);
+		pivots = sparse_mat_rref(std::get<sparse_mat<ulong>>(mat), F, opt);
 	}
 
 	end = SparseRREF::clocknow();
@@ -208,10 +194,10 @@ int main(int argc, char** argv) {
 	}
 	std::cout << "rank: " << rank << " ";
 	if (prime == 0) {
-		printmatinfo(mat_Q);
+		printmatinfo(std::get<0>(mat));
 	}
 	else {
-		printmatinfo(mat_Zp);
+		printmatinfo(std::get<1>(mat));
 	}
 
 	start = SparseRREF::clocknow();
@@ -239,15 +225,15 @@ int main(int argc, char** argv) {
 
 	file2.open(outname + outname_add);
 	if (prime == 0) {
-		sparse_mat_write(mat_Q, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
+		sparse_mat_write(std::get<0>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
 	}
 	else {
 		if (prime > (1ULL << 32)) {
 			std::cout << "Warning: the prime is too large, use plain format." << std::endl;
-			sparse_mat_write(mat_Zp, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
+			sparse_mat_write(std::get<1>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
 		}
 		else
-			sparse_mat_write(mat_Zp, file2, SparseRREF::SPARSE_FILE_TYPE_MTX);
+			sparse_mat_write(std::get<1>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_MTX);
 	}
 	file2.close();
 
@@ -255,14 +241,14 @@ int main(int argc, char** argv) {
 		outname_add = ".kernel";
 		file2.open(outname + outname_add);
 		if (prime == 0) {
-			auto K = sparse_mat_rref_kernel(mat_Q, pivots, F, opt);
+			auto K = sparse_mat_rref_kernel(std::get<0>(mat), pivots, F, opt);
 			if (K.nrow > 0)
 				sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
 			else
 				std::cout << "Kernel is empty." << std::endl;
 		}
 		else {
-			auto K = sparse_mat_rref_kernel(mat_Zp, pivots, F, opt);
+			auto K = sparse_mat_rref_kernel(std::get<1>(mat), pivots, F, opt);
 			if (K.nrow > 0) {
 				if (prime > (1ULL << 32))
 					sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);

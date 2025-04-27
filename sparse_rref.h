@@ -374,33 +374,6 @@ namespace SparseRREF {
 		return true;
 	}
 
-	//template <typename T>
-	//void permute(const std::vector<size_t>& Pt, T* A, size_t block_size = 1) {
-	//	size_t n = Pt.size();
-	//	std::vector<bool> visited(n, false);
-	//	auto P = perm_inverse(Pt);
-
-	//	for (size_t i = 0; i < n; i++) {
-	//		if (!visited[i]) {
-	//			size_t current = i;
-	//			T* temp = &(A[i * block_size]);
-
-	//			do {
-	//				int next = P[current];
-	//				for (size_t j = 0; j < block_size; j++)
-	//					std::swap(A[next * block_size + j], temp[j]);
-	//				visited[current] = true;
-	//				current = next;
-	//			} while (current != i);
-	//		}
-	//	}
-	//}
-
-	//template <typename T>
-	//void permute(const std::vector<size_t>& Pt, std::vector<T>& A, size_t block_size = 1) {
-	//	permute(Pt, A.data(), block_size);
-	//}
-
 	template <typename T>
 	void permute(const std::vector<size_t>& P, T* A, size_t block_size = 1) {
 		std::vector<bool> visited(P.size(), false);

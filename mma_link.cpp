@@ -10,7 +10,7 @@
     To compile the library, WolframLibrary.h and WolframSparseLibrary.h are required,
     which are included in the Mathematica installation directory.
 
-    The output of modrref is the join of the rref of A and its kernel.
+    The output of modrref/ratrref is the join of the rref of A and its kernel.
 
     To load it in Mathematica, use the following code (as an example):
 

@@ -301,14 +301,13 @@ namespace SparseRREF {
 		return count;
 	}
 
-	template <typename T, typename S>
+	// first choose the pivot with minimal col_weight
+	// if the col_weight is negative, we do not choose it
+	template <typename T>
 	std::vector<std::pair<slong, slong>> findmanypivots(
-		const sparse_mat<T>& mat, const sparse_mat<S>& tranmat,
+		const sparse_mat<T>& mat, const sparse_mat<bool>& tranmat,
 		std::vector<slong>& rowpivs, std::vector<slong>& leftcols,
 		const std::function<slong(slong)>& col_weight = [](slong i) { return i; }) {
-
-		auto start = leftcols.begin();
-		auto end = leftcols.end();
 
 		auto nrow = mat.nrow;
 		auto ncol = mat.ncol;
@@ -318,15 +317,15 @@ namespace SparseRREF {
 		dict.reserve((size_t)4096);
 
 		// rightlook first
-		for (auto dir = start; dir < end; dir++) {
-			if (tranmat[*dir].nnz() == 0)
+		for (auto dir : leftcols) {
+			if (tranmat[dir].nnz() == 0)
 				continue;
 
 			slong rdiv;
 			size_t mnnz = SIZE_MAX;
 			bool flag = true;
 
-			for (auto col : tranmat[*dir].index_span()) {
+			for (auto col : tranmat[dir].index_span()) {
 				flag = (dict.count(col) == 0);
 				if (!flag)
 					break;
@@ -353,7 +352,7 @@ namespace SparseRREF {
 			if (!flag)
 				continue;
 			if (mnnz != SIZE_MAX) {
-				pivots.push_back(std::make_pair(rdiv, *dir));
+				pivots.push_back(std::make_pair(rdiv, dir));
 				dict.insert(rdiv);
 			}
 		}
@@ -362,8 +361,8 @@ namespace SparseRREF {
 		dict.clear();
 		// make a table to help to look for dir pointers
 		std::vector<slong> colptrs(ncol, -1);
-		for (auto it = start; it != end; it++)
-			colptrs[*it] = *it;
+		for (auto col : leftcols)
+			colptrs[col] = col;
 
 		for (auto p : pivots)
 			dict.insert(p.second);
@@ -1317,7 +1316,7 @@ namespace SparseRREF {
 		permute(perm, M1.rows);
 
 		for (size_t i = 0; i < M1.nrow; i++) {
-			// the firt ncol columns is the identity matrix,
+			// the first ncol columns is the identity matrix,
 			// we need to remove it
 			for (size_t j = 0; j < M1[i].nnz() - 1; j++) {
 				M1[i][j] = M1[i][j + 1];
