@@ -1490,10 +1490,10 @@ namespace SparseRREF {
 					val = token.i;
 					break;
 				case WXF_PARSER::bigint:
-					if (std::is_same_v<T, rat_t>) {
+					if constexpr (std::is_same_v<T, rat_t>) {
 						val = toInteger(token);
 					}
-					else if (std::is_same_v<T, ulong>) {
+					else if constexpr (std::is_same_v<T, ulong>) {
 						val = int_t(token.str) % F->mod;
 					}
 					break;
@@ -1502,11 +1502,11 @@ namespace SparseRREF {
 					if (tmp_str == "Rational") {
 						int_t n_1 = toInteger(tree[val_node[0]]);
 						int_t d_1 = toInteger(tree[val_node[1]]);
-						if (std::is_same_v<T, rat_t>) {
-							val = rat_t(n_1, d_1);
+						if constexpr (std::is_same_v<T, rat_t>) {
+							val = rat_t(std::move(n_1), std::move(d_1), true);
 						}
-						else if (std::is_same_v<T, ulong>) {
-							val = rat_t(n_1, d_1) % F->mod;
+						else if constexpr (std::is_same_v<T, ulong>) {
+							val = rat_t(std::move(n_1), std::move(d_1), true) % F->mod;
 						}
 					}
 					else {
