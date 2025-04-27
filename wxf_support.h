@@ -276,21 +276,6 @@ namespace WXF_PARSER {
 		void print() const {
 			print(std::cout);
 		}
-
-		Flint::int_t toInteger() const {
-			switch (type) {
-			case WXF_PARSER::i8:
-			case WXF_PARSER::i16:
-			case WXF_PARSER::i32:
-			case WXF_PARSER::i64:
-				return Flint::int_t(i);
-			case WXF_PARSER::bigint:
-				return Flint::int_t(str);
-			default:
-				std::cerr << "not a integer" << std::endl;
-				return Flint::int_t(0);
-			}
-		}
 	};
 
 	std::vector<uint8_t> toVarint(const uint64_t val) {

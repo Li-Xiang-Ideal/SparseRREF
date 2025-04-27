@@ -1445,6 +1445,21 @@ namespace SparseRREF {
 		std::vector<slong> colindex(tree[last_node[1][1]].i_arr, tree[last_node[1][1]].i_arr 
 			+ tree[last_node[1][1]].dim(0));
 	
+		auto toInteger = [](const WXF_PARSER::TOKEN& node) {
+			switch (node.type) {
+			case WXF_PARSER::i8:
+			case WXF_PARSER::i16:
+			case WXF_PARSER::i32:
+			case WXF_PARSER::i64:
+				return Flint::int_t(node.i);
+			case WXF_PARSER::bigint:
+				return Flint::int_t(node.str);
+			default:
+				std::cerr << "not a integer" << std::endl;
+				return Flint::int_t(0);
+			}
+			};
+
 		// last_node[2] is vals
 		std::vector<T> vals;
 		if (tree[last_node[2]].type == WXF_PARSER::array ||
@@ -1476,7 +1491,7 @@ namespace SparseRREF {
 					break;
 				case WXF_PARSER::bigint:
 					if (std::is_same_v<T, rat_t>) {
-						val = token.toInteger();
+						val = toInteger(token);
 					}
 					else if (std::is_same_v<T, ulong>) {
 						val = int_t(token.str) % F->mod;
@@ -1485,8 +1500,8 @@ namespace SparseRREF {
 				case WXF_PARSER::symbol:
 					tmp_str = token.str;
 					if (tmp_str == "Rational") {
-						int_t n_1 = tree[val_node[0]].toInteger();
-						int_t d_1 = tree[val_node[1]].toInteger();
+						int_t n_1 = toInteger(tree[val_node[0]]);
+						int_t d_1 = toInteger(tree[val_node[1]]);
 						if (std::is_same_v<T, rat_t>) {
 							val = rat_t(n_1, d_1);
 						}
