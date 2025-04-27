@@ -48,16 +48,20 @@ namespace Flint {
 	struct int_t {
 		fmpz _data;
 
-		void init() { fmpz_init(&_data); }
-		int_t() { fmpz_init(&_data); }
-		void clear() { fmpz_clear(&_data); }
-		~int_t() { fmpz_clear(&_data); }
-		int_t(const int_t& other) { fmpz_init(&_data); fmpz_set(&_data, &other._data); }
-		int_t(int_t&& other) noexcept { fmpz_set(&_data, &other._data); }
-		int_t(const fmpz_t a) { fmpz_init(&_data); fmpz_set(&_data, a); }
+		// fmpz_init(&_data) is equivalent to _data = 0LL;
+		inline void init() { fmpz_init(&_data); }
+		int_t() { init(); }
+		inline void clear() { fmpz_clear(&_data); }
+		~int_t() { clear(); }
+		int_t(const int_t& other) { init(); fmpz_set(&_data, &other._data); }
+		int_t(int_t&& other) noexcept { 
+			_data = other._data;
+			other.init(); // reset the other data to avoid double free
+		}
+		int_t(const fmpz_t a) { init(); fmpz_set(&_data, a); }
 
-		template <signed_builtin_integral T> int_t(const T a) { fmpz_init(&_data); fmpz_set_si(&_data, a); }
-		template <unsigned_builtin_integral T> int_t(const T a) { fmpz_init(&_data); fmpz_set_ui(&_data, a); }
+		template <signed_builtin_integral T> int_t(const T a) { init(); fmpz_set_si(&_data, a); }
+		template <unsigned_builtin_integral T> int_t(const T a) { init(); fmpz_set_ui(&_data, a); }
 
 		bool fits_si() const { return fmpz_fits_si(&_data); }
 		slong to_si() const { return fmpz_get_si(&_data); }
@@ -66,13 +70,14 @@ namespace Flint {
 
 		void set_str(const std::string& str, int base = 10) { fmpz_set_str(&_data, str.c_str(), base); }
 		void set_str(const char* str, int base = 10) { fmpz_set_str(&_data, str, base); }
-		explicit int_t(const std::string& str) { set_str(str); }
-		explicit int_t(const char* str) { set_str(str); }
+		explicit int_t(const std::string& str) { init(); set_str(str); }
+		explicit int_t(const char* str) { init(); set_str(str); }
 
 		int_t& operator=(const int_t& other) { if (this != &other) fmpz_set(&_data, &other._data); return *this; }
 		int_t& operator=(int_t&& other) noexcept {
 			if (this != &other) {
-				fmpz_set(&_data, &other._data);
+				_data = other._data;
+				other.init(); // reset the other data to avoid double free
 			}
 			return *this;
 		}
@@ -153,29 +158,37 @@ namespace Flint {
 	struct rat_t {
 		fmpq _data;
 
-		void init() { fmpq_init(&_data); }
-		rat_t() { fmpq_init(&_data); }
-		void clear() { fmpq_clear(&_data); }
-		~rat_t() { fmpq_clear(&_data); }
+		// fmpq_init(&_data) is equivalent to _data = { 0LL, 1LL };
+		inline void init() { fmpq_init(&_data); }
+		rat_t() { init(); }
+		inline void clear() { fmpq_clear(&_data); }
+		~rat_t() { clear(); }
 
-		rat_t(const rat_t& other) { fmpq_init(&_data); fmpq_set(&_data, &other._data); }
-		rat_t(rat_t&& other) noexcept { fmpq_set(&_data, &other._data); }
-		rat_t(const fmpq_t a) { fmpq_init(&_data); fmpq_set(&_data, a); }
+		rat_t(const rat_t& other) { init(); fmpq_set(&_data, &other._data); }
+		rat_t(rat_t&& other) noexcept { _data = other._data; other.init(); }
+		rat_t(const fmpq_t a) { init(); fmpq_set(&_data, a); }
 
-		void canonicalise() { fmpq_canonicalise(&_data); }
+		void canonicalize() { fmpq_canonicalise(&_data); }
 
-		template <signed_builtin_integral T> rat_t(const T a, const T b) { fmpq_init(&_data); fmpq_set_si(&_data, a, b); }
-		template <signed_builtin_integral T> rat_t(const T a) { fmpq_init(&_data); fmpq_set_si(&_data, a, 1); }
-		template <unsigned_builtin_integral T> rat_t(const T a, const T b) { fmpq_init(&_data); fmpq_set_ui(&_data, a, b); }
-		template <unsigned_builtin_integral T> rat_t(const T a) { fmpq_init(&_data); fmpq_set_ui(&_data, a, 1); }
+		template <signed_builtin_integral T> rat_t(const T a, const T b) { init(); fmpq_set_si(&_data, a, b); }
+		template <signed_builtin_integral T> rat_t(const T a) { init(); fmpq_set_si(&_data, a, 1); }
+		template <unsigned_builtin_integral T> rat_t(const T a, const T b) { init(); fmpq_set_ui(&_data, a, b); }
+		template <unsigned_builtin_integral T> rat_t(const T a) { init(); fmpq_set_ui(&_data, a, 1); }
 
-		rat_t(const int_t& a) { fmpq_init(&_data); fmpq_set_fmpz(&_data, &a._data); }
-		rat_t(const int_t& a, const int_t& b) { fmpq_init(&_data); fmpq_set_fmpz_frac(&_data, &a._data, &b._data); }
+		rat_t(const int_t& a) { init(); fmpq_set_fmpz(&_data, &a._data); }
+		rat_t(int_t&& a) { _data = { a._data,1LL }; a.init(); }
+		rat_t(const int_t& a, const int_t& b) { init(); fmpq_set_fmpz_frac(&_data, &a._data, &b._data); }
+		rat_t(int_t&& a, int_t&& b, const bool is_canonical = false) { 
+			_data = { a._data, b._data }; 
+			a.init(); b.init(); // reset the other data to avoid double free
+			if (!is_canonical) 
+				canonicalize();
+		}
 
 		void set_str(const std::string& str, int base = 10) { fmpq_set_str(&_data, str.c_str(), base); }
 		void set_str(const char* str, int base = 10) { fmpq_set_str(&_data, str, base); }
-		explicit rat_t(const std::string& str) { set_str(str); }
-		explicit rat_t(const char* str) { set_str(str); }
+		explicit rat_t(const std::string& str) { init(); set_str(str); }
+		explicit rat_t(const char* str) { init(); set_str(str); }
 
 		ulong height_bits() const { return fmpq_height_bits(&_data); }
 		bool is_den_one() const { return fmpz_is_one(fmpq_denref(&_data)); }
@@ -186,7 +199,8 @@ namespace Flint {
 		rat_t& operator=(const rat_t& other) { if (this != &other) fmpq_set(&_data, &other._data); return *this; }
 		rat_t& operator=(rat_t&& other) noexcept {
 			if (this != &other) {
-				fmpq_set(&_data, &other._data);
+				_data = other._data;
+				other.init(); // reset the other data to avoid double free
 			}
 			return *this;
 		}
@@ -250,10 +264,10 @@ namespace Flint {
 		template <signed_builtin_integral T> void operator/=(const T other) { fmpq_div_si(&_data, &_data, other); }
 		void operator/=(const int_t& other) { fmpq_div_fmpz(&_data, &_data, &other._data); }
 
-		ulong operator%(const nmod_t other) const {
-			auto nummod = num() % other;
-			auto denmod = den() % other;
-			return nmod_div(nummod, denmod, other);
+		ulong operator%(const nmod_t mod) const {
+			auto nummod = num() % mod;
+			auto denmod = den() % mod;
+			return nmod_div(nummod, denmod, mod);
 		}
 
 		rat_t pow(const int_t& n) const { rat_t result; fmpq_pow_fmpz(&result._data, &_data, &n._data); return result; }

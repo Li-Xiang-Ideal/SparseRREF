@@ -1447,7 +1447,6 @@ namespace SparseRREF {
 	
 		// last_node[2] is vals
 		std::vector<T> vals;
-		T val;
 		if (tree[last_node[2]].type == WXF_PARSER::array ||
 			tree[last_node[2]].type == WXF_PARSER::narray) {
 
@@ -1464,6 +1463,7 @@ namespace SparseRREF {
 			vals.resize(nnz);
 
 			for (size_t i = 0; i < nnz; i++) {
+				T val;
 				auto& val_node = last_node[2][i];
 				auto& token = tree[val_node];
 
@@ -1487,12 +1487,11 @@ namespace SparseRREF {
 					if (tmp_str == "Rational") {
 						int_t n_1 = tree[val_node[0]].toInteger();
 						int_t d_1 = tree[val_node[1]].toInteger();
-						rat_t tmp_rat = n_1 / d_1;
 						if (std::is_same_v<T, rat_t>) {
-							val = tmp_rat;
+							val = rat_t(n_1, d_1);
 						}
 						else if (std::is_same_v<T, ulong>) {
-							val = tmp_rat % F->mod;
+							val = rat_t(n_1, d_1) % F->mod;
 						}
 					}
 					else {
