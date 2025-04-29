@@ -1142,6 +1142,17 @@ namespace SparseRREF {
 
 		ulong old_height = matq.height_bits();
 
+		// set rows not in pivots to zero
+		if (!isok || mod.bits() < mat_height_bits) {
+			std::vector<slong> rowset(mat.nrow, -1);
+			for (auto p : pivots)
+				for (auto [r, c] : p)
+					rowset[r] = c;
+			for (size_t i = 0; i < mat.nrow; i++)
+				if (rowset[i] == -1)
+					mat[i].zero();
+		}
+
 		while (!isok || mod.bits() < mat_height_bits) {
 			isok = true;
 			prime = n_nextprime(prime, 0);
@@ -1149,7 +1160,10 @@ namespace SparseRREF {
 				std::cout << ">> Reconstruct failed, try next prime: " << prime << '\r' << std::flush;
 			int_t mod1 = mod * prime;
 			field_init(F, FIELD_Fp, prime);
-			matul = mat % F->mod;
+			pool.detach_loop(0, mat.nrow, [&](slong i) {
+				matul[i] = mat[i] % F->mod;
+				});
+			pool.wait();
 			sparse_mat_direct_rref(matul, pivots, F, opt);
 			if (opt->is_back_sub) {
 				opt->verbose = false;
@@ -1535,13 +1549,6 @@ namespace SparseRREF {
 		return mat;
 	}
 
-	template <typename T>
-	void serialize_binary(std::vector<uint8_t>& buffer, const T& value) {
-		const size_t old_size = buffer.size();
-		buffer.resize(old_size + sizeof(T));
-		std::memcpy(buffer.data() + old_size, &value, sizeof(T));
-	}
-
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	// TODO: more check!!!
 	template <typename T>
@@ -1553,6 +1560,8 @@ namespace SparseRREF {
 		buffer.reserve(mat_nnz * 16); // reserve some space for the data
 		std::string tmp_str;
 		tmp_str.reserve(256);
+
+		using WXF_PARSER::serialize_binary;
 
 		auto toVarint = [&](uint64_t value) {
 			short_buffer.clear();

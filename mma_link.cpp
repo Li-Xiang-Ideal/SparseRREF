@@ -242,3 +242,53 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 
     return err;
 }
+
+EXTERN_C DLLEXPORT int ratmat_inv(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+    auto na_in = MArgument_getMNumericArray(Args[0]);
+    auto nthreads = MArgument_getInteger(Args[1]);
+
+    numericarray_data_t type = MNumericArray_Type_Undef;
+    auto naFuns = ld->numericarrayLibraryFunctions;
+
+    type = naFuns->MNumericArray_getType(na_in);
+    if (type != MNumericArray_Type_UBit8)
+        return LIBRARY_FUNCTION_ERROR;
+
+    auto in_str = (uint8_t*)(naFuns->MNumericArray_getData(na_in));
+    auto length = naFuns->MNumericArray_getFlattenedLength(na_in);
+
+    std::vector<uint8_t> res_str;
+    uint8_t* out_str = nullptr;
+    mint out_len = 0;
+    auto err = LIBRARY_NO_ERROR;
+    MNumericArray na_out = NULL;
+    {
+        field_t F;
+        field_init(F, FIELD_QQ, 1);
+
+        WXF_PARSER::ExprTree expr_tree;
+        expr_tree = WXF_PARSER::MakeExprTree(in_str, (size_t)length);
+        auto mat = sparse_mat_read_wxf<rat_t>(expr_tree, F);
+
+        rref_option_t opt;
+        opt->pool.reset(nthreads);
+
+        auto inv_mat = sparse_mat_inverse(mat, F, opt);
+        res_str = sparse_mat_write_wxf(inv_mat, true);
+
+        // output the result(bitarray)
+        out_len = res_str.size();
+        auto err = naFuns->MNumericArray_new(type, 1, &out_len, &na_out);
+
+        if (err)
+            return LIBRARY_FUNCTION_ERROR;
+
+        out_str = (uint8_t*)(naFuns->MNumericArray_getData(na_out));
+    }
+
+    std::memcpy(out_str, res_str.data(), res_str.size() * sizeof(uint8_t));
+
+    MArgument_setMNumericArray(Res, na_out);
+
+    return err;
+}
