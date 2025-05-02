@@ -371,6 +371,8 @@ namespace SparseRREF {
 
 	template <typename index_type, typename T>
 	inline void sparse_vec_rescale(sparse_vec<index_type, T>& vec, const T scalar, const field_t F) {
+		if (scalar == 1)
+			return;
 		if constexpr (std::is_same_v<T, ulong>) {
 			_nmod_vec_scalar_mul_nmod_shoup(vec.entries, vec.entries, vec.nnz(), scalar, F->mod);
 		}
@@ -393,6 +395,7 @@ namespace SparseRREF {
 		if (vec.nnz() == 0) {
 			vec = src;
 			sparse_vec_rescale(vec, a, F);
+			return 0;
 		}
 
 		ulong na = a;
@@ -459,6 +462,7 @@ namespace SparseRREF {
 		if (vec.nnz() == 0) {
 			vec = src;
 			sparse_vec_rescale(vec, a, nullptr);
+			return 0;
 		}
 
 		rat_t na, entry;
@@ -567,17 +571,22 @@ namespace SparseRREF {
 		}
 		size_t ptr1 = 0, ptr2 = 0;
 		T result = 0;
+		auto e1 = v1.indices + v1.nnz();
+		auto e2 = v2.indices + v2.nnz();
 		while (ptr1 < v1.nnz() && ptr2 < v2.nnz()) {
 			if (v1(ptr1) == v2(ptr2)) {
 				result = scalar_add(result, scalar_mul(v1[ptr1], v2[ptr2], F), F);
 				ptr1++;
 				ptr2++;
 			}
-			else if (v1(ptr1) < v2(ptr2))
-				ptr1++;
-			else
-				ptr2++;
+			else if (v1(ptr1) < v2(ptr2)) {
+				ptr1 = std::lower_bound(v1.indices + ptr1, e1, v2(ptr2)) - v1.indices;
+			}
+			else {
+				ptr2 = std::lower_bound(v2.indices + ptr2, e2, v1(ptr1)) - v2.indices;
+			}
 		}
+
 		return result;
 	}
 
