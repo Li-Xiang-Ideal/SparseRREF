@@ -10,7 +10,6 @@
 #define SCALAR_H
 
 #include <string>
-#include "sparse_rref.h"
 #include "flint/nmod.h"
 #include "flint/fmpz.h"
 #include "flint/fmpq.h"
@@ -148,10 +147,10 @@ namespace Flint {
 			auto len = fmpz_sizeinbase(&_data, base) + 3;
 
 			if (thread_safe || len > MAX_STR_LEN - 4) {
-				char* str = SparseRREF::s_malloc<char>(len + 10);
+				char* str = new char[len + 10];
 				fmpz_get_str(str, base, &_data);
 				std::string result(str);
-				SparseRREF::s_free(str);
+				delete[] str;
 				return result;
 			}
 			else {
@@ -291,10 +290,10 @@ namespace Flint {
 				fmpz_sizeinbase(fmpq_denref(&_data), base) + 3;
 
 			if (thread_safe || len > MAX_STR_LEN - 4) {
-				char* str = SparseRREF::s_malloc<char>(len + 10);
+				char* str = new char[len + 10];
 				fmpq_get_str(str, base, &_data);
 				std::string result(str);
-				SparseRREF::s_free(str);
+				delete[] str;
 				return result;
 			}
 			else {
@@ -313,9 +312,9 @@ namespace Flint {
 	T& operator<< (T& os, const int_t& i) {
 		auto len = fmpz_sizeinbase(&i._data, 10);
 		if (len > MAX_STR_LEN - 4) {
-			char* str = SparseRREF::s_malloc<char>(len + 10);
+			char* str = new char[len + 10];
 			os << fmpz_get_str(str, 10, &i._data);
-			SparseRREF::s_free(str);
+			delete[] str;
 		}
 		else {
 			fmpz_get_str(_buf, 10, &i._data);
@@ -330,9 +329,9 @@ namespace Flint {
 			+ fmpz_sizeinbase(&(r._data.den), 10) + 3;
 
 		if (len > MAX_STR_LEN - 4) {
-			char* str = SparseRREF::s_malloc<char>(len + 10);
+			char* str = new char[len + 10];
 			os << fmpq_get_str(str, 10, &r._data);
-			SparseRREF::s_free(str);
+			delete[] str;
 		}
 		else {
 			fmpq_get_str(_buf, 10, &r._data);
@@ -422,16 +421,24 @@ namespace SparseRREF {
 		OTHER_RING // not implemented now
 	};
 
-	struct field_struct {
-		enum RING ring;
+	struct field_t {
+		RING ring;
 		nmod_t mod;
-	};
-	typedef struct field_struct field_t[1];
 
-	static inline void field_init(field_t field, const enum RING ring, ulong p) {
-		field->ring = ring;
-		nmod_init(&(field->mod), p);
-	}
+		field_t() {}
+		~field_t() {}
+		field_t(RING r) { ring = r; }
+		field_t(RING r, ulong p) { ring = r; nmod_init(&mod, p); }
+		field_t(const field_t& other) { ring = other.ring; mod = other.mod; }
+
+		field_t& operator=(const field_t& other) {
+			if (this != &other) {
+				ring = other.ring;
+				mod = other.mod;
+			}
+			return *this;
+		}
+	};
 
 	// scalar
 	using rat_t = Flint::rat_t;
@@ -444,35 +451,36 @@ namespace SparseRREF {
 
 	// arithmetic
 
-	static inline ulong scalar_neg(const ulong b, const field_t field) {
-		return field->mod.n - b;
+	static inline ulong scalar_neg(const ulong b, const field_t& field) {
+		return field.mod.n - b;
 	}
-	static inline rat_t scalar_neg(const rat_t& b, const field_t field) { return -b; }
+	static inline rat_t scalar_neg(const rat_t& b, const field_t& field) { return -b; }
 
-	static inline ulong scalar_inv(const ulong b, const field_t field) {
-		return nmod_inv(b, field->mod);
+	static inline ulong scalar_inv(const ulong b, const field_t& field) {
+		return nmod_inv(b, field.mod);
 	}
-	static inline rat_t scalar_inv(const rat_t& b, const field_t field) { return b.inv(); }
+	static inline rat_t scalar_inv(const rat_t& b, const field_t& field) { return b.inv(); }
 
-	static inline ulong scalar_add(const ulong b, const ulong c, const field_t field) {
-		return _nmod_add(b, c, field->mod);
+	static inline ulong scalar_add(const ulong b, const ulong c, const field_t& field) {
+		return _nmod_add(b, c, field.mod);
 	}
-	static inline rat_t scalar_add(const rat_t& b, const rat_t& c, const field_t field) { return b + c; }
+	static inline rat_t scalar_add(const rat_t& b, const rat_t& c, const field_t& field) { return b + c; }
 
-	static inline ulong scalar_sub(const ulong b, const ulong c, const field_t field) {
-		return _nmod_sub(b, c, field->mod);
+	static inline ulong scalar_sub(const ulong b, const ulong c, const field_t& field) {
+		return _nmod_sub(b, c, field.mod);
 	}
-	static inline rat_t scalar_sub(const rat_t& b, const rat_t& c, const field_t field) { return b - c; }
+	static inline rat_t scalar_sub(const rat_t& b, const rat_t& c, const field_t& field) { return b - c; }
 
-	static inline ulong scalar_mul(const ulong b, const ulong c, const field_t field) {
-		return nmod_mul(b, c, field->mod);
+	static inline ulong scalar_mul(const ulong b, const ulong c, const field_t& field) {
+		return nmod_mul(b, c, field.mod);
 	}
-	static inline rat_t scalar_mul(const rat_t& b, const rat_t& c, const field_t field) { return b * c; }
+	static inline rat_t scalar_mul(const rat_t& b, const rat_t& c, const field_t& field) { return b * c; }
 
-	static inline ulong scalar_div(const ulong b, const ulong c, const field_t field) {
-		return nmod_div(b, c, field->mod);
+	static inline ulong scalar_div(const ulong b, const ulong c, const field_t& field) {
+		return nmod_div(b, c, field.mod);
 	}
-	static inline rat_t scalar_div(const rat_t& b, const rat_t& c, const field_t field) { return b / c; }
+	static inline rat_t scalar_div(const rat_t& b, const rat_t& c, const field_t& field) { return b / c; }
+
 } // namespace SparseRREF
 
 #endif

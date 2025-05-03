@@ -20,7 +20,7 @@ using namespace SparseRREF;
               << SparseRREF::usedtime(start, end) << " seconds." << std::endl
 
 #define printmatinfo(mat)                                                      \
-    std::cout << "nnz: " << sparse_mat_nnz(mat) << " ";                        \
+    std::cout << "nnz: " <<  (mat).nnz() << " ";                               \
     std::cout << "nrow: " << (mat).nrow << " ";                                \
     std::cout << "ncol: " << (mat).ncol << std::endl
 
@@ -130,11 +130,11 @@ int main(int argc, char** argv) {
 
 	std::cout << "using " << nthread << " threads" << std::endl;
 
-	SparseRREF::field_t F;
+	field_t F;
 	if (prime == 0)
-		field_init(F, SparseRREF::RING::FIELD_QQ, 1);
+		F = field_t(SparseRREF::RING::FIELD_QQ);
 	else
-		field_init(F, SparseRREF::RING::FIELD_Fp, prime);
+		F = field_t(SparseRREF::RING::FIELD_Fp, prime);
 
 	auto start = SparseRREF::clocknow();
 	auto input_file = program.get<std::string>("input_file");

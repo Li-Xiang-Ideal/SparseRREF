@@ -14,156 +14,9 @@
 #include "wxf_support.h"
 
 namespace SparseRREF {
-	// new sparse matrix
-	template <typename T> struct sparse_mat {
-		size_t nrow = 0;
-		size_t ncol = 0;
-		std::vector<sparse_vec<slong, T>> rows;
-
-		void init(size_t r, size_t c) {
-			nrow = r;
-			ncol = c;
-			rows = std::vector<sparse_vec<slong, T>>(r);
-		}
-
-		sparse_mat() { nrow = 0; ncol = 0; }
-		~sparse_mat() {}
-		sparse_mat(size_t r, size_t c) { init(r, c); }
-
-		sparse_vec<slong, T>& operator[](size_t i) { return rows[i]; }
-		const sparse_vec<slong, T>& operator[](size_t i) const { return rows[i]; }
-
-		sparse_mat(const sparse_mat& l) {
-			init(l.nrow, l.ncol);
-			rows = l.rows;
-		}
-
-		sparse_mat(sparse_mat&& l) noexcept {
-			nrow = l.nrow;
-			ncol = l.ncol;
-			rows = std::move(l.rows);
-		}
-
-		sparse_mat& operator=(const sparse_mat& l) {
-			if (this == &l)
-				return *this;
-			nrow = l.nrow;
-			ncol = l.ncol;
-			rows = l.rows;
-			return *this;
-		}
-
-		sparse_mat& operator=(sparse_mat&& l) noexcept {
-			if (this == &l)
-				return *this;
-			nrow = l.nrow;
-			ncol = l.ncol;
-			rows = std::move(l.rows);
-			return *this;
-		}
-
-		void zero() {
-			for (size_t i = 0; i < nrow; i++)
-				rows[i].zero();
-		}
-
-		size_t nnz() const {
-			size_t n = 0;
-			for (size_t i = 0; i < nrow; i++)
-				n += rows[i].nnz();
-			return n;
-		}
-
-		size_t alloc() const {
-			size_t n = 0;
-			for (size_t i = 0; i < nrow; i++)
-				n += rows[i].alloc();
-			return n;
-		}
-
-		void compress() {
-			for (size_t i = 0; i < nrow; i++) {
-				rows[i].compress();
-			}
-		}
-
-		void clear_zero_row() {
-			size_t new_nrow = 0;
-			for (size_t i = 0; i < nrow; i++) {
-				if (rows[i].nnz() != 0) {
-					std::swap(rows[new_nrow], rows[i]);
-					new_nrow++;
-				}
-			}
-			nrow = new_nrow;
-			rows.resize(nrow);
-			rows.shrink_to_fit();
-		}
-
-		sparse_mat<T> transpose() {
-			sparse_mat<T> res(ncol, nrow);
-			for (size_t i = 0; i < nrow; i++)
-				res[i].zero();
-
-			for (size_t i = 0; i < nrow; i++) {
-				for (size_t j = 0; j < rows[i].nnz(); j++) {
-					res[rows[i](j)].push_back(i, rows[i][j]);
-				}
-			}
-			return res;
-		}
-
-		template <typename U = T> requires std::is_same_v<U, rat_t>
-		sparse_mat<ulong> operator%(const nmod_t mod) const {
-			sparse_mat<ulong> result(nrow, ncol);
-			for (size_t i = 0; i < nrow; i++) {
-				result[i] = rows[i] % mod;
-			}
-			return result;
-		}
-
-		template <typename U = T> requires std::is_same_v<U, rat_t>
-		ulong height_bits() const {
-			ulong max_height = 0;
-			for (size_t i = 0; i < nrow; i++) {
-				for (size_t j = 0; j < rows[i].nnz(); j++) {
-					auto rr = rows[i][j].height_bits();
-					if (rr > max_height)
-						max_height = rr;
-				}
-			}
-
-			return max_height;
-		}
-
-		// denominator bits
-		template <typename U = T> requires std::is_same_v<U, rat_t>
-		ulong den_bits() const {
-			int_t den = 1;
-			for (size_t i = 0; i < nrow; i++) {
-				for (size_t j = 0; j < rows[i].nnz(); j++) {
-					if (rows[i][j] != 0 && !(rows[i][j].is_den_one()))
-						den = LCM(den, rows[i][j].den());
-				}
-			}
-
-			return den.bits();
-		}
-	};
-
 	template <typename T>
 	inline T* sparse_mat_entry(sparse_mat<T>& mat, size_t r, slong c, bool isbinary = true) {
 		return sparse_vec_entry(mat[r], c, isbinary);
-	}
-
-	template <typename T>
-	inline size_t sparse_mat_nnz(sparse_mat<T>& mat) {
-		return mat.nnz();
-	}
-
-	template <typename T>
-	inline void sparse_mat_compress(sparse_mat<T>& mat) {
-		mat.compress();
 	}
 
 	template <typename T, typename S>
@@ -223,7 +76,7 @@ namespace SparseRREF {
 		rref_option_t opt) {
 		auto localcounter = 0;
 		std::unordered_map<slong, slong> pivlist;
-		uset collist(mat.ncol);
+		bit_array collist(mat.ncol);
 		for (size_t i = 0; i < mat.nrow; i++) {
 			if (donelist[i] != -1)
 				continue;
@@ -565,12 +418,12 @@ namespace SparseRREF {
 	// first write a stupid one
 	template <typename T>
 	void schur_complete(sparse_mat<T>& mat, slong k, const std::vector<std::pair<slong, slong>>& pivots,
-		field_t F, T* tmpvec, SparseRREF::uset& nonzero_c) {
+		field_t F, T* tmpvec, SparseRREF::bit_array& nonzero_c) {
 
 		if (mat[k].nnz() == 0)
 			return;
 
-		// SparseRREF::uset nonzero_c(mat.ncol);
+		// SparseRREF::bit_array nonzero_c(mat.ncol);
 		nonzero_c.clear();
 
 		for (auto [ind, val] : mat[k]) {
@@ -584,7 +437,7 @@ namespace SparseRREF {
 				continue;
 			T entry = tmpvec[c];
 			if constexpr (std::is_same_v<T, ulong>) {
-				e_pr = n_mulmod_precomp_shoup(tmpvec[c], F->mod.n);
+				e_pr = n_mulmod_precomp_shoup(tmpvec[c], F.mod.n);
 			}
 			for (auto [ind, val] : mat[r]) {
 				if (!nonzero_c.count(ind)) {
@@ -593,7 +446,7 @@ namespace SparseRREF {
 				}
 				if constexpr (std::is_same_v<T, ulong>) {
 					tmpvec[ind] = _nmod_sub(tmpvec[ind],
-						n_mulmod_shoup(entry, val, e_pr, F->mod.n), F->mod);
+						n_mulmod_shoup(entry, val, e_pr, F.mod.n), F.mod);
 				}
 				else if constexpr (std::is_same_v<T, rat_t>) {
 					tmpvec[ind] -= entry * val;
@@ -615,7 +468,7 @@ namespace SparseRREF {
 	template <typename T>
 	void triangular_solver_2_rec(sparse_mat<T>& mat, std::vector<std::vector<slong>>& tranmat, std::vector<std::pair<slong, slong>>& pivots,
 		field_t F, rref_option_t opt, T* cachedensedmat,
-		std::vector<SparseRREF::uset>& nonzero_c, size_t n_split, size_t rank, size_t& process) {
+		std::vector<SparseRREF::bit_array>& nonzero_c, size_t n_split, size_t rank, size_t& process) {
 
 		bool verbose = opt->verbose;
 		auto& pool = opt->pool;
@@ -689,7 +542,7 @@ namespace SparseRREF {
 		// prepare the tmp array
 		auto nthreads = pool.get_thread_count();
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::uset> nonzero_c(nthreads);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
 		for (size_t i = 0; i < nthreads; i++)
 			nonzero_c[i].resize(mat.ncol);
 
@@ -755,7 +608,7 @@ namespace SparseRREF {
 		// then do the elimination parallelly
 		auto nthreads = pool.get_thread_count();
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::uset> nonzero_c(nthreads);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
 		for (size_t i = 0; i < nthreads; i++)
 			nonzero_c[i].resize(mat.ncol);
 
@@ -930,7 +783,7 @@ namespace SparseRREF {
 		auto rank = pivots[0].size() + pivots[1].size();
 
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::uset> nonzero_c(nthreads);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
 		for (size_t i = 0; i < nthreads; i++)
 			nonzero_c[i].resize(mat.ncol);
 
@@ -947,7 +800,7 @@ namespace SparseRREF {
 		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 3;
 		int bitlen_ncol = (int)std::floor(std::log(mat.ncol) / std::log(10)) + 1;
 
-		uset tmp_set(mat.ncol);
+		bit_array tmp_set(mat.ncol);
 
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
@@ -1082,12 +935,11 @@ namespace SparseRREF {
 		pool.wait();
 
 		ulong prime = n_nextprime(1ULL << 60, 0);
-		field_t F;
-		field_init(F, FIELD_Fp, prime);
+		field_t F(FIELD_Fp, prime);
 
 		sparse_mat<ulong> matul(mat.nrow, mat.ncol);
 		pool.detach_loop<slong>(0, mat.nrow, [&](slong i) {
-			matul[i] = mat[i] % F->mod;
+			matul[i] = mat[i] % F.mod;
 			});
 		pool.wait();
 
@@ -1159,9 +1011,9 @@ namespace SparseRREF {
 			if (verbose)
 				std::cout << ">> Reconstruct failed, try next prime: " << prime << '\r' << std::flush;
 			int_t mod1 = mod * prime;
-			field_init(F, FIELD_Fp, prime);
+			F = field_t(FIELD_Fp, prime);
 			pool.detach_loop(0, mat.nrow, [&](slong i) {
-				matul[i] = mat[i] % F->mod;
+				matul[i] = mat[i] % F.mod;
 				});
 			pool.wait();
 			sparse_mat_direct_rref(matul, pivots, F, opt);
@@ -1297,9 +1149,9 @@ namespace SparseRREF {
 		opt->is_back_sub = true;
 
 		std::vector<std::vector<std::pair<slong, slong>>> pivots;
-		if (F->ring == RING::FIELD_Fp)
+		if (F.ring == RING::FIELD_Fp)
 			pivots = sparse_mat_rref(M1, F, opt);
-		else if (F->ring == RING::FIELD_QQ)
+		else if (F.ring == RING::FIELD_QQ)
 			pivots = sparse_mat_rref_reconstruct(M1, opt, true);
 		else {
 			std::cerr << "Error: sparse_mat_inverse: field not supported" << std::endl;
@@ -1349,7 +1201,7 @@ namespace SparseRREF {
 
 	// IO
 	template <typename ScalarType, typename T>
-	sparse_mat<ScalarType> sparse_mat_read(T& st, const field_t F) {
+	sparse_mat<ScalarType> sparse_mat_read(T& st, const field_t& F) {
 		if (!st.is_open()) {
 			std::cerr << "Error: sparse_mat_read: file not open." << std::endl;
 			return sparse_mat<ScalarType>();
@@ -1411,7 +1263,7 @@ namespace SparseRREF {
 			ScalarType val;
 			if constexpr (std::is_same_v<ScalarType, ulong>) {
 				rat_t raw_val(line.substr(start));
-				val = raw_val % F->mod;
+				val = raw_val % F.mod;
 			}
 			else if constexpr (std::is_same_v<ScalarType, rat_t>) {
 				val = rat_t(line.substr(start));
@@ -1426,7 +1278,7 @@ namespace SparseRREF {
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	// TODO: more check!!!
 	template <typename T>
-	sparse_mat<T> sparse_mat_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t F) {
+	sparse_mat<T> sparse_mat_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t& F) {
 		auto& root = tree.root;
 
 		// SparseArray
@@ -1507,7 +1359,7 @@ namespace SparseRREF {
 						val = toInteger(token);
 					}
 					else if constexpr (std::is_same_v<T, ulong>) {
-						val = int_t(token.str) % F->mod;
+						val = int_t(token.str) % F.mod;
 					}
 					break;
 				case WXF_PARSER::symbol:
@@ -1519,7 +1371,7 @@ namespace SparseRREF {
 							val = rat_t(std::move(n_1), std::move(d_1), true);
 						}
 						else if constexpr (std::is_same_v<T, ulong>) {
-							val = rat_t(std::move(n_1), std::move(d_1), true) % F->mod;
+							val = rat_t(std::move(n_1), std::move(d_1), true) % F.mod;
 						}
 					}
 					else {

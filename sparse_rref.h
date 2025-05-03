@@ -17,10 +17,12 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <execution> 
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <list>
+#include <map>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -42,7 +44,7 @@
 
 namespace SparseRREF {
 	// version
-	static const char version[] = "v0.3.1";
+	static const char version[] = "v0.3.2";
 
 	enum SPARSE_FILE_TYPE {
 		SPARSE_FILE_TYPE_PLAIN,
@@ -94,13 +96,13 @@ namespace SparseRREF {
 	};
 	using rref_option_t = rref_option[1];
 
-	inline size_t ctz(ulong x) {
+	inline size_t ctz(uint64_t x) {
 		return std::countr_zero(x);
 	}
-	inline size_t clz(ulong x) {
+	inline size_t clz(uint64_t x) {
 		return std::countl_zero(x);
 	}
-	inline size_t popcount(ulong x) {
+	inline size_t popcount(uint64_t x) {
 		return std::popcount(x);
 	}
 
@@ -124,8 +126,8 @@ namespace SparseRREF {
 		return result;
 	}
 
-	ulong string_to_ull(std::string_view sv) {
-		ulong result;
+	uint64_t string_to_ull(std::string_view sv) {
+		uint64_t result;
 		auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
 		if (ec != std::errc()) {
 			throw std::runtime_error("Failed to parse number");
@@ -216,23 +218,23 @@ namespace SparseRREF {
 		}
 	}
 
-	// uset
-	struct uset {
-		constexpr static size_t bitset_size = std::numeric_limits<ulong>::digits; // 64 or 32
+	// bit_array
+	struct bit_array {
+		constexpr static size_t bitset_size = 64; // 64 bits per bitset
 		std::vector<std::bitset<bitset_size>> data;
 
-		uset() {}
+		bit_array() {}
 
-		void resize(size_t alllen) {
-			auto len = alllen / bitset_size + 1;
+		void resize(size_t size) {
+			auto len = size / bitset_size + 1;
 			data.resize(len);
 		}
 
-		uset(size_t alllen) {
-			resize(alllen);
+		bit_array(size_t size) {
+			resize(size);
 		}
 
-		~uset() {
+		~bit_array() {
 			data.clear();
 		}
 

@@ -97,8 +97,7 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
     }
     fmpz_clear(tmp);
 
-    field_t F;
-    field_init(F, FIELD_Fp, p);
+    field_t F(FIELD_Fp, p);
 
     auto pivots = sparse_mat_rref(A, F, opt);
     sparse_mat<ulong> K;
@@ -109,9 +108,9 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
     } 
     
 	if (len == 0) 
-        nnz = sparse_mat_nnz(A);
+        nnz = A.nnz();
     else 
-        nnz = sparse_mat_nnz(A) + sparse_mat_nnz(K);
+        nnz = A.nnz() + K.nnz();
 
     MTensor pos, val, dim;
     mint dims_r2[] = {nnz, 2};
@@ -186,8 +185,7 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
     auto err = LIBRARY_NO_ERROR;
     MNumericArray na_out = NULL;
     {
-        field_t F;
-        field_init(F, FIELD_QQ, 1);
+        field_t F(FIELD_QQ);
 
         WXF_PARSER::ExprTree expr_tree;
         expr_tree = WXF_PARSER::MakeExprTree(in_str, (size_t)length);
@@ -226,7 +224,7 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
             }
         }
 
-        // output the result(bitarray)
+        // output the result(bit_array)
         out_len = res_str.size();
         auto err = naFuns->MNumericArray_new(type, 1, &out_len, &na_out);
 
@@ -263,8 +261,7 @@ EXTERN_C DLLEXPORT int ratmat_inv(WolframLibraryData ld, mint Argc, MArgument* A
     auto err = LIBRARY_NO_ERROR;
     MNumericArray na_out = NULL;
     {
-        field_t F;
-        field_init(F, FIELD_QQ, 1);
+        field_t F(FIELD_QQ);
 
         WXF_PARSER::ExprTree expr_tree;
         expr_tree = WXF_PARSER::MakeExprTree(in_str, (size_t)length);
@@ -276,7 +273,7 @@ EXTERN_C DLLEXPORT int ratmat_inv(WolframLibraryData ld, mint Argc, MArgument* A
         auto inv_mat = sparse_mat_inverse(mat, F, opt);
         res_str = sparse_mat_write_wxf(inv_mat, true);
 
-        // output the result(bitarray)
+        // output the result(bit_array)
         out_len = res_str.size();
         auto err = naFuns->MNumericArray_new(type, 1, &out_len, &na_out);
 
