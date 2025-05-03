@@ -1,3 +1,12 @@
+/*
+	Copyright (C) 2025 Zhenjie Li (Li, Zhenjie)
+
+	This file is part of SparseRREF. The SparseRREF is free software:
+	you can redistribute it and/or modify it under the terms of the MIT
+	License.
+*/
+
+
 #ifndef SPARSE_TYPE_H
 #define SPARSE_TYPE_H
 
