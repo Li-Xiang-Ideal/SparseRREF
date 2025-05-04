@@ -947,7 +947,7 @@ namespace SparseRREF {
 			ScalarType val;
 			if constexpr (std::is_same_v<ScalarType, ulong>) {
 				rat_t raw_val(line.substr(start));
-				val = raw_val % F->mod;
+				val = raw_val % F.mod;
 			}
 			else if constexpr (std::is_same_v<ScalarType, rat_t>) {
 				val = rat_t(line.substr(start));
