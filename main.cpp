@@ -146,12 +146,13 @@ int main(int argc, char** argv) {
 
 	std::ifstream file(filePath);
 
-	std::variant<sparse_mat<rat_t>, sparse_mat<ulong>> mat;
+	using index_t = slong;
+	std::variant<sparse_mat<rat_t, index_t>, sparse_mat<ulong, index_t>> mat;
 
-	if (prime == 0) 
-		mat = sparse_mat_read<rat_t>(file, F);
+	if (prime == 0)
+		mat = sparse_mat_read<rat_t, index_t>(file, F);
 	else 
-		mat = sparse_mat_read<ulong>(file, F);
+		mat = sparse_mat_read<ulong, index_t>(file, F);
 
 	file.close();
 
@@ -176,12 +177,12 @@ int main(int argc, char** argv) {
 	}
 
 	start = SparseRREF::clocknow();
-	std::vector<std::vector<std::pair<slong, slong>>> pivots;
+	std::vector<std::vector<std::pair<index_t, index_t>>> pivots;
 	if (prime == 0) {
-		pivots = sparse_mat_rref_reconstruct(std::get<sparse_mat<rat_t>>(mat), opt);
+		pivots = sparse_mat_rref_reconstruct(std::get<sparse_mat<rat_t, index_t>>(mat), opt);
 	}
 	else {
-		pivots = sparse_mat_rref(std::get<sparse_mat<ulong>>(mat), F, opt);
+		pivots = sparse_mat_rref(std::get<sparse_mat<ulong, index_t>>(mat), F, opt);
 	}
 
 	end = SparseRREF::clocknow();

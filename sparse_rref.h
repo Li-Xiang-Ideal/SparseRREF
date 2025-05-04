@@ -91,7 +91,7 @@ namespace SparseRREF {
 		int print_step = 100;
 		int search_depth = INT_MAX;
 		bool shrink_memory = false;
-		std::function<slong(slong)> col_weight = [](slong i) { return i; };
+		std::function<int64_t(int64_t)> col_weight = [](int64_t i) { return i; };
 		thread_pool pool = thread_pool(1); // default: thread pool with 1 thread
 	};
 	using rref_option_t = rref_option[1];

@@ -15,8 +15,12 @@
 #include "sparse_type.h"
 
 namespace SparseRREF {
+
+	template <typename index_type> using snmod_vec = sparse_vec<ulong, index_type>;
+	template <typename index_type> using sfmpq_vec = sparse_vec<rat_t, index_type>;
+
 	template <typename index_type, typename T>
-	inline T* sparse_vec_entry(const sparse_vec<index_type, T>& vec, const index_type index, const bool isbinary = true) {
+	inline T* sparse_vec_entry(const sparse_vec<T, index_type>& vec, const index_type index, const bool isbinary = true) {
 		if (vec.nnz() == 0)
 			return NULL;
 		index_type* ptr;
@@ -29,11 +33,8 @@ namespace SparseRREF {
 		return vec.entries + (ptr - vec.indices);
 	}
 
-	template <typename index_type> using snmod_vec = sparse_vec<index_type, ulong>;
-	template <typename index_type> using sfmpq_vec = sparse_vec<index_type, rat_t>;
-
 	template <typename index_type, typename T>
-	inline void sparse_vec_rescale(sparse_vec<index_type, T>& vec, const T scalar, const field_t& F) {
+	inline void sparse_vec_rescale(sparse_vec<T, index_type>& vec, const T scalar, const field_t& F) {
 		if (scalar == 1)
 			return;
 		if constexpr (std::is_same_v<T, ulong>) {
@@ -228,7 +229,7 @@ namespace SparseRREF {
 	// dot product
 	// return true if the result is zero
 	template <typename index_type, typename T>
-	T sparse_vec_dot(const sparse_vec<index_type, T> v1, const sparse_vec<index_type, T> v2, field_t F) {
+	T sparse_vec_dot(const sparse_vec<T, index_type> v1, const sparse_vec<T, index_type> v2, field_t F) {
 		if (v1.nnz() == 0 || v2.nnz() == 0) {
 			return T(0);
 		}
@@ -254,7 +255,7 @@ namespace SparseRREF {
 	}
 
 	template <typename index_type>
-	std::pair<char*, char*> snmod_vec_to_binary(const sparse_vec<index_type, ulong>& vec, char* buffer = NULL) {
+	std::pair<char*, char*> snmod_vec_to_binary(const sparse_vec<ulong, index_type>& vec, char* buffer = NULL) {
 		constexpr auto ratio_i = sizeof(index_type) / sizeof(char);
 		constexpr auto ratio_e = sizeof(ulong) / sizeof(char);
 		auto nnz = vec.nnz();
@@ -271,7 +272,7 @@ namespace SparseRREF {
 	}
 
 	template <typename index_type>
-	char* snmod_vec_from_binary(sparse_vec<index_type, ulong>& vec, const char* buffer) {
+	char* snmod_vec_from_binary(sparse_vec<ulong, index_type>& vec, const char* buffer) {
 		constexpr auto ratio_i = sizeof(index_type) / sizeof(char);
 		constexpr auto ratio_e = sizeof(ulong) / sizeof(char);
 		ulong nnz;
@@ -285,7 +286,7 @@ namespace SparseRREF {
 	}
 
 	// debug only, not used to the large vector
-	template <typename index_type, typename T> void print_vec_info(const sparse_vec<index_type, T>& vec) {
+	template <typename index_type, typename T> void print_vec_info(const sparse_vec<T, index_type>& vec) {
 		std::cout << "-------------------" << std::endl;
 		std::cout << "nnz: " << vec.nnz() << std::endl;
 		std::cout << "indices: ";

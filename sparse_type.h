@@ -20,7 +20,7 @@ namespace SparseRREF {
 	};
 
 	// sparse vector
-	template <typename index_type, typename T> struct sparse_vec {
+	template <typename T, typename index_type = slong> struct sparse_vec {
 		index_type* indices = NULL;
 		T* entries = NULL;
 		size_t _nnz = 0;
@@ -190,8 +190,8 @@ namespace SparseRREF {
 
 		// conversion functions
 		template <typename U = T> requires std::is_integral_v<U> || std::is_same_v<U, int_t>
-		operator sparse_vec<index_type, rat_t>() {
-			sparse_vec<index_type, rat_t> result;
+		operator sparse_vec<rat_t, index_type>() {
+			sparse_vec<rat_t, index_type> result;
 			result.reserve(_nnz);
 			result.resize(_nnz);
 			for (size_t i = 0; i < _nnz; i++) {
@@ -202,8 +202,8 @@ namespace SparseRREF {
 		}
 
 		template <typename U = T> requires std::is_integral_v<U>
-		operator sparse_vec<index_type, int_t>() {
-			sparse_vec<index_type, int_t> result;
+		operator sparse_vec<int_t, index_type>() {
+			sparse_vec<int_t, index_type> result;
 			result.reserve(_nnz);
 			result.resize(_nnz);
 			for (size_t i = 0; i < _nnz; i++) {
@@ -214,8 +214,8 @@ namespace SparseRREF {
 		}
 
 		template <typename U = T> requires std::is_same_v<U, rat_t>
-		sparse_vec<index_type, ulong> operator%(const nmod_t mod) const {
-			sparse_vec<index_type, ulong> result;
+		sparse_vec<ulong, index_type> operator%(const nmod_t mod) const {
+			sparse_vec<ulong, index_type> result;
 			result.reserve(_nnz);
 			result.resize(_nnz);
 			for (size_t i = 0; i < _nnz; i++) {
@@ -259,7 +259,7 @@ namespace SparseRREF {
 		}
 	};
 
-	template <typename index_type> struct sparse_vec<index_type, bool> {
+	template <typename index_type> struct sparse_vec<bool, index_type> {
 		index_type* indices = NULL;
 		size_t _nnz = 0;
 		size_t _alloc = 0;
@@ -358,23 +358,23 @@ namespace SparseRREF {
 	};
 
 	// new sparse matrix
-	template <typename T> struct sparse_mat {
+	template <typename T, typename index_type = slong> struct sparse_mat {
 		size_t nrow = 0;
 		size_t ncol = 0;
-		std::vector<sparse_vec<slong, T>> rows;
+		std::vector<sparse_vec<T, index_type>> rows;
 
 		void init(size_t r, size_t c) {
 			nrow = r;
 			ncol = c;
-			rows = std::vector<sparse_vec<slong, T>>(r);
+			rows = std::vector<sparse_vec<T, index_type>>(r);
 		}
 
 		sparse_mat() { nrow = 0; ncol = 0; }
 		~sparse_mat() {}
 		sparse_mat(size_t r, size_t c) { init(r, c); }
 
-		sparse_vec<slong, T>& operator[](size_t i) { return rows[i]; }
-		const sparse_vec<slong, T>& operator[](size_t i) const { return rows[i]; }
+		sparse_vec<T, index_type>& operator[](size_t i) { return rows[i]; }
+		const sparse_vec<T, index_type>& operator[](size_t i) const { return rows[i]; }
 
 		sparse_mat(const sparse_mat& l) {
 			init(l.nrow, l.ncol);
@@ -827,7 +827,10 @@ namespace SparseRREF {
 		inline size_t alloc() const { return data.alloc; }
 		inline size_t rank() const { return data.rank; }
 		inline size_t nnz() const { return data.rowptr[data.dims[0]]; }
-		inline std::vector<size_t> dims() const { return data.dims; }
+		inline auto& rowptr() const { return data.rowptr; }
+		inline auto& colptr() const { return data.colptr; }
+		inline auto& valptr() const { return data.valptr; }
+		inline auto& dims() const { return data.dims; }
 		inline size_t dim(size_t i) const { return data.dims[i]; }
 		inline void zero() { data.zero(); }
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(l, val, mode); }
@@ -1059,7 +1062,7 @@ namespace SparseRREF {
 			}
 		}
 
-		sparse_tensor<index_type, T, SPARSE_COO> chop(slong pos, slong aa) const {
+		sparse_tensor<index_type, T, SPARSE_COO> chop(size_t pos, size_t aa) const {
 			std::vector<size_t> dims_new = dims();
 			dims_new.erase(dims_new.begin() + pos);
 			sparse_tensor<index_type, T, SPARSE_COO> result(dims_new);

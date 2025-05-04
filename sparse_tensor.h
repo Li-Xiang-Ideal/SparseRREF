@@ -458,7 +458,7 @@ namespace SparseRREF {
 	sparse_tensor<index_type, T, SPARSE_COO> tensor_contract_2(
 		const sparse_tensor<index_type, T, SPARSE_COO>& A,
 		const sparse_tensor<index_type, T, SPARSE_COO>& B,
-		const slong a, const field_t F, thread_pool* pool = nullptr) {
+		const index_type a, const field_t F, thread_pool* pool = nullptr) {
 
 		auto C = tensor_contract(A, B, a, 0, F, pool);
 		std::vector<size_t> perm;
