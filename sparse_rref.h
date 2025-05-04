@@ -275,12 +275,12 @@ namespace SparseRREF {
 
 		std::vector<size_t> nonzero() {
 			std::vector<size_t> result;
-			std::vector<size_t> tmp;
-			tmp.reserve(bitset_size);
+			size_t tmp[bitset_size];
+			size_t tmp_size = 0;
 			for (size_t i = 0; i < data.size(); i++) {
 				if (data[i].any()) {
-					tmp.clear();
-					ulong c = data[i].to_ullong();
+					tmp_size = 0;
+					uint64_t c = data[i].to_ullong();
 
 					// only ctz version
 					// while (c) {
@@ -295,10 +295,13 @@ namespace SparseRREF {
 						result.push_back(i * bitset_size + ctzpos);
 						if (ctzpos == clzpos)
 							break;
-						tmp.push_back(i * bitset_size + clzpos);
+						tmp[tmp_size] = i * bitset_size + clzpos;
+						tmp_size++;
 						c = c ^ (1ULL << clzpos) ^ (1ULL << ctzpos);
 					}
-					result.insert(result.end(), tmp.rbegin(), tmp.rend());
+					for (size_t j = tmp_size; j > 0; j--) {
+						result.push_back(tmp[j - 1]);
+					}
 				}
 			}
 			return result;
@@ -313,7 +316,7 @@ namespace SparseRREF {
 			return end;
 	}
 
-	template <typename T> inline T* lower_bound(T* begin, T* end, T* val, ulong rank) {
+	template <typename T> inline T* lower_bound(T* begin, T* end, T* val, size_t rank) {
 		if (rank == 1)
 			return std::lower_bound(begin, end, *val);
 
