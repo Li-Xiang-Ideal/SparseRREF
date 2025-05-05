@@ -151,7 +151,7 @@ namespace SparseRREF {
 					<< "    \r" << std::flush;
 			}
 			depth++;
-		} while (localcounter > 0 && depth < max_depth && 1001 * localcounter > count);
+		} while (localcounter > 0 && depth < max_depth && localcounter > 10);
 		return count;
 	}
 
@@ -710,24 +710,33 @@ namespace SparseRREF {
 			pivots.push_back(n_pivots);
 			rank += n_pivots.size();
 
-			pool.detach_sequence(0, n_pivots.size(), [&](size_t i) {
+			pool.detach_loop(0, n_pivots.size(), [&](size_t i) {
 				auto [r, c] = n_pivots[i];
 				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
 				sparse_vec_rescale(mat[r], scalar, F);
-				tranmat[c].clear();
+				mat[r].reserve(mat[r].nnz());
 				});
 
 			size_t n_leftrows = 0;
 			for (size_t i = 0; i < leftrows.size(); i++) {
 				auto row = leftrows[i];
-				if (rowpivs[row] != -1 || mat[row].nnz() == 0)
+				if (rowpivs[row] != -1 || mat[row].nnz() == 0) 
 					continue;
 				leftrows[n_leftrows] = row;
 				n_leftrows++;
 			}
 			leftrows.resize(n_leftrows);
-
 			pool.wait();
+
+			if (opt->shrink_memory) {
+				pool.detach_loop(0, leftrows.size(), [&](size_t i) {
+					auto row = leftrows[i];
+					if (mat[row].alloc() > 8 * mat[row].nnz()) {
+						mat[row].reserve(4 * mat[row].nnz());
+					}});
+				pool.wait();
+			}
+
 			std::vector<int> flags(leftrows.size(), 0);
 			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 				auto id = SparseRREF::thread_id();
@@ -748,6 +757,7 @@ namespace SparseRREF {
 					localcount++;
 					tranmat[it].zero();
 				}
+				tranmat[it].clear();
 			}
 			leftcols.resize(localcount);
 
@@ -770,10 +780,12 @@ namespace SparseRREF {
 				if (verbose && (print_once || pr - oldpr > printstep)) {
 					auto end = SparseRREF::clocknow();
 					now_nnz = mat.nnz();
+					auto now_alloc = mat.alloc();
 					std::cout << "-- Col: " << std::setw(bitlen_ncol)
 						<< (int)pr << "/" << mat.ncol
 						<< "  rank: " << std::setw(bitlen_ncol) << rank
 						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
+						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
 						<< "  density: " << std::setprecision(6) << std::setw(8)
 						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
 						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
