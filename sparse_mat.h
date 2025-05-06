@@ -517,7 +517,7 @@ namespace SparseRREF {
 
 		size_t process = 0;
 		// TODO: better split strategy
-		size_t n_split = std::max(pivots.size() / 128ULL, 1ULL << 10); // TODO: better strategy?
+		size_t n_split = std::max(pivots.size() / 128ULL, 1ULL << 10); 
 		size_t rank = pivots.size();
 		triangular_solver_2_rec(mat, tranmat, pivots, F, opt, cachedensedmat.data(), nonzero_c, n_split, rank, process);
 
@@ -549,9 +549,12 @@ namespace SparseRREF {
 
 		// first set rows not in pivots to zero
 		std::vector<index_t> rowset(mat.nrow, -1);
-		for (auto p : pivots)
+		size_t total_rank = 0;
+		for (auto p : pivots) {
+			total_rank += p.size();
 			for (auto [r, c] : p)
 				rowset[r] = c;
+		}
 		for (size_t i = 0; i < mat.nrow; i++)
 			if (rowset[i] == -1)
 				mat[i].zero();
@@ -574,6 +577,8 @@ namespace SparseRREF {
 		for (size_t i = 0; i < nthreads; i++)
 			nonzero_c[i].resize(mat.ncol);
 
+		size_t rank = pivots[0].size();
+
 		for (auto i = 1; i < pivots.size(); i++) {
 			if (pivots[i].size() == 0)
 				continue;
@@ -593,13 +598,34 @@ namespace SparseRREF {
 
 			// upper solver
 			// TODO: check mode
+			std::atomic<size_t> cc = 0;
+			size_t old_cc = cc;
 			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 				auto id = SparseRREF::thread_id();
 				for (size_t j = s; j < e; j++) {
 					schur_complete(mat, leftrows[j], pivots[i], F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+					cc++;
 				}
 				}, ((leftrows.size() < 20 * nthreads) ? 0 : leftrows.size() / 10));
+
+			if (opt->verbose) {
+				auto cn = clocknow();
+				while (cc < leftrows.size()) {
+					if (cc - old_cc > opt->print_step) {
+						std::cout << "\r-- Row: "
+							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * pivots[i].size())
+							<< "/" << total_rank << "  nnz: " << mat.nnz()
+							<< "  speed: " << ((1.0 * (cc - old_cc)) / usedtime(cn,clocknow()))
+							<< " row/s          " << std::flush;
+						old_cc = cc;
+					}
+				}
+			}
 			pool.wait();
+			rank += pivots[i].size();
+		}
+		if (opt->verbose) {
+			std::cout << std::endl;
 		}
 	}
 
@@ -813,6 +839,13 @@ namespace SparseRREF {
 
 		auto pivots = sparse_mat_rref_c(mat, F, opt);
 
+		if (opt->shrink_memory) {
+			opt->pool.detach_loop(0, mat.nrow, [&](auto i) {
+					mat[i].reserve(mat[i].nnz());
+				});
+			opt->pool.wait();
+		}
+
 		if (opt->is_back_sub) {
 			if (opt->verbose)
 				std::cout << "\n>> Reverse solving: " << std::endl;
@@ -916,7 +949,7 @@ namespace SparseRREF {
 			isok = true;
 			prime = n_nextprime(prime, 0);
 			if (verbose)
-				std::cout << ">> Reconstruct failed, try next prime: " << prime << '\r' << std::flush;
+				std::cout << ">> Reconstruct failed, try next prime: " << prime << std::endl;
 			int_t mod1 = mod * prime;
 			F = field_t(FIELD_Fp, prime);
 			pool.detach_loop(0, mat.nrow, [&](auto i) {

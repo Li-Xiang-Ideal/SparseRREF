@@ -89,7 +89,6 @@ namespace SparseRREF {
 		bool is_back_sub = true;
 		uint8_t method = 0;
 		int print_step = 100;
-		int search_depth = INT_MAX;
 		bool shrink_memory = false;
 		std::function<int64_t(int64_t)> col_weight = [](int64_t i) { return i; };
 		thread_pool pool = thread_pool(1); // default: thread pool with 1 thread
@@ -114,8 +113,8 @@ namespace SparseRREF {
 	}
 
 	inline std::vector<std::string> SplitString(const std::string& s, const std::string delim) {
-		auto start = 0ULL;
-		auto end = s.find(delim);
+		size_t start = 0;
+		size_t end = s.find(delim);
 		std::vector<std::string> result;
 		while (end != std::string::npos) {
 			result.push_back(s.substr(start, end - start));

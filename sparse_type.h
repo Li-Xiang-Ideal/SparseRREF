@@ -225,6 +225,20 @@ namespace SparseRREF {
 			return result;
 		}
 
+		template <typename U = T> requires std::is_same_v<U, rat_t>
+		sparse_vec<ulong, index_type> operator%(const ulong p) const {
+			sparse_vec<ulong, index_type> result;
+			nmod_t mod;
+			nmod_init(&mod, p);
+			result.reserve(_nnz);
+			result.resize(_nnz);
+			for (size_t i = 0; i < _nnz; i++) {
+				result.indices[i] = indices[i];
+				result.entries[i] = entries[i] % mod;
+			}
+			return result;
+		}
+
 		void canonicalize() {
 			size_t new_nnz = 0;
 			for (size_t i = 0; i < _nnz && new_nnz < _nnz; i++) {
@@ -495,7 +509,7 @@ namespace SparseRREF {
 	};
 
 	// CSR format for sparse tensor
-	template <typename index_type, typename T> struct sparse_tensor_struct {
+	template <typename T, typename index_type> struct sparse_tensor_struct {
 		size_t rank;
 		size_t alloc;
 		index_type* colptr;
@@ -772,7 +786,7 @@ namespace SparseRREF {
 			std::vector<size_t> lperm(rank);
 			for (size_t i = 0; i < rank; i++)
 				lperm[i] = dims[perm[i]];
-			sparse_tensor_struct<index_type, T> B(lperm, nnz());
+			sparse_tensor_struct<T, index_type> B(lperm, nnz());
 			for (size_t i = 0; i < dims[0]; i++) {
 				for (size_t j = rowptr[i]; j < rowptr[i + 1]; j++) {
 					l[0] = i;
@@ -806,10 +820,10 @@ namespace SparseRREF {
 	};
 
 	// define the default sparse tensor
-	template <typename index_type, typename T, SPARSE_TYPE Type = SPARSE_COO> struct sparse_tensor;
+	template <typename T, typename index_type = int, SPARSE_TYPE Type = SPARSE_COO> struct sparse_tensor;
 
-	template <typename index_type, typename T> struct sparse_tensor<index_type, T, SPARSE_CSR> {
-		sparse_tensor_struct<index_type, T> data;
+	template <typename T, typename index_type> struct sparse_tensor<T, index_type, SPARSE_CSR> {
+		sparse_tensor_struct<T, index_type> data;
 
 		using index_v = std::vector<index_type>;
 		using index_p = index_type*;
@@ -843,7 +857,7 @@ namespace SparseRREF {
 			return B;
 		}
 
-		void convert_from_COO(const sparse_tensor<index_type, T, SPARSE_COO>& l) {
+		void convert_from_COO(const sparse_tensor<T, index_type, SPARSE_COO>& l) {
 			std::vector<size_t> dims(l.data.dims.begin() + 1, l.data.dims.end()); // remove the first dimension
 			size_t nnz = l.data.rowptr[1];
 			size_t rank = dims.size();
@@ -857,8 +871,8 @@ namespace SparseRREF {
 		}
 
 		// constructor from COO
-		sparse_tensor(const sparse_tensor<index_type, T, SPARSE_COO>& l) { convert_from_COO(l); }
-		sparse_tensor& operator=(const sparse_tensor<index_type, T, SPARSE_COO>& l) {
+		sparse_tensor(const sparse_tensor<T, index_type, SPARSE_COO>& l) { convert_from_COO(l); }
+		sparse_tensor& operator=(const sparse_tensor<T, index_type, SPARSE_COO>& l) {
 			data.clear();
 			convert_from_COO(l);
 			return *this;
@@ -877,8 +891,8 @@ namespace SparseRREF {
 		}
 	};
 
-	template <typename index_type, typename T> struct sparse_tensor<index_type, T, SPARSE_COO> {
-		sparse_tensor_struct<index_type, T> data;
+	template <typename index_type, typename T> struct sparse_tensor<T, index_type, SPARSE_COO> {
+		sparse_tensor_struct<T, index_type> data;
 
 		using index_v = std::vector<index_type>;
 		using index_p = index_type*;
@@ -1062,10 +1076,10 @@ namespace SparseRREF {
 			}
 		}
 
-		sparse_tensor<index_type, T, SPARSE_COO> chop(size_t pos, size_t aa) const {
+		sparse_tensor<T, index_type, SPARSE_COO> chop(size_t pos, size_t aa) const {
 			std::vector<size_t> dims_new = dims();
 			dims_new.erase(dims_new.begin() + pos);
-			sparse_tensor<index_type, T, SPARSE_COO> result(dims_new);
+			sparse_tensor<T, index_type, SPARSE_COO> result(dims_new);
 			index_v index_new;
 			index_new.reserve(rank() - 1);
 			for (size_t i = 0; i < nnz(); i++) {
@@ -1082,7 +1096,7 @@ namespace SparseRREF {
 		}
 
 		// constructor from CSR
-		sparse_tensor(const sparse_tensor<index_type, T, SPARSE_CSR>& l) {
+		sparse_tensor(const sparse_tensor<T, index_type, SPARSE_CSR>& l) {
 			data.init(prepend_num(l.dims(), (size_t)1), l.nnz());
 			resize(l.nnz());
 
@@ -1103,7 +1117,7 @@ namespace SparseRREF {
 			}
 		}
 
-		sparse_tensor& operator=(const sparse_tensor<index_type, T, SPARSE_CSR>& l) {
+		sparse_tensor& operator=(const sparse_tensor<T, index_type, SPARSE_CSR>& l) {
 			if (alloc() == 0) {
 				init(l.dims(), l.nnz());
 			}
@@ -1131,7 +1145,7 @@ namespace SparseRREF {
 			return *this;
 		}
 
-		sparse_tensor& operator=(sparse_tensor<index_type, T, SPARSE_CSR>&& l) {
+		sparse_tensor& operator=(sparse_tensor<T, index_type, SPARSE_CSR>&& l) {
 			data.rank = l.rank() + 1;
 			data.alloc = l.data.alloc;
 			data.colptr = s_realloc(data.colptr, l.data.alloc * l.rank());
@@ -1155,7 +1169,7 @@ namespace SparseRREF {
 			return *this;
 		}
 
-		sparse_tensor(sparse_tensor<index_type, T, SPARSE_CSR>&& l) noexcept {
+		sparse_tensor(sparse_tensor<T, index_type, SPARSE_CSR>&& l) noexcept {
 			data.rank = l.rank() + 1;
 			data.alloc = l.data.alloc;
 			data.colptr = s_malloc<index_type>(l.data.alloc * l.rank());
