@@ -457,9 +457,9 @@ namespace SparseRREF {
 			rows.shrink_to_fit();
 		}
 
-		sparse_mat<T> transpose() {
-			sparse_mat<T> res(ncol, nrow);
-			for (size_t i = 0; i < nrow; i++)
+		sparse_mat<T, index_type> transpose() {
+			sparse_mat<T, index_type> res(ncol, nrow);
+			for (size_t i = 0; i < ncol; i++)
 				res[i].zero();
 
 			for (size_t i = 0; i < nrow; i++) {
