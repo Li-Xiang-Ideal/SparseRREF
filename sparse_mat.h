@@ -357,18 +357,91 @@ namespace SparseRREF {
 
 	// A = B * C
 	template <typename T, typename index_t>
-	inline sparse_mat<T, index_t> sparse_mat_dot_sparse_mat(
-		const sparse_mat<T, index_t>& B, 
-		const sparse_mat<T, index_t>& C, const field_t F) {
-		sparse_mat<T, index_t> A;
+	sparse_mat<T, index_t> sparse_mat_mul(
+		const sparse_mat<T, index_t>& B, const sparse_mat<T, index_t>& C, 
+		const field_t F, thread_pool* pool = nullptr) {
 
-		sparse_mat<T, index_t> Ct(C.ncol, C.nrow);
-		sparse_mat_transpose_replace(Ct, C);
+		sparse_mat<T, index_t> A(B.nrow, C.ncol);
+		auto nthreads = 1;
+		if (pool)
+			nthreads = pool->get_thread_count();
 
-		for (size_t i = 0; i < B.nrow; i++)
-			sparse_mat_dot_sparse_vec(A[i], B, Ct[i], F);
+		std::vector<T> cachedensedmat(A.ncol * nthreads);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
+		for (size_t i = 0; i < nthreads; i++)
+			nonzero_c[i].resize(A.ncol);
 
-		return 0;
+		auto method = [&](size_t id, size_t i) {
+			auto& therow = B[i];
+			if (therow.nnz() == 0)
+				return;
+			if (therow.nnz() == 1) {
+				A[i] = C[therow(0)];
+				sparse_vec_rescale(A[i], therow[0], F);
+				return;
+			}
+			auto cache_dense_vec = cachedensedmat.data() + id * A.ncol;
+			auto& nonzero_c_vec = nonzero_c[id];
+			nonzero_c_vec.clear();
+
+			T scalar = therow[0];
+			ulong e_pr;
+			if constexpr (std::is_same_v<T, ulong>) {
+				e_pr = n_mulmod_precomp_shoup(scalar, F.mod.n);
+			}
+			for (auto [ind, val] : C[therow(0)]) {
+				nonzero_c_vec.insert(ind);
+				if constexpr (std::is_same_v<T, ulong>) {
+					cache_dense_vec[ind] = n_mulmod_shoup(scalar, val, e_pr, F.mod.n);
+				}
+				else if constexpr (std::is_same_v<T, rat_t>) {
+					cache_dense_vec[ind] = scalar * val;
+				}
+			}
+
+			for (size_t j = 1; j < therow.nnz(); j++) {
+				scalar = therow[j];
+				if constexpr (std::is_same_v<T, ulong>) {
+					e_pr = n_mulmod_precomp_shoup(scalar, F.mod.n);
+				}
+				for (auto [ind, val] : C[therow(j)]) {
+					if (!nonzero_c_vec.count(ind)) {
+						nonzero_c_vec.insert(ind);
+						cache_dense_vec[ind] = 0;
+					}
+					if constexpr (std::is_same_v<T, ulong>) {
+						cache_dense_vec[ind] = _nmod_add(cache_dense_vec[ind],
+							n_mulmod_shoup(scalar, val, e_pr, F.mod.n), F.mod);
+					}
+					else if constexpr (std::is_same_v<T, rat_t>) {
+						cache_dense_vec[ind] += scalar * val;
+					}
+					if (cache_dense_vec[ind] == 0)
+						nonzero_c_vec.erase(ind);
+				}
+			}
+
+			auto pos = nonzero_c_vec.nonzero();
+			A[i].reserve(pos.size());
+			A[i].resize(pos.size());
+			for (size_t j = 0; j < pos.size(); j++) {
+				A[i](j) = pos[j];
+				A[i][j] = cache_dense_vec[pos[j]];
+			}
+		};
+
+		if (pool) {
+			pool->detach_loop(0, B.nrow, [&](size_t i) {
+				method(SparseRREF::thread_id(), i);
+				});
+			pool->wait();
+		}
+		else {
+			for (size_t i = 0; i < B.nrow; i++)
+				method(0, i);
+		}
+
+		return A;
 	}
 
 	// first write a stupid one
@@ -1293,8 +1366,13 @@ namespace SparseRREF {
 				case WXF_PARSER::i8:
 				case WXF_PARSER::i16:
 				case WXF_PARSER::i32:
-				case WXF_PARSER::i64:
-					val = token.i;
+				case WXF_PARSER::i64: 
+					if constexpr (std::is_same_v<T, rat_t>) {
+						val = token.i;
+					}
+					else if constexpr (std::is_same_v<T, ulong>) {
+						val = int_t(token.i) % F.mod;
+					}
 					break;
 				case WXF_PARSER::bigint:
 					if constexpr (std::is_same_v<T, rat_t>) {
