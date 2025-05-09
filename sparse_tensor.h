@@ -13,6 +13,7 @@
 #include "sparse_rref.h"
 #include "scalar.h"
 #include "sparse_type.h"
+#include "wxf_support.h"
 
 namespace SparseRREF {
 	// we assume that A, B are sorted, then C is also sorted
@@ -988,6 +989,131 @@ namespace SparseRREF {
 			st.write(index_buf.data(), index_buf.size());
 			st << tensor.val(i) << '\n';
 		}
+	}
+
+	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
+	// TODO: more check!!!
+	template <typename T, typename index_t>
+	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t F) {
+		auto& root = tree.root;
+
+		sparse_tensor<T, index_t, SPARSE_CSR> res;
+
+		// SparseArray
+		std::string tmp_str(tree[root].str);
+
+		if (tmp_str != "SparseArray") {
+			std::cerr << "Error: sparse_tensor_read_wxf: ";
+			std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
+			return res;
+		}
+
+		// dims
+		std::vector<size_t> dims(tree[root[1]].i_arr, tree[root[1]].i_arr + tree[root[1]].dim(0));
+
+		if (tree[root[2]].i != 0) {
+			std::cerr << "Error: sparse_tensor_read_wxf: the implicit value is not 0" << std::endl;
+			return res;
+		}
+
+		// {1,{rowptr,colindex},vals}
+		auto& last_node = root[3];
+
+		// last_node[0] should be 1, what's the meaning of this?
+
+		// last_node[1] is {rowptr,colindex}
+		// last_node[1][0] is rowptr, last_node[1][1] is colindex
+
+		res = sparse_tensor<T, index_t, SPARSE_CSR>(dims);
+		res.data.rowptr = std::vector<size_t>(tree[last_node[1][0]].i_arr, tree[last_node[1][0]].i_arr
+			+ tree[last_node[1][0]].dim(0));
+		auto nnz = res.data.rowptr.back();
+
+		res.data.reserve(nnz);
+		for (size_t i = 0; i < nnz * (dims.size() - 1); i++) {
+			res.data.colptr[i] = tree[last_node[1][1]].i_arr[i] - 1; // mma is 1-base
+		}
+
+		auto toInteger = [](const WXF_PARSER::TOKEN& node) {
+			switch (node.type) {
+			case WXF_PARSER::i8:
+			case WXF_PARSER::i16:
+			case WXF_PARSER::i32:
+			case WXF_PARSER::i64:
+				return Flint::int_t(node.i);
+			case WXF_PARSER::bigint:
+				return Flint::int_t(node.str);
+			default:
+				std::cerr << "not a integer" << std::endl;
+				return Flint::int_t(0);
+			}
+			};
+
+		// last_node[2] is vals
+		T* vals = res.data.valptr;
+		if (tree[last_node[2]].type == WXF_PARSER::array ||
+			tree[last_node[2]].type == WXF_PARSER::narray) {
+
+			auto ptr = tree[last_node[2]].i_arr;
+			for (size_t i = 0; i < nnz; i++) {
+				vals[i] = ptr[i];
+			}
+		}
+		else {
+			for (size_t i = 0; i < nnz; i++) {
+				T val;
+				auto& val_node = last_node[2][i];
+				auto& token = tree[val_node];
+
+				switch (tree[val_node].type) {
+				case WXF_PARSER::i8:
+				case WXF_PARSER::i16:
+				case WXF_PARSER::i32:
+				case WXF_PARSER::i64:
+					if constexpr (std::is_same_v<T, rat_t>) {
+						val = token.i;
+					}
+					else if constexpr (std::is_same_v<T, ulong>) {
+						val = int_t(token.i) % F.mod;
+					}
+					break;
+				case WXF_PARSER::bigint:
+					if constexpr (std::is_same_v<T, rat_t>) {
+						val = toInteger(token);
+					}
+					else if constexpr (std::is_same_v<T, ulong>) {
+						val = int_t(token.str) % F.mod;
+					}
+					break;
+				case WXF_PARSER::symbol:
+					tmp_str = token.str;
+					if (tmp_str == "Rational") {
+						int_t n_1 = toInteger(tree[val_node[0]]);
+						int_t d_1 = toInteger(tree[val_node[1]]);
+						if constexpr (std::is_same_v<T, rat_t>) {
+							val = rat_t(std::move(n_1), std::move(d_1), true);
+						}
+						else if constexpr (std::is_same_v<T, ulong>) {
+							val = rat_t(std::move(n_1), std::move(d_1), true) % F.mod;
+						}
+					}
+					else {
+						std::cerr << "Error: sparse_mat_read: ";
+						std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
+						return res;
+					}
+					break;
+				default:
+					std::cerr << "Error: sparse_mat_read: ";
+					std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
+					return res;
+					break;
+				}
+				vals[i] = val;
+			}
+		}
+
+		return res;
 	}
 
 } // namespace SparseRREF
