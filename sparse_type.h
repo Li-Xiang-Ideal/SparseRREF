@@ -1145,51 +1145,62 @@ namespace SparseRREF {
 			return *this;
 		}
 
-		sparse_tensor& operator=(sparse_tensor<T, index_type, SPARSE_CSR>&& l) {
-			data.rank = l.rank() + 1;
-			data.alloc = l.data.alloc;
-			data.colptr = s_realloc(data.colptr, l.data.alloc * l.rank());
-			std::swap(data.valptr, l.data.valptr); // no need to copy
-			data.dims = prepend_num(l.dims(), (size_t)1);
-			data.rowptr = { 0, l.nnz() };
+		sparse_tensor& operator=(sparse_tensor<T, index_type, SPARSE_CSR>&& l) noexcept {
+			data = std::move(l.data);
+			if (data.alloc == 0)
+				return *this;
 
-			auto r = l.rank();
-			auto n_row = dim(0);
+			auto r = data.rank;
+			auto n_row = data.dims[0];
 
-			// then deal with the indices
+			// recompute the index
+			index_type* newcolptr = s_malloc<index_type>(data.colptr, data.alloc * r);
+			auto newcolptr_j = newcolptr;
+			auto nowcolptr_j = data.colptr;
 			for (size_t i = 0; i < n_row; i++) {
-				for (size_t j = l.data.rowptr[i]; j < l.data.rowptr[i + 1]; j++) {
-					auto tmp_index = index(j);
-					tmp_index[0] = i;
-					for (size_t k = 0; k < r - 1; k++)
-						tmp_index[k + 1] = l.data.colptr[j * (r - 1) + k];
+				for (size_t j = data.rowptr[i]; j < data.rowptr[i + 1]; j++) {
+					newcolptr_j[0] = i;
+					s_copy(newcolptr_j + 1, nowcolptr_j, r - 1);
+					newcolptr_j += r;
+					nowcolptr_j += r - 1;
 				}
 			}
+			s_free(data.colptr);
+			data.colptr = newcolptr;
+
+			data.rowptr = { 0, data.rowptr.back() };
+			data.dims = prepend_num(data.dims, (size_t)1);
+			data.rank++;
 
 			return *this;
 		}
 
 		sparse_tensor(sparse_tensor<T, index_type, SPARSE_CSR>&& l) noexcept {
-			data.rank = l.rank() + 1;
-			data.alloc = l.data.alloc;
-			data.colptr = s_malloc<index_type>(l.data.alloc * l.rank());
-			data.valptr = l.data.valptr;
-			l.data.valptr = NULL;
-			data.dims = prepend_num(l.dims(), (size_t)1);
-			data.rowptr = { 0, l.nnz() };
+			data = std::move(l.data);
+			if (data.alloc == 0)
+				return;
 
-			auto r = l.rank();
-			auto n_row = dim(0);
+			auto r = data.rank;
+			auto n_row = data.dims[0];
 
-			// then deal with the indices
+			// recompute the index
+			index_type* newcolptr = s_malloc<index_type>(data.alloc * r);
+			auto newcolptr_j = newcolptr;
+			auto nowcolptr_j = data.colptr;
 			for (size_t i = 0; i < n_row; i++) {
-				for (size_t j = l.data.rowptr[i]; j < l.data.rowptr[i + 1]; j++) {
-					auto tmp_index = index(j);
-					tmp_index[0] = i;
-					for (size_t k = 0; k < r - 1; k++)
-						tmp_index[k + 1] = l.data.colptr[j * (r - 1) + k];
+				for (size_t j = data.rowptr[i]; j < data.rowptr[i + 1]; j++) {
+					newcolptr_j[0] = i;
+					s_copy(newcolptr_j + 1, nowcolptr_j, r - 1);
+					newcolptr_j += r;
+					nowcolptr_j += r - 1;
 				}
 			}
+			s_free(data.colptr);
+			data.colptr = newcolptr;
+
+			data.rowptr = { 0, data.rowptr.back() };
+			data.dims = prepend_num(data.dims, (size_t)1);
+			data.rank++;
 		}
 
 		void print_test() {
