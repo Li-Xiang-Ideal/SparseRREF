@@ -59,7 +59,6 @@ namespace WXF_PARSER {
 		// function type
 		func = 102,
 		association = 65,
-		// char type
 		delay_rule = 58,
 		rule = 45,
 		// string type
@@ -281,7 +280,7 @@ namespace WXF_PARSER {
 	std::vector<uint8_t> toVarint(const uint64_t val) {
 		std::vector<uint8_t> bytes;
 		auto tmp_val = val;
-		bytes.reserve(10); // 10 bytes is the maximum length of varint
+		bytes.reserve(16); // 10 bytes is the maximum length of varint, but we reserve more for efficiency
 		while (tmp_val > 0) {
 			uint8_t byte = tmp_val & 127;
 			tmp_val >>= 7;
@@ -342,19 +341,19 @@ namespace WXF_PARSER {
 
 				switch (type) {
 					case WXF_HEAD::i8:
-						tokens.push_back(makeNumber<int8_t>());
+						tokens.push_back(makeNumber<int8_t>(type));
 						break;
 					case WXF_HEAD::i16:
-						tokens.push_back(makeNumber<int16_t>());
+						tokens.push_back(makeNumber<int16_t>(type));
 						break;
 					case WXF_HEAD::i32:
-						tokens.push_back(makeNumber<int32_t>());
+						tokens.push_back(makeNumber<int32_t>(type));
 						break;
 					case WXF_HEAD::i64:
-						tokens.push_back(makeNumber<int64_t>());
+						tokens.push_back(makeNumber<int64_t>(type));
 						break;
 					case WXF_HEAD::f64:
-						tokens.push_back(makeNumber<double>());
+						tokens.push_back(makeNumber<double>(type));
 						break;
 					case WXF_HEAD::symbol: 
 					case WXF_HEAD::bigint:
@@ -386,8 +385,9 @@ namespace WXF_PARSER {
 
 		// machine number, val (length is given by the sizeof(val))
 		template <typename T>
-		TOKEN makeNumber() {
+		TOKEN makeNumber(WXF_HEAD type) {
 			TOKEN node;
+			node.type = type;
 			node.length = 0;
 
 			T val;
@@ -401,23 +401,6 @@ namespace WXF_PARSER {
 			}
 			
 			pos += sizeof(T) / sizeof(uint8_t);
-
-			if constexpr (std::is_same_v<T, int8_t>) {
-				node.type = WXF_HEAD::i8;
-			}
-			else if constexpr (std::is_same_v<T, int16_t>) {
-				node.type = WXF_HEAD::i16;
-			}
-			else if constexpr (std::is_same_v<T, int32_t>) {
-				node.type = WXF_HEAD::i32;
-			}
-			else if constexpr (std::is_same_v<T, int64_t>) {
-				node.type = WXF_HEAD::i64;
-			}
-			else if constexpr (std::is_same_v<T, double>) {
-				// it is better to use float64_t (in C++23)
-				node.type = WXF_HEAD::f64;
-			}
 
 			return node;
 		}

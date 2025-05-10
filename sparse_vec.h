@@ -38,7 +38,9 @@ namespace SparseRREF {
 		if (scalar == 1)
 			return;
 		if constexpr (std::is_same_v<T, ulong>) {
-			_nmod_vec_scalar_mul_nmod_shoup(vec.entries, vec.entries, vec.nnz(), scalar, F.mod);
+			ulong e_pr = n_mulmod_precomp_shoup(scalar, F.mod.n);
+			for (size_t i = 0; i < vec.nnz(); i++)
+				vec.entries[i] = n_mulmod_shoup(scalar, vec.entries[i], e_pr, F.mod.n);
 		}
 		else if constexpr (Flint::IsOneOf<T, int_t, rat_t>) {
 			for (size_t i = 0; i < vec.nnz(); i++)

@@ -20,7 +20,7 @@ namespace SparseRREF {
 	};
 
 	// sparse vector
-	template <typename T, typename index_type = slong> struct sparse_vec {
+	template <typename T, Flint::signed_builtin_integral index_type = int> struct sparse_vec {
 		index_type* indices = NULL;
 		T* entries = NULL;
 		size_t _nnz = 0;
