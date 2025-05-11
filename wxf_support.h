@@ -659,22 +659,21 @@ namespace WXF_PARSER {
 	//}
 
 	//// TODO
-	//std::vector<uint8_t> node_to_ustr(const std::vector<TOKEN>& tokens, const ExprNode& node) {
-	//	std::vector<uint8_t> res;
+	//void node_to_ustr(std::vector<uint8_t> res, const std::vector<TOKEN>& tokens, const ExprNode& node) {
 	//	auto& token = tokens[node.index];
 
-	//	std::vector<uint8_t> short_buffer;
-	//	short_buffer.reserve(16);
-
+	//	uint8_t short_buffer[16];
 	//	auto toVarint = [&](uint64_t value) {
-	//		short_buffer.clear();
+	//		uint8_t len = 0;
 	//		auto tmp_val = value;
 	//		while (tmp_val > 0) {
 	//			uint8_t byte = tmp_val & 127;
 	//			tmp_val >>= 7;
 	//			if (tmp_val > 0) byte |= 128; // set the continuation bit
-	//			short_buffer.push_back(byte);
+	//			short_buffer[len] = byte;
+	//			len++;
 	//		}
+	//		return len; // return the length of the varint
 	//		};
 
 	//	auto push_symbol = [&](const std::string& str) {
@@ -682,8 +681,8 @@ namespace WXF_PARSER {
 	//		res.insert(res.end(), str.begin(), str.end());
 	//		};
 	//	auto push_varint = [&](uint64_t size) {
-	//		toVarint(size);
-	//		res.insert(res.end(), short_buffer.begin(), short_buffer.end());
+	//		auto len = toVarint(size);
+	//		res.insert(res.end(), short_buffer, short_buffer + len);
 	//		};
 	//	auto push_function = [&](const std::string& symbol, uint64_t size) {
 	//		res.push_back(WXF_PARSER::func);
@@ -699,25 +698,64 @@ namespace WXF_PARSER {
 	//		res.push_back(WXF_HEAD::i64);
 	//		serialize_binary(res, token.i);
 	//		break;
+	//	case WXF_HEAD::f64:
+	//		res.push_back(WXF_HEAD::f64);
+	//		serialize_binary(res, token.d);
+	//		break;
 	//	case WXF_HEAD::func:
 	//	case WXF_HEAD::association:
 	//		res.push_back(node.type);
 	//		push_varint(node.size);
 	//		for (size_t i = 0; i < node.size; i++) {
-	//			node_to_ustr(tokens, node.children[i]);
+	//			node_to_ustr(res, tokens, node.children[i]);
 	//		}
 	//		break;
 	//	case WXF_HEAD::rule:
 	//	case WXF_HEAD::delay_rule:
 	//		res.push_back(node.type);
 	//		for (size_t i = 0; i < node.size; i++) {
-	//			node_to_ustr(tokens, node.children[i]);
+	//			node_to_ustr(res, tokens, node.children[i]);
+	//		}
+	//		break;
+	//	case WXF_HEAD::symbol:
+	//	case WXF_HEAD::bigint:
+	//	case WXF_HEAD::bigreal:
+	//	case WXF_HEAD::string:
+	//	case WXF_HEAD::binary_string:
+	//		res.push_back(node.type);
+	//		push_varint(token.length);
+	//		res.insert(res.end(), token.str, token.str + token.length);
+	//		break;
+	//	case WXF_HEAD::array:
+	//	case WXF_HEAD::narray:
+	//		res.push_back(node.type);
+	//		res.push_back(token.dimensions[0]);
+	//		push_varint(token.rank);
+	//		for (auto i = 0; i < token.rank; i++) {
+	//			push_varint(token.dimensions[i + 2]);
+	//		}
+	//		if (token.dimensions[0] == 3) {
+	//			for (auto i = 0; i < token.dimensions[1]; i++) {
+	//				serialize_binary(res, token.i_arr[i]);
+	//			}
+	//		}
+	//		else if (node.type == WXF_HEAD::narray && token.dimensions[0] == 19) {
+	//			for (auto i = 0; i < token.dimensions[1]; i++) {
+	//				serialize_binary(res, token.u_arr[i]);
+	//			}
+	//		}
+	//		else if (token.dimensions[0] == 35) {
+	//			for (auto i = 0; i < token.dimensions[1]; i++) {
+	//				serialize_binary(res, token.d_arr[i]);
+	//			}
+	//		}
+	//		else {
+	//			std::cerr << "Unsupported number type in packed array or numeric array. " << std::endl;
 	//		}
 	//		break;
 	//	default:
 	//		break;
 	//	}
-	//	return res;
 	//}
 
 	struct ExprTree {
