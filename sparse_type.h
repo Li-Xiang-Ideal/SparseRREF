@@ -878,6 +878,62 @@ namespace SparseRREF {
 			return *this;
 		}
 
+		// suppose that COO tensor is sorted
+		sparse_tensor(sparse_tensor<T, index_type, SPARSE_COO>&& l) noexcept {
+			// use move to avoid memory problems, then no need to mention l
+			data = std::move(l.data); 
+			// remove the first dimension
+			data.rank--;
+			for (size_t i = 0; i < data.rank; i++)
+				data.dims[i] = data.dims[i + 1];
+			data.dims.resize(data.rank);
+			// then recompute the rowptr and colptr
+			// first compute nnz for each row
+			std::vector<size_t> rowptr(data.dims[0] + 1, 0);
+			auto nnz = data.rowptr[1];
+			for (size_t i = 0; i < nnz; i++) {
+				auto oldptr = data.colptr + i * data.rank;
+				auto nowptr = data.colptr + i * (data.rank - 1);
+				rowptr[oldptr[0] + 1]++;
+				for (size_t j = 0; j < data.rank - 1; j++)
+					nowptr[j] = oldptr[j + 1];
+			}
+			for (size_t i = 0; i < data.dims[0]; i++)
+				rowptr[i + 1] += rowptr[i];
+			data.rowptr = rowptr;
+			data.colptr = s_realloc<index_type>(data.colptr, nnz * (data.rank - 1));
+		}
+
+		sparse_tensor& operator=(sparse_tensor<T, index_type, SPARSE_COO>&& l) noexcept {
+			if (this == &l)
+				return *this;
+
+			// use move to avoid memory problems, then no need to mention l
+			data = std::move(l.data);
+			// remove the first dimension
+			data.rank--;
+			for (size_t i = 0; i < data.rank; i++)
+				data.dims[i] = data.dims[i + 1];
+			data.dims.resize(data.rank);
+			// then recompute the rowptr and colptr
+			// first compute nnz for each row
+			std::vector<size_t> rowptr(data.dims[0] + 1, 0);
+			auto nnz = data.rowptr[1];
+			for (size_t i = 0; i < nnz; i++) {
+				auto oldptr = data.colptr + i * data.rank;
+				auto nowptr = data.colptr + i * (data.rank - 1);
+				rowptr[oldptr[0] + 1]++;
+				for (size_t j = 0; j < data.rank - 1; j++)
+					nowptr[j] = oldptr[j + 1];
+			}
+			for (size_t i = 0; i < data.dims[0]; i++)
+				rowptr[i + 1] += rowptr[i];
+			data.rowptr = rowptr;
+			data.colptr = s_realloc<index_type>(data.colptr, nnz * (data.rank - 1));
+
+			return *this;
+		}
+
 		// only for test
 		void print_test() {
 			for (size_t i = 0; i < data.dims[0]; i++) {

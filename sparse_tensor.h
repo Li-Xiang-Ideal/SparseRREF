@@ -69,13 +69,19 @@ namespace SparseRREF {
 		if (B.alloc() == 0)
 			return A;
 
-		std::vector<size_t> dimsC = A.dims();
-		auto rank = A.rank();
-
-		if (dimsC != B.dims()) {
+		if (A.rank() != B.rank()) {
 			std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
 			exit(1);
 		}
+
+		for (size_t i = 0; i < A.rank(); i++) {
+			if (A.dim(i) != B.dim(i)) {
+				std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
+				exit(1);
+			}
+		}
+
+		auto rank = A.rank();
 
 		// if one of the tensors is zero
 		if (A.nnz() == 0)
@@ -83,7 +89,7 @@ namespace SparseRREF {
 		if (B.nnz() == 0)
 			return A;
 
-		sparse_tensor<T, index_type, SPARSE_COO> C(dimsC, A.nnz() + B.nnz());
+		sparse_tensor<T, index_type, SPARSE_COO> C(A.dims(), A.nnz() + B.nnz());
 
 		auto Aperm = A.gen_perm();
 		auto Bperm = B.gen_perm();
@@ -145,9 +151,16 @@ namespace SparseRREF {
 		auto dimsC = A.dims();
 		auto rank = A.rank();
 
-		if (dimsC != B.dims()) {
+		if (A.rank() != B.rank()) {
 			std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
 			exit(1);
+		}
+
+		for (size_t i = 0; i < A.rank(); i++) {
+			if (A.dim(i) != B.dim(i)) {
+				std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
+				exit(1);
+			}
 		}
 
 		// if one of the tensors is zero
@@ -1114,6 +1127,106 @@ namespace SparseRREF {
 		}
 
 		return res;
+	}
+	
+	// TODO...
+	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
+	template <typename T, typename index_t>
+	std::vector<uint8_t> sparse_tensor_write_wxf(const sparse_tensor<T, index_t, SPARSE_CSR>& tensor) {
+		// build a tree
+
+		using namespace WXF_PARSER;
+
+		ExprTree tree;
+		auto& tokens = tree.tokens;
+		auto& root = tree.root;
+		tokens.push_back(TOKEN(symbol, "SparseArray"));
+		root = ExprNode(tokens.size() - 1, 4, func);
+
+		tokens.push_back(TOKEN(symbol, "Automatic"));
+		root[0] = ExprNode(tokens.size() - 1, 0, symbol);
+
+		auto rank = tensor.rank();
+		auto nnz = tensor.nnz();
+		auto tensor_dims = tensor.dims();
+
+		int64_t* ptr = (int64_t*)malloc(tensor.rank() * sizeof(int64_t));
+		for (auto i = 0; i < tensor.rank(); i++) {
+			ptr[i] = tensor_dims[i];
+		}
+		tokens.push_back(TOKEN(array, ptr, { tensor.rank() }, 3, tensor.rank()));
+		root[1] = ExprNode(tokens.size() - 1, 0, array);
+
+		tokens.push_back(TOKEN(i8, 0));
+		root[2] = ExprNode(tokens.size() - 1, 0, i8);
+
+		tokens.push_back(TOKEN(symbol, "List"));
+		root[3] = ExprNode(tokens.size() - 1, 3, func);
+
+		tokens.push_back(TOKEN(i8, 1));
+		root[3][0] = ExprNode(tokens.size() - 1, 0, i8);
+
+		tokens.push_back(TOKEN(symbol, "List"));
+		root[3][1] = ExprNode(tokens.size() - 1, 2, func);
+
+		auto& rowptr = tensor.data.rowptr;
+		ptr = (int64_t*)malloc(rowptr.size() * sizeof(int64_t));
+		for (size_t i = 0; i < rowptr.size(); i++) {
+			ptr[i] = rowptr[i];
+		}
+		tokens.push_back(TOKEN(array, ptr, { rowptr.size() }, 3, rowptr.size()));
+		root[3][1][0] = ExprNode(tokens.size() - 1, 0, array);
+
+		auto colptr_size = (tensor.rank() - 1) * nnz;
+		ptr = (int64_t*)malloc(colptr_size * sizeof(int64_t));
+		for (size_t i = 0; i < colptr_size; i++) {
+			ptr[i] = tensor.data.colptr[i] + 1; // mma is 1-base
+		}
+		tokens.push_back(TOKEN(array, ptr, { nnz, rank - 1 }, 3, colptr_size));
+		root[3][1][1] = ExprNode(tokens.size() - 1, 0, array);
+
+		auto push_int = [&](const int_t& val) {
+			if (val.fits_si()) {
+				tokens.push_back(TOKEN(i64, val.to_si()));
+				return i64;
+			}
+			else {
+				tokens.push_back(TOKEN(bigint, val.get_str()));
+				return bigint;
+			}
+			};
+
+		if constexpr (std::is_same_v<T, rat_t>) {
+			tokens.push_back(TOKEN(symbol, "List"));
+			root[3][2] = ExprNode(tokens.size() - 1, nnz, func);
+			for (size_t i = 0; i < nnz; i++) {
+				T& val = tensor.data.valptr[i];
+				int_t num = val.num();
+				int_t den = val.den();
+				if (den == 1) {
+					auto tt = push_int(num);
+					root[3][2][i] = ExprNode(tokens.size() - 1, 0, tt);
+				}
+				else {
+					tokens.push_back(TOKEN(symbol, "Rational"));
+					root[3][2][i] = ExprNode(tokens.size() - 1, 2, func);
+					auto tt = push_int(num);
+					root[3][2][i][0] = ExprNode(tokens.size() - 1, 0, tt);
+					tt = push_int(den);
+					root[3][2][i][1] = ExprNode(tokens.size() - 1, 0, tt);
+				}
+			}
+		}
+		else if constexpr (std::is_same_v<T, ulong>) {
+			auto ptr = (uint64_t*)malloc(nnz * sizeof(uint64_t));
+			for (size_t i = 0; i < nnz; i++) {
+				ptr[i] = tensor.data.valptr[i];
+			}
+			tokens.push_back(TOKEN(narray, { nnz }, 19, nnz));
+			root[3][2] = ExprNode(tokens.size() - 1, 0, narray);
+		}
+
+		return tree.to_ustr();
 	}
 
 } // namespace SparseRREF
