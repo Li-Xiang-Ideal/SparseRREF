@@ -183,8 +183,7 @@ namespace WXF_PARSER {
 		TOKEN(WXF_HEAD t, double v) : type(t), rank(0), d(v), length(4) {}
 
 		// array/narray
-		template<typename T>
-		TOKEN(WXF_HEAD t, T* ptr, const std::vector<size_t>& dims, int num_type, size_t len) : type(t) {
+		TOKEN(WXF_HEAD t, const std::vector<size_t>& dims, int num_type, size_t len) : type(t) {
 			int r = dims.size();
 			rank = r;
 			dimensions = (uint64_t*)malloc((r + 2) * sizeof(uint64_t));
@@ -193,7 +192,7 @@ namespace WXF_PARSER {
 			for (auto i = 0; i < r; i++) {
 				dimensions[i + 2] = dims[i];
 			}
-			i_arr = (int64_t*)ptr;
+			i_arr = (int64_t*)malloc(len * sizeof(int64_t));
 		}
 
 		template<typename T>
@@ -484,52 +483,52 @@ namespace WXF_PARSER {
 				all_len *= dims[i];
 			}
 			if (type == WXF_HEAD::narray && num_type >= 16 && num_type < 20) {
-				auto ptr = (uint64_t*)malloc(all_len * sizeof(uint64_t));
+				auto token = TOKEN(type, dims, num_type, all_len);
 
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
 					T val;
 					for (size_t i = 0; i < all_len; i++) {
 						std::memcpy(&val, buffer + pos, size_of_type * sizeof(uint8_t));
-						ptr[i] = (uint64_t)val;
+						token.u_arr[i] = (uint64_t)val;
 						pos += size_of_type;
 					}
 					}
 				, select_type(num_type));
 
-				return TOKEN(type, ptr, dims, num_type, all_len);
+				return token;
 			}
 			else if (num_type < 10) {
-				auto ptr = (int64_t*)malloc(all_len * sizeof(int64_t));
+				auto token = TOKEN(type, dims, num_type, all_len);
 
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
 					T val;
 					for (size_t i = 0; i < all_len; i++) {
 						std::memcpy(&val, buffer + pos, size_of_type * sizeof(uint8_t));
-						ptr[i] = (int64_t)val;
+						token.i_arr[i] = (int64_t)val;
 						pos += size_of_type;
 					}
 					}
 				, select_type(num_type));
 
-				return TOKEN(type, ptr, dims, num_type, all_len);
+				return token;
 			}
 			else if (num_type >= 34 && num_type <= 35) {
-				auto ptr = (double*)malloc(all_len * sizeof(double));
+				auto token = TOKEN(type, dims, num_type, all_len);
 
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
 					T val;
 					for (size_t i = 0; i < all_len; i++) {
 						std::memcpy(&val, buffer + pos, size_of_type * sizeof(uint8_t));
-						ptr[i] = (double)val;
+						token.d_arr[i] = (double)val;
 						pos += size_of_type;
 					}
 					}
 				, select_type(num_type));
 
-				return TOKEN(type, ptr, dims, num_type, all_len);
+				return token;
 			}
 			return TOKEN();
 		}

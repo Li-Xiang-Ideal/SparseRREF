@@ -1150,11 +1150,11 @@ namespace SparseRREF {
 		auto nnz = tensor.nnz();
 		auto tensor_dims = tensor.dims();
 
-		int64_t* ptr = (int64_t*)malloc(tensor.rank() * sizeof(int64_t));
+		tokens.push_back(TOKEN(array, { tensor.rank() }, 3, tensor.rank()));
+		auto ptr = tokens.back().i_arr;
 		for (auto i = 0; i < tensor.rank(); i++) {
 			ptr[i] = tensor_dims[i];
 		}
-		tokens.push_back(TOKEN(array, ptr, { tensor.rank() }, 3, tensor.rank()));
 		root[1] = ExprNode(tokens.size() - 1, 0, array);
 
 		tokens.push_back(TOKEN(i8, 0));
@@ -1170,19 +1170,19 @@ namespace SparseRREF {
 		root[3][1] = ExprNode(tokens.size() - 1, 2, func);
 
 		auto& rowptr = tensor.data.rowptr;
-		ptr = (int64_t*)malloc(rowptr.size() * sizeof(int64_t));
+		tokens.push_back(TOKEN(array, { rowptr.size() }, 3, rowptr.size()));
+		ptr = tokens.back().i_arr;
 		for (size_t i = 0; i < rowptr.size(); i++) {
 			ptr[i] = rowptr[i];
 		}
-		tokens.push_back(TOKEN(array, ptr, { rowptr.size() }, 3, rowptr.size()));
 		root[3][1][0] = ExprNode(tokens.size() - 1, 0, array);
 
 		auto colptr_size = (tensor.rank() - 1) * nnz;
-		ptr = (int64_t*)malloc(colptr_size * sizeof(int64_t));
+		tokens.push_back(TOKEN(array, { nnz, rank - 1 }, 3, colptr_size));
+		ptr = tokens.back().i_arr;
 		for (size_t i = 0; i < colptr_size; i++) {
 			ptr[i] = tensor.data.colptr[i] + 1; // mma is 1-base
 		}
-		tokens.push_back(TOKEN(array, ptr, { nnz, rank - 1 }, 3, colptr_size));
 		root[3][1][1] = ExprNode(tokens.size() - 1, 0, array);
 
 		auto push_int = [&](const int_t& val) {
@@ -1218,11 +1218,11 @@ namespace SparseRREF {
 			}
 		}
 		else if constexpr (std::is_same_v<T, ulong>) {
-			auto ptr = (uint64_t*)malloc(nnz * sizeof(uint64_t));
+			tokens.push_back(TOKEN(narray, { nnz }, 19, nnz));
+			auto ptr = tokens.back().u_arr;
 			for (size_t i = 0; i < nnz; i++) {
 				ptr[i] = tensor.data.valptr[i];
 			}
-			tokens.push_back(TOKEN(narray, { nnz }, 19, nnz));
 			root[3][2] = ExprNode(tokens.size() - 1, 0, narray);
 		}
 
