@@ -100,6 +100,18 @@ namespace WXF_PARSER {
 		}
 	}
 
+	int minimal_signed_bits(int64_t x) {
+		int logbit = 0;
+		for (int bits = 8; bits <= 64; bits *= 2) {
+			int64_t min = -(1LL << (bits - 1));
+			int64_t max = (1LL << (bits - 1)) - 1;
+			if (x >= min && x <= max)
+				return logbit;
+			logbit++;
+		}
+		return logbit;
+	}
+
 	struct TOKEN {
 		WXF_HEAD type;
 		int rank = 0;
@@ -650,10 +662,30 @@ namespace WXF_PARSER {
 		case WXF_HEAD::i8:
 		case WXF_HEAD::i16:
 		case WXF_HEAD::i32:
-		case WXF_HEAD::i64:
-			res.push_back(WXF_HEAD::i64);
-			serialize_binary(res, token.i);
+		case WXF_HEAD::i64: {
+			int num_type = minimal_signed_bits(token.i);
+			switch (num_type) {
+			case 0:
+				res.push_back(WXF_HEAD::i8);
+				serialize_binary(res, (int8_t)token.i);
+				break;
+			case 1:
+				res.push_back(WXF_HEAD::i16);
+				serialize_binary(res, (int16_t)token.i);
+				break;
+			case 2:
+				res.push_back(WXF_HEAD::i32);
+				serialize_binary(res, (int32_t)token.i);
+				break;
+			case 3:
+				res.push_back(WXF_HEAD::i64);
+				serialize_binary(res, token.i);
+				break;
+			default:
+				break;
+			}
 			break;
+		}
 		case WXF_HEAD::f64:
 			res.push_back(WXF_HEAD::f64);
 			serialize_binary(res, token.d);

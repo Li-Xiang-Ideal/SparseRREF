@@ -105,6 +105,16 @@ namespace SparseRREF {
 		return std::popcount(x);
 	}
 
+	int minimal_signed_bits(int64_t x) {
+		uint64_t ux = x < 0 ? ~uint64_t(x) : uint64_t(x);
+		return 65 - clz(ux | 1);
+	}
+
+	int minimal_unsigned_bits(uint64_t x) {
+		if (x == 0) return 1;
+		return 64 - clz(x);
+	}
+
 	// string
 	inline void DeleteSpaces(std::string& str) {
 		str.erase(std::remove_if(str.begin(), str.end(),

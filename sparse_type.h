@@ -1041,7 +1041,7 @@ namespace SparseRREF {
 
 			// change the dimensions
 			data.dims = new_dims;
-			data.rank = nr;
+			data.rank = nr + 1;
 		}
 
 		// TODO: resharp, for example {2,100} to {2,5,20}
