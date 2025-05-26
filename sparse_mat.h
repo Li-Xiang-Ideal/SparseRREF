@@ -1254,6 +1254,7 @@ namespace SparseRREF {
 			if (line.empty() || line[0] == '%')
 				continue;
 
+			bool is_end = false;
 			size_t rowcol[2];
 			size_t* rowcolptr = rowcol;
 			size_t start = 0;
@@ -1262,13 +1263,21 @@ namespace SparseRREF {
 
 			while (end != std::string::npos && count < 2) {
 				if (start != end) {
-					*rowcolptr = string_to_ull(line.substr(start, end - start)) - 1;
+					auto val = string_to_ull(line.substr(start, end - start));
+					if (val == 0) {
+						is_end = true;
+						break;
+					}
+					*rowcolptr = val - 1;
 					rowcolptr++;
 					count++;
 				}
 				start = end + 1;
 				end = line.find(' ', start);
 			}
+
+			if (is_end)
+				break;
 
 			if (count != 2) {
 				std::cerr << "Error: sparse_mat_read: wrong format in the matrix file" << std::endl;

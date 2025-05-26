@@ -253,10 +253,14 @@ namespace SparseRREF {
 			data[idx].set(pos);
 		}
 
-		bool count(size_t val) {
+		bool test(size_t val) {
 			auto idx = val / bitset_size;
 			auto pos = val % bitset_size;
 			return data[idx].test(pos);
+		}
+
+		bool count(size_t val) {
+			return test(val);
 		}
 
 		void erase(size_t val) {

@@ -189,7 +189,7 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 
         WXF_PARSER::ExprTree expr_tree;
         expr_tree = WXF_PARSER::MakeExprTree(in_str, (size_t)length);
-        auto mat = sparse_mat_read_wxf<rat_t>(expr_tree, F);
+        auto mat = sparse_mat_read_wxf<rat_t, int>(expr_tree, F);
 
         rref_option_t opt;
         opt->pool.reset(nthreads);
@@ -265,7 +265,7 @@ EXTERN_C DLLEXPORT int ratmat_inv(WolframLibraryData ld, mint Argc, MArgument* A
 
         WXF_PARSER::ExprTree expr_tree;
         expr_tree = WXF_PARSER::MakeExprTree(in_str, (size_t)length);
-        auto mat = sparse_mat_read_wxf<rat_t>(expr_tree, F);
+        auto mat = sparse_mat_read_wxf<rat_t, int>(expr_tree, F);
 
         rref_option_t opt;
         opt->pool.reset(nthreads);

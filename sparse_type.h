@@ -273,7 +273,7 @@ namespace SparseRREF {
 		}
 	};
 
-	template <typename index_type> struct sparse_vec<bool, index_type> {
+	template <Flint::signed_builtin_integral index_type> struct sparse_vec<bool, index_type> {
 		index_type* indices = NULL;
 		size_t _nnz = 0;
 		size_t _alloc = 0;
@@ -372,7 +372,7 @@ namespace SparseRREF {
 	};
 
 	// new sparse matrix
-	template <typename T, typename index_type = slong> struct sparse_mat {
+	template <typename T, Flint::signed_builtin_integral index_type = int> struct sparse_mat {
 		size_t nrow = 0;
 		size_t ncol = 0;
 		std::vector<sparse_vec<T, index_type>> rows;
