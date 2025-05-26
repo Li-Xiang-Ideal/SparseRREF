@@ -35,8 +35,8 @@
          If[method =!= 0, {joinedmat[[;; Length@mat]], 
            joinedmat[[Length@mat + 1 ;;]]}, joinedmat]];
 
-    ratrref[mat_SparseArray, method_ : 1, nthread_ : 1] := 
-        BinaryDeserialize[ratrreflib[BinarySerialize[mat], method, nthread]];
+    ratrref[mat_SparseArray, mode_ : 1, nthread_ : 1] := 
+        BinaryDeserialize[ratrreflib[BinarySerialize[mat], mode, nthread]];
 
     ```
 */
@@ -164,9 +164,14 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
     return LIBRARY_NO_ERROR;
 }
 
+// output_mode:
+// 0: output the rref
+// 1: output the rref and its kernel
+// 2: output the rref and its pivots
+// 3: output the rref, kernel and pivots
 EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
     auto na_in = MArgument_getMNumericArray(Args[0]);
-	auto output_kernel = MArgument_getInteger(Args[1]);
+	auto output_mode = MArgument_getInteger(Args[1]);
     auto nthreads = MArgument_getInteger(Args[2]);
 
     numericarray_data_t type = MNumericArray_Type_Undef;
@@ -195,32 +200,92 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
         opt->pool.reset(nthreads);
 
         auto pivots = sparse_mat_rref_reconstruct(mat, opt);
+		std::vector<std::pair<int, int>> pivots_vec;
+        for (auto& p : pivots) {
+			pivots_vec.insert(pivots_vec.end(), p.begin(), p.end());
+		}
 
         sparse_mat<rat_t> K;
         size_t len = 0;
-        if (output_kernel) {
+        if (output_mode == 1 || output_mode == 3) {
             K = sparse_mat_rref_kernel(mat, pivots, F, opt);
             len = K.nrow;
         }
 
         {
-            std::vector<uint8_t> m_str, K_str;
-            if (len == 0) {
-                res_str = sparse_mat_write_wxf(mat, true);
-            }
-            else {
-                m_str = sparse_mat_write_wxf(mat, false);
-                K_str = sparse_mat_write_wxf(K, false);
+            std::vector<uint8_t> m_str;
+            auto push_mat = [&](auto& M) {
+                m_str = sparse_mat_write_wxf(M, false);
+                res_str.insert(res_str.end(), m_str.begin(), m_str.end());
+                };
+            auto push_null = [&]() {
+                res_str.push_back(WXF_PARSER::WXF_HEAD::symbol);
+                res_str.push_back(4); // length of Null
+                std::string null_str = "Null";
+                res_str.insert(res_str.end(), null_str.begin(), null_str.end());
+				};
+            auto push_pivots = [&]() {
+                // rank 2, dimensions {pivots_vec.size(), 2}
+                res_str.push_back(WXF_PARSER::WXF_HEAD::array);
+                res_str.push_back(3); // type, int64_t
+                auto vint = WXF_PARSER::toVarint(2);
+                res_str.insert(res_str.end(), vint.begin(), vint.end());
+                vint = WXF_PARSER::toVarint(pivots_vec.size());
+                res_str.insert(res_str.end(), vint.begin(), vint.end());
+                vint = WXF_PARSER::toVarint(2);
+                res_str.insert(res_str.end(), vint.begin(), vint.end());
+                uint8_t int64_buf[16];
+                for (auto& p : pivots_vec) {
+                    // output the pivot position
+                    int64_t row = p.first + 1; // 1-based index
+                    int64_t col = p.second + 1; // 1-based index
+                    memcpy(int64_buf, &row, sizeof(row));
+                    memcpy(int64_buf + sizeof(row), &col, sizeof(col));
+                    res_str.insert(res_str.end(), int64_buf, int64_buf + sizeof(row) + sizeof(col));
+                }
+				};
+            auto push_list = [&](int n) {
                 res_str.push_back(56); res_str.push_back(58);
-                // function, List, 2
+                // function, List, n
                 res_str.push_back(WXF_PARSER::WXF_HEAD::func);
-                res_str.push_back(2);
+                res_str.push_back(n);
                 res_str.push_back(WXF_PARSER::WXF_HEAD::symbol);
                 res_str.push_back(4); // length of List
                 std::string name = "List";
                 res_str.insert(res_str.end(), name.begin(), name.end());
-                res_str.insert(res_str.end(), m_str.begin(), m_str.end());
-                res_str.insert(res_str.end(), K_str.begin(), K_str.end());
+                };
+            
+            switch (output_mode) {
+            case 0: // output the rref
+                res_str = sparse_mat_write_wxf(mat, true);
+                break;
+            case 1: {// output the rref and its kernel
+                push_list(2);
+				push_mat(mat);
+                if (len > 0) 
+					push_mat(K);
+                else 
+                    push_null();
+                break;
+            }
+            case 2: { // output the rref and its pivots
+                push_list(2);
+                push_mat(mat);
+                push_pivots();
+                break;
+            }
+            case 3: { // output the rref, kernel and pivots
+                push_list(3);
+                push_mat(mat);
+                if (len > 0)
+                    push_mat(K);
+                else
+                    push_null();
+                push_pivots();
+                break;
+            }
+            default:
+                return LIBRARY_FUNCTION_ERROR;
             }
         }
 

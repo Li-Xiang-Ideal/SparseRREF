@@ -488,8 +488,13 @@ namespace SparseRREF {
 
 		auto pos = nonzero_c.nonzero();
 		mat[k].zero();
-		for (auto p : pos) {
-			mat[k].push_back(p, tmpvec[p]);
+		mat[k].resize(pos.size());
+		if (mat[k].alloc() < pos.size()) {
+			mat[k].reserve(pos.size());
+		}
+		for (size_t i = 0; i < pos.size(); i++) {
+			mat[k](i) = pos[i];
+			mat[k][i] = tmpvec[pos[i]];
 		}
 	}
 
@@ -1154,10 +1159,7 @@ namespace SparseRREF {
 		// backup the option
 		auto old_col_weight = opt->col_weight;
 		std::function<int64_t(int64_t)> new_col_weight = [&](int64_t i) {
-			if (i < M.nrow)
-				return old_col_weight(i);
-			else
-				return -1LL;
+			return ((i < M.ncol) ? old_col_weight(i) : -1);
 			};
 		opt->col_weight = new_col_weight;
 		bool is_back_sub = opt->is_back_sub;
