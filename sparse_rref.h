@@ -92,6 +92,7 @@ namespace SparseRREF {
 		bool shrink_memory = false;
 		std::function<int64_t(int64_t)> col_weight = [](int64_t i) { return i; };
 		thread_pool pool = thread_pool(1); // default: thread pool with 1 thread
+		std::atomic<bool> abort = false;
 	};
 	using rref_option_t = rref_option[1];
 

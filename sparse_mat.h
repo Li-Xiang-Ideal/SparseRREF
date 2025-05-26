@@ -507,6 +507,9 @@ namespace SparseRREF {
 		const field_t F, rref_option_t opt, T* cachedensedmat,
 		std::vector<SparseRREF::bit_array>& nonzero_c, size_t n_split, size_t rank, size_t& process) {
 
+		if (opt->abort)
+			return;
+
 		bool verbose = opt->verbose;
 		auto& pool = opt->pool;
 		opt->verbose = false;
@@ -683,12 +686,18 @@ namespace SparseRREF {
 				for (size_t j = s; j < e; j++) {
 					schur_complete(mat, leftrows[j], pivots[i], F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 					cc++;
+					if (opt->abort) 
+						return;
 				}
 				}, ((leftrows.size() < 20 * nthreads) ? 0 : leftrows.size() / 10));
 
 			if (opt->verbose) {
 				auto cn = clocknow();
 				while (cc < leftrows.size()) {
+					if (opt->abort) {
+						pool.purge();
+						return;
+					}
 					if (cc - old_cc > opt->print_step) {
 						std::cout << "\r-- Row: "
 							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * pivots[i].size())
@@ -733,6 +742,9 @@ namespace SparseRREF {
 
 		pool.wait();
 
+		if (opt->abort)
+			return pivots;
+
 		// look for row with only one non-zero entry
 
 		// compute the transpose of pointers of the matrix
@@ -744,6 +756,9 @@ namespace SparseRREF {
 				n_pivots.push_back(std::make_pair(i, rowpivs[i]));
 		}
 		pivots.push_back(n_pivots);
+
+		if (opt->abort)
+			return pivots;
 
 		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
 		sparse_mat_transpose_replace(tranmat, mat, &pool);
@@ -847,6 +862,8 @@ namespace SparseRREF {
 				for (size_t i = s; i < e; i++) {
 					schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 					flags[i] = 1;
+					if (opt->abort)
+						break;
 				}
 				}, (leftrows.size() < 20 * nthreads ? 0 : leftrows.size() / 10));
 
@@ -878,6 +895,11 @@ namespace SparseRREF {
 						flags[i] = 0;
 						localcount++;
 					}
+				}
+
+				if (opt->abort) {
+					pool.purge();
+					return pivots;
 				}
 
 				double pr = kk + (1.0 * ps.size() * localcount) / leftrows.size();
@@ -924,6 +946,9 @@ namespace SparseRREF {
 			opt->pool.wait();
 		}
 
+		if (opt->abort) 
+			return pivots;
+
 		if (opt->is_back_sub) {
 			if (opt->verbose)
 				std::cout << "\n>> Reverse solving: " << std::endl;
@@ -964,6 +989,9 @@ namespace SparseRREF {
 		ulong mat_height_bits = mat.height_bits() + 64 - std::countl_zero(mat.ncol);
 
 		pivots = sparse_mat_rref_c(matul, F, opt);
+
+		if (opt->abort) 
+			return pivots;
 
 		if (checkrank) {
 			size_t rank = 0;
@@ -1009,6 +1037,9 @@ namespace SparseRREF {
 		if (verbose) {
 			std::cout << std::endl;
 		}
+
+		if (opt->abort)
+			return pivots;
 
 		ulong old_height = matq.height_bits();
 

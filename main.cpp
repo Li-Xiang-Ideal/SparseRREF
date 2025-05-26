@@ -13,16 +13,53 @@
 #include "argparse.hpp"
 #include "sparse_mat.h"
 
+#ifdef _WIN32
+#include <conio.h>
+#else
+#include <termios.h>
+#include <unistd.h>
+#endif
+
+int getch_key() {
+#ifdef _WIN32
+	return _getch();
+#else
+	char buf = 0;
+	termios old = {};
+	if (tcgetattr(STDIN_FILENO, &old) < 0) perror("tcgetattr()");
+	termios new_t = old;
+	new_t.c_lflag &= ~(ICANON | ECHO);
+	new_t.c_iflag &= ~IXON;
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &new_t) < 0) perror("tcsetattr()");
+	if (read(STDIN_FILENO, &buf, 1) < 0) perror("read()");
+	if (tcsetattr(STDIN_FILENO, TCSADRAIN, &old) < 0) perror("tcsetattr restore");
+	return (int)(buf);
+#endif
+}
+
+void key_listener(std::atomic<bool>& stop_flag) {
+	while (!stop_flag) {
+		int c = getch_key();
+		if (c == 17) { // Ctrl+Q
+			std::cout << "\n[Ctrl+Q] pressed. Stopping...\n";
+			stop_flag = true;
+			break;
+		}
+	}
+}
+
+
+
 using namespace SparseRREF;
 
 #define printtime(str)                                                         \
-    std::cout << (str) << " spent " << std::fixed << std::setprecision(6)      \
-              << SparseRREF::usedtime(start, end) << " seconds." << std::endl
+	std::cout << (str) << " spent " << std::fixed << std::setprecision(6)      \
+			  << SparseRREF::usedtime(start, end) << " seconds." << std::endl
 
 #define printmatinfo(mat)                                                      \
-    std::cout << "nnz: " <<  (mat).nnz() << " ";                               \
-    std::cout << "nrow: " << (mat).nrow << " ";                                \
-    std::cout << "ncol: " << (mat).ncol << std::endl
+	std::cout << "nnz: " <<  (mat).nnz() << " ";                               \
+	std::cout << "nrow: " << (mat).nrow << " ";                                \
+	std::cout << "ncol: " << (mat).ncol << std::endl
 
 int main(int argc, char** argv) {
 	argparse::ArgumentParser program("SparseRREF", SparseRREF::version);
@@ -127,6 +164,8 @@ int main(int argc, char** argv) {
 		opt->pool.reset(); // automatic mode, use all possible threads
 	else
 		opt->pool.reset(nthread);
+
+	std::thread thread_listener(key_listener, std::ref(opt->abort));
 
 	std::cout << "using " << nthread << " threads" << std::endl;
 
@@ -264,6 +303,8 @@ int main(int argc, char** argv) {
 
 	end = SparseRREF::clocknow();
 	printtime("write files");
+
+	thread_listener.join();
 
 	return 0;
 }
