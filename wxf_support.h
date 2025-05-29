@@ -100,16 +100,20 @@ namespace WXF_PARSER {
 		}
 	}
 
-	int minimal_signed_bits(int64_t x) {
-		int logbit = 0;
-		for (int bits = 8; bits <= 64; bits *= 2) {
-			int64_t min = -(1LL << (bits - 1));
-			int64_t max = (1LL << (bits - 1)) - 1;
-			if (x >= min && x <= max)
-				return logbit;
-			logbit++;
-		}
-		return logbit;
+	template <typename T>
+	inline uint8_t minimal_signed_bits(T x) noexcept {
+		if (x >= INT8_MIN && x <= INT8_MAX) return 0;
+		if (x >= INT16_MIN && x <= INT16_MAX) return 1;
+		if (x >= INT32_MIN && x <= INT32_MAX) return 2;
+		return 3; // for int64_t
+	}
+
+	template <typename T>
+	inline uint8_t minimal_unsigned_bits(T x) noexcept {
+		if (x <= UINT8_MAX) return 0;
+		if (x <= UINT16_MAX) return 1;
+		if (x <= UINT32_MAX) return 2;
+		return 3; // for uint64_t
 	}
 
 	struct TOKEN {
@@ -663,7 +667,7 @@ namespace WXF_PARSER {
 		case WXF_HEAD::i16:
 		case WXF_HEAD::i32:
 		case WXF_HEAD::i64: {
-			int num_type = minimal_signed_bits(token.i);
+			auto num_type = minimal_signed_bits(token.i);
 			switch (num_type) {
 			case 0:
 				res.push_back(WXF_HEAD::i8);

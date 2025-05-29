@@ -407,7 +407,7 @@ namespace Flint {
 
 	int_t CRT(const int_t& r1, const int_t& m1, const int_t& r2, const int_t& m2) {
 		int_t result;
-		fmpz_CRT(&result._data, &r1._data, &m1._data, &r2._data, &m2._data, 0);
+		fmpz_CRT(&result._data, &r1._data, &m1._data, (fmpz*)&r2._data, (fmpz*)&m2._data, 0);
 		return result;
 	}
 } // namespace Flint

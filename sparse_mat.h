@@ -151,6 +151,9 @@ namespace SparseRREF {
 					<< "    \r" << std::flush;
 			}
 			depth++;
+			if (opt->abort)
+				return count;
+
 		} while (localcounter > 0 && depth < max_depth && localcounter > 10);
 		return count;
 	}
@@ -586,6 +589,9 @@ namespace SparseRREF {
 		for (size_t i = 0; i < nthreads; i++)
 			nonzero_c[i].resize(mat.ncol);
 
+		if (opt->abort)
+			return;
+
 		// we only need to compute the transpose of the submatrix involving pivots
 		std::vector<std::vector<index_t>> tranmat(mat.ncol);
 		for (size_t i = 0; i < pivots.size(); i++) {
@@ -855,6 +861,9 @@ namespace SparseRREF {
 					}});
 				pool.wait();
 			}
+
+			if (opt->abort)
+				return pivots;
 
 			std::vector<int> flags(leftrows.size(), 0);
 			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
