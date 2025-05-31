@@ -246,8 +246,6 @@ namespace Flint {
 		rat_t operator*(const int_t& other) const { rat_t result; fmpq_mul_fmpz(&result._data, &_data, &other._data); return result; }
 
 		rat_t operator/(const rat_t& other) const { rat_t result; fmpq_div(&result._data, &_data, &other._data); return result; }
-		template <unsigned_builtin_integral T> rat_t operator/(const T other) const { rat_t result; fmpq_div_ui(&result._data, &_data, other); return result; }
-		template <signed_builtin_integral T> rat_t operator/(const T other) const { rat_t result; fmpq_div_si(&result._data, &_data, other); return result; }
 		rat_t operator/(const int_t& other) const { rat_t result; fmpq_div_fmpz(&result._data, &_data, &other._data); return result; }
 
 		void operator+=(const rat_t& other) { fmpq_add(&_data, &_data, &other._data); }
