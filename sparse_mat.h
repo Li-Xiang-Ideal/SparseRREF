@@ -1473,6 +1473,11 @@ namespace SparseRREF {
 		return mat;
 	}
 
+	template <typename T, typename index_t>
+	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::filesystem::path file, const field_t F) {
+		return sparse_mat_read_wxf(WXF_PARSER::MakeExprTree(file), F);
+	}
+
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	// TODO: more check!!!
 	template <typename T, typename index_t>
