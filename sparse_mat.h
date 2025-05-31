@@ -340,22 +340,23 @@ namespace SparseRREF {
 		triangular_solver(mat, n_pivots, F, opt, ordering);
 	}
 
-	// dot product
+	// dot_product
 	template <typename T, typename index_t>
-	inline int sparse_mat_dot_sparse_vec(
-		sparse_vec<index_t, T> result,
+	sparse_vec<T, index_t> sparse_mat_dot_sparse_vec(
 		const sparse_mat<T, index_t>& mat,
-		const sparse_vec<index_t, T> vec, const field_t F) {
-		result.zero();
+		const sparse_vec<T, index_t>& vec, const field_t F) {
+
+		sparse_vec<T, index_t> result;
+
 		if (vec.nnz() == 0 || mat.nnz() == 0)
-			return 0;
+			return result;
 
 		for (size_t i = 0; i < mat.nrow; i++) {
 			T tmp = sparse_vec_dot(mat[i], vec, F);
 			if (tmp != 0)
 				result.push_back(i, tmp);
 		}
-		return 1;
+		return result;
 	}
 
 	// A = B * C
