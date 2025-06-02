@@ -163,7 +163,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	std::vector<std::pair<index_t, index_t>> findmanypivots(
 		const sparse_mat<T, index_t>& mat, const sparse_mat<bool, index_t>& tranmat,
-		std::vector<index_t>& rowpivs, std::vector<index_t>& leftcols,
+		const std::vector<index_t>& rowpivs, std::vector<index_t>& leftcols,
 		const std::function<int64_t(int64_t)>& col_weight = [](int64_t i) { return i; }) {
 
 		auto nrow = mat.nrow;
@@ -351,8 +351,27 @@ namespace SparseRREF {
 		if (vec.nnz() == 0 || mat.nnz() == 0)
 			return result;
 
+		T tmp;
 		for (size_t i = 0; i < mat.nrow; i++) {
-			T tmp = sparse_vec_dot(mat[i], vec, F);
+			tmp = sparse_vec_dot(mat[i], vec, F);
+			if (tmp != 0)
+				result.push_back(i, tmp);
+		}
+		return result;
+	}
+
+	template <typename T, typename index_t>
+	sparse_vec<T, index_t> sparse_mat_dot_dense_vec(
+		const sparse_mat<T, index_t>& mat, const T* vec, const field_t F) {
+
+		sparse_vec<T, index_t> result;
+
+		if (mat.nnz() == 0)
+			return result;
+
+		T tmp = 0;
+		for (size_t i = 0; i < mat.nrow; i++) {
+			tmp = sparse_vec_dot_dense_vec(mat[i], vec, F);
 			if (tmp != 0)
 				result.push_back(i, tmp);
 		}
@@ -1168,7 +1187,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_rref_kernel(const sparse_mat<T, index_t>& M,
 		const std::vector<std::vector<std::pair<index_t, index_t>>>& pivots, 
-		const field_t F, rref_option_t opt) {
+		const field_t& F, rref_option_t opt) {
 		std::vector<std::pair<index_t, index_t>> n_pivots;
 		for (auto& p : pivots)
 			n_pivots.insert(n_pivots.end(), p.begin(), p.end());
@@ -1177,7 +1196,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_inverse(const sparse_mat<T, index_t>& M, 
-		const field_t F, rref_option_t opt) {
+		const field_t& F, rref_option_t opt) {
 		if (M.nrow != M.ncol) {
 			std::cerr << "Error: sparse_mat_inverse: matrix is not square" << std::endl;
 			return sparse_mat<T, index_t>();
@@ -1259,7 +1278,7 @@ namespace SparseRREF {
 
 	// IO
 	template <typename ScalarType, typename index_t, typename T>
-	sparse_mat<ScalarType, index_t> sparse_mat_read(T& st, const field_t F) {
+	sparse_mat<ScalarType, index_t> sparse_mat_read(T& st, const field_t& F) {
 		if (!st.is_open()) {
 			std::cerr << "Error: sparse_mat_read: file not open." << std::endl;
 			return sparse_mat<ScalarType, index_t>();
@@ -1345,7 +1364,7 @@ namespace SparseRREF {
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	// TODO: more check!!!
 	template <typename T, typename index_t>
-	sparse_mat<T, index_t> sparse_mat_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t F) {
+	sparse_mat<T, index_t> sparse_mat_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t& F) {
 		auto& root = tree.root;
 
 		// SparseArray
@@ -1474,7 +1493,7 @@ namespace SparseRREF {
 	}
 
 	template <typename T, typename index_t>
-	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::filesystem::path file, const field_t F) {
+	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::filesystem::path file, const field_t& F) {
 		return sparse_mat_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(file), F);
 	}
 

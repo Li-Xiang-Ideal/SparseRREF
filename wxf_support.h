@@ -1,8 +1,7 @@
 ﻿/*
 	Copyright (C) 2025 Zhenjie Li (Li, Zhenjie)
 
-	This file is part of SparseRREF. The SparseRREF is free software:
-	you can redistribute it and/or modify it under the terms of the MIT
+	You can redistribute it and/or modify it under the terms of the MIT
 	License.
 */
 
@@ -1032,7 +1031,12 @@ namespace WXF_PARSER {
 								51, 51, 51, 51, 51, 51, 51, 51, 52, 52, 52, 51, 51, 51, 51, 51, 51, \
 								51, 51, 53 };
 
-		print_tokens(example_test()):
+		auto tree = MakeExprTree(test);
+		for (const auto& token : tree.tokens) {
+			token.print();
+		};
+
+		result: 
 			func: 4 vars
 			symbol: SparseArray
 			symbol: Automatic
