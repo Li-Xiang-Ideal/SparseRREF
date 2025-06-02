@@ -34,7 +34,7 @@ namespace SparseRREF {
 	}
 
 	template <typename index_type, typename T>
-	inline void sparse_vec_rescale(sparse_vec<T, index_type>& vec, const T scalar, const field_t& F) {
+	inline void sparse_vec_rescale(sparse_vec<T, index_type>& vec, const T& scalar, const field_t& F) {
 		if (scalar == 1)
 			return;
 		if constexpr (std::is_same_v<T, ulong>) {
@@ -52,7 +52,7 @@ namespace SparseRREF {
 	template <typename index_type>
 	static int snmod_vec_add_mul(
 		snmod_vec<index_type>& vec, const snmod_vec<index_type>& src,
-		const ulong a, field_t F) {
+		const ulong a, const field_t& F) {
 		if (src.nnz() == 0)
 			return 0;
 
@@ -204,34 +204,33 @@ namespace SparseRREF {
 	}
 
 	template <typename index_type>
-	static inline int snmod_vec_sub_mul(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const ulong a, field_t F) {
+	static inline int snmod_vec_sub_mul(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const ulong a, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, F.mod.n - a, F);
 	}
 
 	template <typename index_type>
-	static inline int sparse_vec_add(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, field_t F) {
+	static inline int sparse_vec_add(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, 1, F);
 	}
 
 	template <typename index_type>
-	static inline int sparse_vec_sub(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, field_t F) {
+	static inline int sparse_vec_sub(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, F.mod.n - 1, F);
 	}
 
 	template <typename index_type>
-	static inline int sparse_vec_sub_mul(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const ulong a, field_t F) {
+	static inline int sparse_vec_sub_mul(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const ulong a, const field_t& F) {
 		return snmod_vec_sub_mul(vec, src, a, F);
 	}
 
 	template <typename index_type>
-	static inline int sparse_vec_sub_mul(sfmpq_vec<index_type>& vec, const sfmpq_vec<index_type>& src, const rat_t& a, field_t F) {
+	static inline int sparse_vec_sub_mul(sfmpq_vec<index_type>& vec, const sfmpq_vec<index_type>& src, const rat_t& a, const field_t& F) {
 		return sfmpq_vec_sub_mul(vec, src, a);
 	}
 
 	// dot product
-	// return true if the result is zero
 	template <typename index_type, typename T>
-	T sparse_vec_dot(const sparse_vec<T, index_type> v1, const sparse_vec<T, index_type> v2, field_t F) {
+	T sparse_vec_dot(const sparse_vec<T, index_type>& v1, const sparse_vec<T, index_type>& v2, const field_t& F) {
 		if (v1.nnz() == 0 || v2.nnz() == 0) {
 			return T(0);
 		}
@@ -251,6 +250,22 @@ namespace SparseRREF {
 			else {
 				ptr2 = std::lower_bound(v2.indices + ptr2, e2, v1(ptr1)) - v2.indices;
 			}
+		}
+
+		return result;
+	}
+
+	// we do not check the boundry of v2, so it is not safe to use this function, 
+	// be careful
+	template <typename index_type, typename T>
+	T sparse_vec_dot_dense_vec(const sparse_vec<T, index_type>& v1, const T* v2, field_t F) {
+		if (v1.nnz() == 0) {
+			return T(0);
+		}
+
+		T result = 0;
+		for (size_t i = 0; i < v1.nnz(); i++) {
+			result = scalar_add(result, scalar_mul(v1[i], v2[v1(i)], F), F);
 		}
 
 		return result;

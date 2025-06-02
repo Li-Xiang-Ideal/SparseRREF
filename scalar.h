@@ -439,8 +439,8 @@ namespace SparseRREF {
 	};
 
 	// scalar
-	using rat_t = Flint::rat_t;
-	using int_t = Flint::int_t;
+	using Flint::rat_t;
+	using Flint::int_t;
 
 	// TODO: avoid copy
 	static inline std::string scalar_to_str(const rat_t& a) { return a.get_str(10, true); }
