@@ -274,7 +274,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	void triangular_solver(sparse_mat<T, index_t>& mat, 
 		std::vector<std::pair<index_t, index_t>>& pivots,
-		const field_t F, rref_option_t opt, int ordering) {
+		const field_t& F, rref_option_t opt, int ordering) {
 		bool verbose = opt->verbose;
 		auto printstep = opt->print_step;
 		auto& pool = opt->pool;
@@ -333,7 +333,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	void triangular_solver(sparse_mat<T, index_t>& mat, 
 		std::vector<std::vector<std::pair<index_t, index_t>>>& pivots,
-		const field_t F, rref_option_t opt, int ordering) {
+		const field_t& F, rref_option_t opt, int ordering) {
 		std::vector<std::pair<index_t, index_t>> n_pivots;
 		for (auto p : pivots)
 			n_pivots.insert(n_pivots.end(), p.begin(), p.end());
@@ -344,7 +344,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	sparse_vec<T, index_t> sparse_mat_dot_sparse_vec(
 		const sparse_mat<T, index_t>& mat,
-		const sparse_vec<T, index_t>& vec, const field_t F) {
+		const sparse_vec<T, index_t>& vec, const field_t& F) {
 
 		sparse_vec<T, index_t> result;
 
@@ -362,7 +362,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	sparse_vec<T, index_t> sparse_mat_dot_dense_vec(
-		const sparse_mat<T, index_t>& mat, const T* vec, const field_t F) {
+		const sparse_mat<T, index_t>& mat, const T* vec, const field_t& F) {
 
 		sparse_vec<T, index_t> result;
 
@@ -382,7 +382,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_mul(
 		const sparse_mat<T, index_t>& B, const sparse_mat<T, index_t>& C, 
-		const field_t F, thread_pool* pool = nullptr) {
+		const field_t& F, thread_pool* pool = nullptr) {
 
 		sparse_mat<T, index_t> A(B.nrow, C.ncol);
 		auto nthreads = 1;
@@ -471,7 +471,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	void schur_complete(sparse_mat<T, index_t>& mat, index_t k, 
 		const std::vector<std::pair<index_t, index_t>>& pivots,
-		const field_t F, T* tmpvec, SparseRREF::bit_array& nonzero_c) {
+		const field_t& F, T* tmpvec, SparseRREF::bit_array& nonzero_c) {
 
 		if (mat[k].nnz() == 0)
 			return;
@@ -527,7 +527,7 @@ namespace SparseRREF {
 	void triangular_solver_2_rec(sparse_mat<T, index_t>& mat, 
 		std::vector<std::vector<index_t>>& tranmat, 
 		std::vector<std::pair<index_t, index_t>>& pivots,
-		const field_t F, rref_option_t opt, T* cachedensedmat,
+		const field_t& F, rref_option_t opt, T* cachedensedmat,
 		std::vector<SparseRREF::bit_array>& nonzero_c, size_t n_split, size_t rank, size_t& process) {
 
 		if (opt->abort)
@@ -599,7 +599,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	void triangular_solver_2(sparse_mat<T, index_t>& mat, std::vector<std::pair<index_t, index_t>>& pivots,
-		const field_t F, rref_option_t opt) {
+		const field_t& F, rref_option_t opt) {
 
 		auto& pool = opt->pool;
 		// prepare the tmp array
@@ -635,7 +635,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	void triangular_solver_2(sparse_mat<T, index_t>& mat, 
 		std::vector<std::vector<std::pair<index_t, index_t>>>& pivots,
-		const field_t F, rref_option_t opt) {
+		const field_t& F, rref_option_t opt) {
 
 		std::vector<std::pair<index_t, index_t>> n_pivots;
 		// the first pivot is the row with only one nonzero value, so there is no need to do the elimination
@@ -651,7 +651,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	void sparse_mat_direct_rref(sparse_mat<T, index_t>& mat,
 		const std::vector<std::vector<std::pair<index_t, index_t>>>& pivots, 
-		const field_t F, rref_option_t opt) {
+		const field_t& F, rref_option_t opt) {
 		auto& pool = opt->pool;
 
 		// first set rows not in pivots to zero
@@ -744,7 +744,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	std::vector<std::vector<std::pair<index_t, index_t>>>
-		sparse_mat_rref_c(sparse_mat<T, index_t>& mat, const field_t F, rref_option_t opt) {
+		sparse_mat_rref_c(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
 		// first canonicalize, sort and compress the matrix
 
 		auto& pool = opt->pool;
@@ -964,7 +964,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	std::vector<std::vector<std::pair<index_t, index_t>>> 
-		sparse_mat_rref(sparse_mat<T, index_t>& mat, const field_t F, rref_option_t opt) {
+		sparse_mat_rref(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
 
 		auto pivots = sparse_mat_rref_c(mat, F, opt);
 
@@ -1136,7 +1136,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_rref_kernel(const sparse_mat<T, index_t>& M,
-		const std::vector<std::pair<index_t, index_t>>& pivots, field_t F, rref_option_t opt) {
+		const std::vector<std::pair<index_t, index_t>>& pivots, const field_t& F, rref_option_t opt) {
 
 		auto& pool = opt->pool;
 

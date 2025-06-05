@@ -20,7 +20,7 @@ namespace SparseRREF {
 	template <typename index_type, typename T>
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_product(
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B, const field_t F) {
+		const sparse_tensor<T, index_type, SPARSE_COO>& B, const field_t& F) {
 
 		std::vector<size_t> dimsB = B.dims();
 		std::vector<size_t> dimsC = A.dims();
@@ -61,7 +61,7 @@ namespace SparseRREF {
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_add(
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
 		const sparse_tensor<T, index_type, SPARSE_COO>& B,
-		const field_t F) {
+		const field_t& F) {
 
 		// if one of the tensors is empty, it is ok that dims of A or B are not defined
 		if (A.alloc() == 0)
@@ -138,7 +138,7 @@ namespace SparseRREF {
 	template <typename index_type, typename T>
 	void tensor_sum_replace(
 		sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B, const field_t F) {
+		const sparse_tensor<T, index_type, SPARSE_COO>& B, const field_t& F) {
 
 		// if one of the tensors is empty, it is ok that dims of A or B are not defined
 		if (A.alloc() == 0) {
@@ -232,7 +232,7 @@ namespace SparseRREF {
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
 		const sparse_tensor<T, index_type, SPARSE_COO>& B,
 		const std::vector<size_t>& i1, const std::vector<size_t>& i2,
-		const field_t F, thread_pool* pool = nullptr) {
+		const field_t& F, thread_pool* pool = nullptr) {
 
 		using index_v = std::vector<index_type>;
 		using index_p = index_type*;
@@ -462,7 +462,7 @@ namespace SparseRREF {
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_contract(
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
 		const sparse_tensor<T, index_type, SPARSE_COO>& B,
-		const size_t i, const size_t j, const field_t F, thread_pool* pool = nullptr) {
+		const size_t i, const size_t j, const field_t& F, thread_pool* pool = nullptr) {
 
 		return tensor_contract(A, B, std::vector<size_t>{ i }, std::vector<size_t>{ j }, F, pool);
 	}
@@ -472,7 +472,7 @@ namespace SparseRREF {
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_contract_2(
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
 		const sparse_tensor<T, index_type, SPARSE_COO>& B,
-		const index_type a, const field_t F, thread_pool* pool = nullptr) {
+		const index_type a, const field_t& F, thread_pool* pool = nullptr) {
 
 		auto C = tensor_contract(A, B, a, 0, F, pool);
 		std::vector<size_t> perm;
@@ -490,7 +490,7 @@ namespace SparseRREF {
 	template <typename index_type, typename T>
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_contract(
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const size_t i, const size_t j, const field_t F, thread_pool* pool = nullptr) {
+		const size_t i, const size_t j, const field_t& F, thread_pool* pool = nullptr) {
 
 		using index_v = std::vector<index_type>;
 		using index_p = index_type*;
@@ -628,7 +628,7 @@ namespace SparseRREF {
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_dot(
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
 		const sparse_tensor<T, index_type, SPARSE_COO>& B,
-		const field_t F, thread_pool* pool = nullptr) {
+		const field_t& F, thread_pool* pool = nullptr) {
 		return tensor_contract(A, B, A.rank() - 1, 0, F, pool);
 	}
 
@@ -639,7 +639,7 @@ namespace SparseRREF {
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_transform(
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
 		const sparse_tensor<T, index_type, SPARSE_COO>& B,
-		const size_t start_index, const field_t F, thread_pool* pool = nullptr) {
+		const size_t start_index, const field_t& F, thread_pool* pool = nullptr) {
 
 		auto rank = A.rank();
 		auto C = tensor_contract(A, B, start_index, 0, F, pool);
@@ -654,7 +654,7 @@ namespace SparseRREF {
 	void tensor_transform_replace(
 		sparse_tensor<T, index_type, SPARSE_COO>& A,
 		const sparse_tensor<T, index_type, SPARSE_COO>& B,
-		const size_t start_index, const field_t F, thread_pool* pool = nullptr) {
+		const size_t start_index, const field_t& F, thread_pool* pool = nullptr) {
 
 		auto rank = A.rank();
 		for (size_t i = start_index; i < rank; i++) {
@@ -677,7 +677,7 @@ namespace SparseRREF {
 	sparse_tensor<T, index_type, SPARSE_COO> einstein_sum(
 		const std::vector<sparse_tensor<T, index_type, SPARSE_COO>*> tensors,
 		const std::vector<std::vector<size_t>> index_sets,
-		const field_t F, thread_pool* pool = nullptr) {
+		const field_t& F, thread_pool* pool = nullptr) {
 
 		auto nt = tensors.size();
 		if (nt != index_sets.size()) {
@@ -906,7 +906,7 @@ namespace SparseRREF {
 	// IO
 
 	template <typename ScalarType, typename IndexType, typename T>
-	sparse_tensor<ScalarType, IndexType, SPARSE_COO> sparse_tensor_read(T& st, const field_t F) {
+	sparse_tensor<ScalarType, IndexType, SPARSE_COO> sparse_tensor_read(T& st, const field_t& F) {
 		if (!st.is_open())
 			return sparse_tensor<ScalarType, IndexType, SPARSE_COO>();
 
@@ -1007,7 +1007,7 @@ namespace SparseRREF {
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	// TODO: more check!!!
 	template <typename T, typename index_t>
-	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t F) {
+	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t& F) {
 		auto& root = tree.root;
 
 		sparse_tensor<T, index_t, SPARSE_CSR> res;

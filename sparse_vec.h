@@ -258,7 +258,7 @@ namespace SparseRREF {
 	// we do not check the boundry of v2, so it is not safe to use this function, 
 	// be careful
 	template <typename index_type, typename T>
-	T sparse_vec_dot_dense_vec(const sparse_vec<T, index_type>& v1, const T* v2, field_t F) {
+	T sparse_vec_dot_dense_vec(const sparse_vec<T, index_type>& v1, const T* v2, const field_t& F) {
 		if (v1.nnz() == 0) {
 			return T(0);
 		}
