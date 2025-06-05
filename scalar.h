@@ -106,7 +106,7 @@ namespace Flint {
 
 		int_t operator%(const int_t& other) const { int_t result; fmpz_mod(&result._data, &_data, &other._data); return result; }
 		template <unsigned_builtin_integral T> int_t operator%(const T other) const { int_t result; fmpz_mod_ui(&result._data, &_data, other); return result; }
-		ulong operator%(const nmod_t other) const { return fmpz_get_nmod(&_data, other); }
+		ulong operator%(const nmod_t& other) const { return fmpz_get_nmod(&_data, other); }
 
 		int_t operator<<(ulong n) const { int_t result; fmpz_mul_2exp(&result._data, &_data, n); return result; }
 		int_t operator>>(ulong n) const { int_t result; fmpz_fdiv_q_2exp(&result._data, &_data, n); return result; }
@@ -268,7 +268,7 @@ namespace Flint {
 		template <signed_builtin_integral T> void operator/=(const T other) { fmpq_div_si(&_data, &_data, other); }
 		void operator/=(const int_t& other) { fmpq_div_fmpz(&_data, &_data, &other._data); }
 
-		ulong operator%(const nmod_t mod) const {
+		ulong operator%(const nmod_t& mod) const {
 			auto nummod = num() % mod;
 			auto denmod = den() % mod;
 			return nmod_div(nummod, denmod, mod);

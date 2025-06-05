@@ -1420,8 +1420,15 @@ namespace SparseRREF {
 			auto nnz = tree[last_node[2]].dim(0);
 
 			vals.resize(nnz);
-			for (size_t i = 0; i < nnz; i++) {
-				vals[i] = ptr[i];
+			if constexpr (std::is_same_v<T, rat_t>) {
+				for (size_t i = 0; i < nnz; i++) {
+					vals[i] = ptr[i];
+				}
+			}
+			else if constexpr (std::is_same_v<T, ulong>) {
+				for (size_t i = 0; i < nnz; i++) {
+					vals[i] = int_t(ptr[i]) % F.mod;
+				}
 			}
 		}
 		else {
