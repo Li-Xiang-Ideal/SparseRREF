@@ -13,29 +13,46 @@
 #include "argparse.hpp"
 #include "sparse_mat.h"
 
+
 #ifdef _WIN32
 #include <conio.h>
+int getch_key() {
+	if (_kbhit())
+		return _getch();
+	else
+		return -1;
+}
 #else
 #include <termios.h>
 #include <unistd.h>
-#endif
+#include <fcntl.h>
+#include <errno.h>
 
 int getch_key() {
-#ifdef _WIN32
-	return _getch();
-#else
 	char buf = 0;
-	termios old = {};
-	if (tcgetattr(STDIN_FILENO, &old) < 0) perror("tcgetattr()");
-	termios new_t = old;
-	new_t.c_lflag &= ~(ICANON | ECHO);
-	new_t.c_iflag &= ~IXON;
-	if (tcsetattr(STDIN_FILENO, TCSANOW, &new_t) < 0) perror("tcsetattr()");
-	if (read(STDIN_FILENO, &buf, 1) < 0) perror("read()");
-	if (tcsetattr(STDIN_FILENO, TCSADRAIN, &old) < 0) perror("tcsetattr restore");
-	return (int)(buf);
-#endif
+	struct termios old = {};
+	if (tcgetattr(STDIN_FILENO, &old) < 0) return -1;
+
+	struct termios new_t = old;
+	new_t.c_lflag &= ~(ICANON | ECHO);  
+	new_t.c_iflag &= ~IXON;             
+	if (tcsetattr(STDIN_FILENO, TCSANOW, &new_t) < 0) return -1;
+
+	int flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+	if (flags == -1) return -1;
+	fcntl(STDIN_FILENO, F_SETFL, flags | O_NONBLOCK);
+
+	int nread = read(STDIN_FILENO, &buf, 1);
+
+	fcntl(STDIN_FILENO, F_SETFL, flags);
+	tcsetattr(STDIN_FILENO, TCSADRAIN, &old);
+
+	if (nread > 0)
+		return static_cast<int>(buf);
+	else
+		return -1; 
 }
+#endif
 
 void key_listener(std::atomic<bool>& stop_flag) {
 	while (!stop_flag) {
@@ -45,10 +62,9 @@ void key_listener(std::atomic<bool>& stop_flag) {
 			stop_flag = true;
 			break;
 		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
 }
-
-
 
 using namespace SparseRREF;
 
@@ -303,6 +319,8 @@ int main(int argc, char** argv) {
 
 	end = SparseRREF::clocknow();
 	printtime("write files");
+
+	opt->abort = true; // stop the key listener
 
 	thread_listener.join();
 
