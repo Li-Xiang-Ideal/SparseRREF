@@ -509,15 +509,15 @@ namespace SparseRREF {
 			}
 		}
 
-		auto pos = nonzero_c.nonzero();
+		auto nnz = nonzero_c.nnz();
 		mat[k].zero();
-		mat[k].resize(pos.size());
-		if (mat[k].alloc() < pos.size()) {
-			mat[k].reserve(pos.size());
+		mat[k].resize(nnz);
+		if (mat[k].alloc() < nnz) {
+			mat[k].reserve(nnz);
 		}
-		for (size_t i = 0; i < pos.size(); i++) {
-			mat[k](i) = pos[i];
-			mat[k][i] = tmpvec[pos[i]];
+		nonzero_c.nonzero(mat[k].indices);
+		for (size_t i = 0; i < nnz; i++) {
+			mat[k][i] = tmpvec[mat[k](i)];
 		}
 	}
 

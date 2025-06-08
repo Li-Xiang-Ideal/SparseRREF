@@ -293,8 +293,21 @@ namespace SparseRREF {
 			return data.size() * bitset_size;
 		}
 
+		size_t nnz() {
+			size_t nz = 0;
+			for (auto& bb : data) {
+				nz += bb.count();
+			}
+			return nz;
+		}
+
 		std::vector<size_t> nonzero() {
+			auto nz = nnz();
+			if (nz == 0)
+				return std::vector<size_t>();
+
 			std::vector<size_t> result;
+			result.reserve(nz);
 			size_t tmp[bitset_size];
 			size_t tmp_size = 0;
 			for (size_t i = 0; i < data.size(); i++) {
@@ -325,6 +338,35 @@ namespace SparseRREF {
 				}
 			}
 			return result;
+		}
+
+		template <typename T>
+		void nonzero(T* ptr) {
+			size_t pos = 0;
+			size_t tmp[bitset_size];
+			size_t tmp_size = 0;
+			for (size_t i = 0; i < data.size(); i++) {
+				if (data[i].any()) {
+					tmp_size = 0;
+					uint64_t c = data[i].to_ullong();
+
+					while (c) {
+						auto ctzpos = ctz(c);
+						auto clzpos = bitset_size - 1 - clz(c);
+						ptr[pos] = i * bitset_size + ctzpos;
+						pos++;
+						if (ctzpos == clzpos)
+							break;
+						tmp[tmp_size] = i * bitset_size + clzpos;
+						tmp_size++;
+						c = c ^ (1ULL << clzpos) ^ (1ULL << ctzpos);
+					}
+					for (size_t j = tmp_size; j > 0; j--) {
+						ptr[pos] = tmp[j - 1];
+						pos++;
+					}
+				}
+			}
 		}
 	};
 
