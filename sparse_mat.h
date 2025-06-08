@@ -174,43 +174,39 @@ namespace SparseRREF {
 		dict.reserve((size_t)4096);
 
 		// rightlook first
-		for (auto dir : leftcols) {
-			if (tranmat[dir].nnz() == 0)
+		for (auto col : leftcols) {
+			if (tranmat[col].nnz() == 0)
+				continue;
+			// negative weight means that we do not want to select this column
+			if (col_weight(col) < 0)
 				continue;
 
-			index_t rdiv;
+			index_t row;
 			size_t mnnz = SIZE_MAX;
 			bool flag = true;
 
-			for (auto col : tranmat[dir].index_span()) {
-				flag = (dict.count(col) == 0);
+			for (auto r : tranmat[col].index_span()) {
+				flag = (dict.count(r) == 0);
 				if (!flag)
 					break;
-				if (rowpivs[col] != -1)
+				if (rowpivs[r] != -1)
 					continue;
-				size_t newnnz = mat[col].nnz();
+				size_t newnnz = mat[r].nnz();
 				if (newnnz < mnnz) {
-					// negative weight means that we do not want to select this column
-					if (col_weight(col) < 0)
-						continue;
-					rdiv = col;
+					row = r;
 					mnnz = newnnz;
 				}
 				// make the result stable
 				else if (newnnz == mnnz) {
-					if (col_weight(col) < 0)
-						continue;
-					if (col_weight(col) < col_weight(rdiv))
-						rdiv = col;
-					else if (col_weight(col) == col_weight(rdiv) && col < rdiv)
-						rdiv = col;
+					if (r < row)
+						row = r;
 				}
 			}
 			if (!flag)
 				continue;
 			if (mnnz != SIZE_MAX) {
-				pivots.push_back(std::make_pair(rdiv, dir));
-				dict.insert(rdiv);
+				pivots.push_back(std::make_pair(row, col));
+				dict.insert(row);
 			}
 		}
 
@@ -237,20 +233,18 @@ namespace SparseRREF {
 			for (auto col : mat[row].index_span()) {
 				if (colptrs[col] == -1)
 					continue;
+				// negative weight means that we do not want to select this column
+				if (col_weight(col) < 0)
+					continue;
 				flag = (dict.count(col) == 0);
 				if (!flag)
 					break;
 				if (tranmat[col].nnz() < mnnz) {
-					// negative weight means that we do not want to select this column
-					if (col_weight(col) < 0)
-						continue;
 					mnnz = tranmat[col].nnz();
 					dir = col;
 				}
 				// make the result stable
 				else if (tranmat[col].nnz() == mnnz) {
-					if (col_weight(col) < 0)
-						continue;
 					if (col_weight(col) < col_weight(dir))
 						dir = col;
 					else if (col_weight(col) == col_weight(dir) && col < dir)
