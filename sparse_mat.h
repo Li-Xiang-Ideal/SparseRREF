@@ -666,6 +666,10 @@ namespace SparseRREF {
 			rowset[r] = -1;
 		}
 
+		for (size_t i = 0; i < mat.nrow; i++) {
+			mat[i].compress();
+		}
+
 		std::vector<index_t> leftrows(mat.nrow, -1);
 		eliminate_row_with_one_nnz(mat, leftrows, opt);
 
@@ -746,9 +750,6 @@ namespace SparseRREF {
 
 		pool.detach_loop(0, mat.nrow, [&](auto i) { mat[i].compress(); });
 
-		// perm the col
-		std::vector<index_t> leftcols = perm_init((index_t)(mat.ncol));
-
 		auto printstep = opt->print_step;
 		bool verbose = opt->verbose;
 
@@ -765,13 +766,13 @@ namespace SparseRREF {
 		if (opt->abort)
 			return pivots;
 
-		// look for row with only one non-zero entry
-
-		// compute the transpose of pointers of the matrix
+		// eliminate rows with only one non-zero entry
 		size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
 		now_nnz = mat.nnz();
 
 		for (size_t i = 0; i < mat.nrow; i++) {
+			if (opt->col_weight(rowpivs[i]) < 0)
+				rowpivs[i] = -1; // mark as unused
 			if (rowpivs[i] != -1)
 				n_pivots.push_back(std::make_pair(i, rowpivs[i]));
 		}
@@ -783,36 +784,22 @@ namespace SparseRREF {
 		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
 		sparse_mat_transpose_replace(tranmat, mat, &pool);
 
+		// use a vector to label the left columns
+		std::vector<index_t> leftcols = perm_init((index_t)(mat.ncol));
+		for (size_t i = 0; i < mat.nrow; i++) {
+			if (rowpivs[i] != -1)
+				leftcols[rowpivs[i]] = -1; // mark as used
+		}
+		std::erase_if(leftcols, [](index_t i) { return i == -1; });
+
 		// sort pivots by nnz, it will be faster
 		std::stable_sort(leftcols.begin(), leftcols.end(),
 			[&tranmat](index_t a, index_t b) {
 				return tranmat[a].nnz() < tranmat[b].nnz();
 			});
 
-		// look for pivot cols with only one nonzero element
-		size_t kk = 0;
-		n_pivots.clear();
-		for (; kk < mat.ncol; kk++) {
-			auto nnz = tranmat[leftcols[kk]].nnz();
-			if (nnz == 0)
-				continue;
-			if (nnz == 1) {
-				auto row = tranmat[leftcols[kk]](0);
-				if (rowpivs[row] != -1)
-					continue;
-				if (opt->col_weight(leftcols[kk]) < 0)
-					continue;
-				rowpivs[row] = leftcols[kk];
-				T scalar = scalar_inv(*sparse_mat_entry(mat, row, rowpivs[row]), F);
-				sparse_vec_rescale(mat[row], scalar, F);
-				n_pivots.push_back(std::make_pair(row, leftcols[kk]));
-			}
-			else if (nnz > 1)
-				break; // since it's sorted
-		}
-		leftcols.erase(leftcols.begin(), leftcols.begin() + kk);
-		pivots.push_back(n_pivots);
-		auto rank = pivots[0].size() + pivots[1].size();
+		auto rank = pivots[0].size();
+		size_t kk = rank;
 
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
 		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
@@ -874,6 +861,222 @@ namespace SparseRREF {
 						mat[row].reserve(4 * mat[row].nnz());
 					}});
 				pool.wait();
+			}
+
+			if (opt->abort)
+				return pivots;
+
+			std::vector<int> flags(leftrows.size(), 0);
+			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
+				auto id = SparseRREF::thread_id();
+				for (size_t i = s; i < e; i++) {
+					schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+					flags[i] = 1;
+					if (opt->abort)
+						break;
+				}
+				}, (leftrows.size() < 20 * nthreads ? 0 : leftrows.size() / 10));
+
+			// remove used cols
+			size_t localcount = 0;
+			tmp_set.clear();
+			for (auto [r, c] : ps)
+				tmp_set.insert(c);
+			for (auto it : leftcols) {
+				if (!tmp_set.count(it)) {
+					leftcols[localcount] = it;
+					localcount++;
+					tranmat[it].zero();
+				}
+				tranmat[it].clear();
+			}
+			leftcols.resize(localcount);
+
+			bool print_once = true; // print at least once
+
+			localcount = 0;
+			while (localcount < leftrows.size()) {
+				for (size_t i = 0; i < leftrows.size() && localcount < leftrows.size(); i++) {
+					if (flags[i]) {
+						auto row = leftrows[i];
+						for (size_t j = 0; j < mat[row].nnz(); j++) {
+							tranmat[mat[row](j)].push_back(row, true);
+						}
+						flags[i] = 0;
+						localcount++;
+					}
+				}
+
+				if (opt->abort) {
+					pool.purge();
+					return pivots;
+				}
+
+				double pr = kk + (1.0 * ps.size() * localcount) / leftrows.size();
+				if (verbose && (print_once || pr - oldpr > printstep)) {
+					auto end = SparseRREF::clocknow();
+					now_nnz = mat.nnz();
+					auto now_alloc = mat.alloc();
+					std::cout << "-- Col: " << std::setw(bitlen_ncol)
+						<< (int)pr << "/" << mat.ncol
+						<< "  rank: " << std::setw(bitlen_ncol) << rank
+						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
+						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
+						<< "  density: " << std::setprecision(6) << std::setw(8)
+						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
+						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
+						((pr - oldpr) / SparseRREF::usedtime(start, end))
+						<< " col/s    \r" << std::flush;
+					oldpr = pr;
+					start = end;
+					print_once = false;
+				}
+			}
+			pool.wait();
+
+			kk += ps.size();
+		}
+
+		if (verbose)
+			std::cout << "\n** Rank: " << rank << " nnz: " << mat.nnz() << std::endl;
+
+		return pivots;
+	}
+
+	template <typename T, typename index_t>
+	std::vector<std::vector<std::pair<index_t, index_t>>>
+		sparse_mat_rref_left(sparse_mat<T, index_t>& mat, const size_t fullrank, const field_t& F, rref_option_t opt) {
+		// first canonicalize, sort and compress the matrix
+
+		auto& pool = opt->pool;
+		auto nthreads = pool.get_thread_count();
+		size_t p_bound = fullrank;
+		std::function<int64_t(int64_t)> col_weight = [&p_bound](int64_t i) {
+			if (i < p_bound)
+				return i;
+			else
+				return (int64_t)(-1);
+			};
+
+		pool.detach_loop(0, mat.nrow, [&](auto i) { mat[i].compress(); });
+
+		auto printstep = opt->print_step;
+		bool verbose = opt->verbose;
+
+		size_t now_nnz = mat.nnz();
+
+		// store the pivots that have been used
+		// -1 is not used
+		std::vector<index_t> rowpivs(mat.nrow, -1);
+		std::vector<std::vector<std::pair<index_t, index_t>>> pivots;
+		std::vector<std::pair<index_t, index_t>> n_pivots;
+
+		pool.wait();
+
+		if (opt->abort)
+			return pivots;
+
+		// eliminate rows with only one non-zero entry
+		size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
+		now_nnz = mat.nnz();
+
+		for (size_t i = 0; i < mat.nrow; i++) {
+			if (col_weight(rowpivs[i]) < 0)
+				rowpivs[i] = -1; // mark as unused
+			if (rowpivs[i] != -1)
+				n_pivots.push_back(std::make_pair(i, rowpivs[i]));
+		}
+		pivots.push_back(n_pivots);
+
+		if (opt->abort)
+			return pivots;
+
+		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
+		sparse_mat_transpose_replace(tranmat, mat, &pool);
+
+		// use a vector to label the left columns
+		std::vector<index_t> leftcols = perm_init((index_t)(mat.ncol));
+		for (size_t i = 0; i < mat.nrow; i++) {
+			if (rowpivs[i] != -1)
+				leftcols[rowpivs[i]] = -1; // mark as used
+		}
+		std::erase_if(leftcols, [](index_t i) { return i == -1; });
+
+		// sort pivots by nnz, it will be faster
+		std::stable_sort(leftcols.begin(), leftcols.end(),
+			[&tranmat](index_t a, index_t b) {
+				return tranmat[a].nnz() < tranmat[b].nnz();
+			});
+		
+		auto rank = pivots[0].size();
+		size_t kk = rank;
+
+		std::vector<T> cachedensedmat(mat.ncol * nthreads);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
+		for (size_t i = 0; i < nthreads; i++)
+			nonzero_c[i].resize(mat.ncol);
+
+		std::vector<index_t> leftrows;
+		leftrows.reserve(mat.nrow);
+		for (size_t i = 0; i < mat.nrow; i++) {
+			if (rowpivs[i] != -1 || mat[i].nnz() == 0)
+				continue;
+			leftrows.push_back(i);
+		}
+
+		// for printing
+		double oldpr = 0;
+		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 3;
+		int bitlen_ncol = (int)std::floor(std::log(mat.ncol) / std::log(10)) + 1;
+
+		bit_array tmp_set(mat.ncol);
+
+		while (kk < mat.ncol) {
+			auto start = SparseRREF::clocknow();
+
+			auto ps = findmanypivots(mat, tranmat, rowpivs, leftcols, col_weight);
+			if (ps.size() == 0) {
+				if (rank >= fullrank)
+					break;
+				else {
+					p_bound += fullrank - rank;
+					continue;
+				}
+			}
+
+			n_pivots.clear();
+			for (auto i = ps.rbegin(); i != ps.rend(); i++) {
+				rowpivs[(*i).first] = (*i).second;
+				n_pivots.push_back(*i);
+			}
+			pivots.push_back(n_pivots);
+			rank += n_pivots.size();
+
+			pool.detach_loop(0, n_pivots.size(), [&](size_t i) {
+				auto [r, c] = n_pivots[i];
+				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
+				sparse_vec_rescale(mat[r], scalar, F);
+				mat[r].reserve(mat[r].nnz());
+				});
+
+			size_t n_leftrows = 0;
+			for (size_t i = 0; i < leftrows.size(); i++) {
+				auto row = leftrows[i];
+				if (rowpivs[row] != -1 || mat[row].nnz() == 0)
+					continue;
+				leftrows[n_leftrows] = row;
+				n_leftrows++;
+			}
+			leftrows.resize(n_leftrows);
+			pool.wait();
+
+			if (opt->shrink_memory) {
+				pool.detach_loop(0, leftrows.size(), [&](size_t i) {
+					auto row = leftrows[i];
+					if (mat[row].alloc() > 8 * mat[row].nnz()) {
+						mat[row].reserve(4 * mat[row].nnz());
+					}});
+					pool.wait();
 			}
 
 			if (opt->abort)
