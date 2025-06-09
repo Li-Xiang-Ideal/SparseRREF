@@ -39,9 +39,14 @@ namespace SparseRREF {
 			}
 			return;
 		}
+		
+		size_t mtx_size;
+		if (pool->get_thread_count() > 16)
+			mtx_size = 65536;
+		else
+			mtx_size = 1 << pool->get_thread_count();
+		std::vector<std::mutex> mtxes(mtx_size);
 
-		constexpr size_t mtx_size = 128;
-		std::mutex mtxes[mtx_size];
 		pool->detach_loop(0, rows.size(), [&](size_t i) {
 			for (size_t j = 0; j < mat[rows[i]].nnz(); j++) {
 				auto col = mat[rows[i]](j);
@@ -504,11 +509,10 @@ namespace SparseRREF {
 		}
 
 		auto nnz = nonzero_c.nnz();
-		mat[k].zero();
-		mat[k].resize(nnz);
 		if (mat[k].alloc() < nnz) {
-			mat[k].reserve(nnz);
+			mat[k].reserve(nnz, false);
 		}
+		mat[k].resize(nnz);
 		nonzero_c.nonzero(mat[k].indices);
 		for (size_t i = 0; i < nnz; i++) {
 			mat[k][i] = tmpvec[mat[k](i)];
@@ -753,6 +757,13 @@ namespace SparseRREF {
 		auto printstep = opt->print_step;
 		bool verbose = opt->verbose;
 
+		size_t mtx_size;
+		if (pool.get_thread_count() > 16)
+			mtx_size = 65536;
+		else
+			mtx_size = 1 << pool.get_thread_count();
+		std::vector<std::mutex> mtxes(mtx_size);
+
 		size_t now_nnz = mat.nnz();
 
 		// store the pivots that have been used
@@ -878,7 +889,7 @@ namespace SparseRREF {
 				}, (leftrows.size() < 20 * nthreads ? 0 : leftrows.size() / 10));
 
 			// remove used cols
-			size_t localcount = 0;
+			std::atomic<size_t> localcount = 0;
 			tmp_set.clear();
 			for (auto [r, c] : ps)
 				tmp_set.insert(c);
@@ -896,6 +907,26 @@ namespace SparseRREF {
 
 			localcount = 0;
 			while (localcount < leftrows.size()) {
+				// if the pool is free and too many rows left, use pool
+				if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0) {
+					std::vector<index_t> newleftrows;
+					for (auto i = 0; i < leftrows.size(); i++) {
+						if (flags[i])
+							newleftrows.push_back(leftrows[i]);
+					}
+
+					pool.detach_loop(0, newleftrows.size(), [&](size_t i) {
+							auto row = newleftrows[i];
+							for (size_t j = 0; j < mat[row].nnz(); j++) {
+								auto col = mat[row](j);
+								std::lock_guard<std::mutex> lock(mtxes[col % mtx_size]);
+								tranmat[col].push_back(row, true);
+							}
+							localcount++;
+						});
+					pool.wait();
+				}
+
 				for (size_t i = 0; i < leftrows.size() && localcount < leftrows.size(); i++) {
 					if (flags[i]) {
 						auto row = leftrows[i];
@@ -904,6 +935,9 @@ namespace SparseRREF {
 						}
 						flags[i] = 0;
 						localcount++;
+
+						if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0)
+							break;
 					}
 				}
 
@@ -962,6 +996,13 @@ namespace SparseRREF {
 
 		auto printstep = opt->print_step;
 		bool verbose = opt->verbose;
+
+		size_t mtx_size;
+		if (pool.get_thread_count() > 16)
+			mtx_size = 65536;
+		else
+			mtx_size = 1 << pool.get_thread_count();
+		std::vector<std::mutex> mtxes(mtx_size);
 
 		size_t now_nnz = mat.nnz();
 
@@ -1112,6 +1153,26 @@ namespace SparseRREF {
 
 			localcount = 0;
 			while (localcount < leftrows.size()) {
+				// if the pool is free and too many rows left, use pool
+				if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0) {
+					std::vector<index_t> newleftrows;
+					for (auto i = 0; i < leftrows.size(); i++) {
+						if (flags[i])
+							newleftrows.push_back(leftrows[i]);
+					}
+
+					pool.detach_loop(0, newleftrows.size(), [&](size_t i) {
+						auto row = newleftrows[i];
+						for (size_t j = 0; j < mat[row].nnz(); j++) {
+							auto col = mat[row](j);
+							std::lock_guard<std::mutex> lock(mtxes[col % mtx_size]);
+							tranmat[col].push_back(row, true);
+						}
+						localcount++;
+						});
+					pool.wait();
+				}
+
 				for (size_t i = 0; i < leftrows.size() && localcount < leftrows.size(); i++) {
 					if (flags[i]) {
 						auto row = leftrows[i];
@@ -1120,6 +1181,9 @@ namespace SparseRREF {
 						}
 						flags[i] = 0;
 						localcount++;
+
+						if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0)
+							break;
 					}
 				}
 

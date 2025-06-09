@@ -42,6 +42,10 @@
 #endif
 #define NULL nullptr
 
+#ifdef USE_MIMALLOC
+#include "mimalloc.h"
+#endif
+
 namespace SparseRREF {
 	// version
 	static const char version[] = "v0.3.2";
@@ -55,6 +59,27 @@ namespace SparseRREF {
 	};
 
 	// Memory management
+#ifdef USE_MIMALLOC
+	template <typename T>
+	inline T* s_malloc(const size_t size) {
+		return (T*)mi_malloc(size * sizeof(T));
+	}
+
+	template <typename T>
+	inline void s_free(T* s) {
+		mi_free(s);
+	}
+
+	template <typename T>
+	inline T* s_realloc(T* s, const size_t size) {
+		return (T*)mi_realloc(s, size * sizeof(T));
+	}
+
+	template <typename T>
+	inline T* s_expand(T* s, const size_t size) {
+		return (T*)mi_expand(s, size * sizeof(T));
+	}
+#else
 	template <typename T>
 	inline T* s_malloc(const size_t size) {
 		return (T*)std::malloc(size * sizeof(T));
@@ -69,6 +94,12 @@ namespace SparseRREF {
 	inline T* s_realloc(T* s, const size_t size) {
 		return (T*)std::realloc(s, size * sizeof(T));
 	}
+
+	template <typename T>
+	inline T* s_expand(T* s, const size_t size) {
+		return (T*)std::realloc(s, size * sizeof(T));
+	}
+#endif
 
 	template <typename T>
 	void s_copy(T* des, T* ini, const size_t size) {

@@ -90,7 +90,7 @@ namespace SparseRREF {
 			clear();
 		}
 
-		void reserve(size_t n) {
+		void reserve(size_t n, const bool is_copy = true) {
 			if (n == _alloc || n == 0)
 				return;
 
@@ -100,6 +100,41 @@ namespace SparseRREF {
 				for (size_t i = 0; i < n; i++)
 					new (entries + i) T();
 				_alloc = n;
+				return;
+			}
+
+			// when expanding or using realloc, sometimes we need to copy the old data
+			// if is_copy is false, we do not make sure that the old data is copied to 
+			// the new memory, it is useful when we just want to enlarge the memory
+			if (!is_copy && n > _alloc) {
+				auto ii = s_expand(indices, n);
+				auto ee = s_expand(entries, n);
+				if (ii == NULL) {
+					s_free(indices);
+					indices = s_malloc<index_type>(n);
+				}
+				else {
+					indices = ii;
+				}
+				if (ee == NULL) {
+					for (size_t i = 0; i < _alloc; i++) {
+						entries[i].~T();
+					}
+					s_free(entries);
+					entries = s_malloc<T>(n);
+					for (size_t i = 0; i < n; i++) {
+						new (entries + i) T();
+					}
+				}
+				else {
+					entries = ee;
+					for (size_t i = _alloc; i < n; i++) {
+						new (entries + i) T();
+					}
+				}
+
+				_alloc = n;
+				_nnz = 0;
 				return;
 			}
 

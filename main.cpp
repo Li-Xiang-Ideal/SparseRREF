@@ -10,6 +10,9 @@
 #include <fstream>
 #include <iostream>
 
+// Use mimalloc for memory management
+#define USE_MIMALLOC 1
+
 #include "argparse.hpp"
 #include "sparse_mat.h"
 
