@@ -137,7 +137,7 @@ namespace SparseRREF {
 		size_t ndir = (dir) ? mat.ncol : mat.nrow;
 
 		size_t oldnnz = mat.nnz();
-		int bitlen_nnz = (int)std::floor(std::log(oldnnz) / std::log(10)) + 3;
+		int bitlen_nnz = (int)std::floor(std::log(oldnnz) / std::log(10)) + 2;
 		int bitlen_ndir = (int)std::floor(std::log(ndir) / std::log(10)) + 1;
 
 		// if the number of newly eliminated rows is less than 
@@ -168,7 +168,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	std::vector<std::pair<index_t, index_t>> findmanypivots(
 		const sparse_mat<T, index_t>& mat, const sparse_mat<bool, index_t>& tranmat,
-		const std::vector<index_t>& rowpivs, std::vector<index_t>& leftcols,
+		const std::vector<index_t>& rowpivs, const std::vector<index_t>& leftcols,
 		const std::function<int64_t(int64_t)>& col_weight = [](int64_t i) { return i; }) {
 
 		auto nrow = mat.nrow;
@@ -217,50 +217,43 @@ namespace SparseRREF {
 
 		// leftlook then
 		dict.clear();
-		// make a table to help to look for dir pointers
-		std::vector<index_t> colptrs(ncol, -1);
-		for (auto col : leftcols)
-			colptrs[col] = col;
 
 		for (auto p : pivots)
 			dict.insert(p.second);
 
 		for (size_t i = 0; i < nrow; i++) {
 			auto row = i;
-			// auto rdir = nrdir - i - 1; // reverse ordering
 			if (rowpivs[row] != -1)
 				continue;
 
-			index_t dir = 0;
+			index_t col = 0;
 			size_t mnnz = SIZE_MAX;
 			bool flag = true;
 
-			for (auto col : mat[row].index_span()) {
-				if (colptrs[col] == -1)
-					continue;
+			for (auto c : mat[row].index_span()) {
 				// negative weight means that we do not want to select this column
-				if (col_weight(col) < 0)
+				if (col_weight(c) < 0)
 					continue;
-				flag = (dict.count(col) == 0);
+				flag = (dict.count(c) == 0);
 				if (!flag)
 					break;
-				if (tranmat[col].nnz() < mnnz) {
-					mnnz = tranmat[col].nnz();
-					dir = col;
+				if (tranmat[c].nnz() < mnnz) {
+					mnnz = tranmat[c].nnz();
+					col = c;
 				}
 				// make the result stable
-				else if (tranmat[col].nnz() == mnnz) {
-					if (col_weight(col) < col_weight(dir))
-						dir = col;
-					else if (col_weight(col) == col_weight(dir) && col < dir)
-						dir = col;
+				else if (tranmat[c].nnz() == mnnz) {
+					if (col_weight(c) < col_weight(col))
+						col = c;
+					else if (col_weight(c) == col_weight(col) && c < col)
+						col = c;
 				}
 			}
 			if (!flag)
 				continue;
 			if (mnnz != SIZE_MAX) {
-				pivots.push_front(std::make_pair(row, dir));
-				dict.insert(dir);
+				pivots.push_front(std::make_pair(row, col));
+				dict.insert(col);
 			}
 		}
 
@@ -389,9 +382,7 @@ namespace SparseRREF {
 			nthreads = pool->get_thread_count();
 
 		std::vector<T> cachedensedmat(A.ncol * nthreads);
-		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
-		for (size_t i = 0; i < nthreads; i++)
-			nonzero_c[i].resize(A.ncol);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, A.ncol);
 
 		auto method = [&](size_t id, size_t i) {
 			auto& therow = B[i];
@@ -427,7 +418,7 @@ namespace SparseRREF {
 					e_pr = n_mulmod_precomp_shoup(scalar, F.mod.n);
 				}
 				for (auto [ind, val] : C[therow(j)]) {
-					if (!nonzero_c_vec.count(ind)) {
+					if (!nonzero_c_vec.test(ind)) {
 						nonzero_c_vec.insert(ind);
 						cache_dense_vec[ind] = 0;
 					}
@@ -475,7 +466,6 @@ namespace SparseRREF {
 		if (mat[k].nnz() == 0)
 			return;
 
-		// SparseRREF::bit_array nonzero_c(mat.ncol);
 		nonzero_c.clear();
 
 		for (auto [ind, val] : mat[k]) {
@@ -485,14 +475,14 @@ namespace SparseRREF {
 
 		ulong e_pr;
 		for (auto [r, c] : pivots) {
-			if (!nonzero_c.count(c))
+			if (!nonzero_c.test(c))
 				continue;
 			T entry = tmpvec[c];
 			if constexpr (std::is_same_v<T, ulong>) {
 				e_pr = n_mulmod_precomp_shoup(tmpvec[c], F.mod.n);
 			}
 			for (auto [ind, val] : mat[r]) {
-				if (!nonzero_c.count(ind)) {
+				if (!nonzero_c.test(ind)) {
 					nonzero_c.insert(ind);
 					tmpvec[ind] = 0;
 				}
@@ -502,6 +492,9 @@ namespace SparseRREF {
 				}
 				else if constexpr (std::is_same_v<T, rat_t>) {
 					tmpvec[ind] -= entry * val;
+				}
+				else {
+					tmpvec[ind] = scalar_sub(tmpvec[ind], scalar_mul(entry, val, F), F);
 				}
 				if (tmpvec[ind] == 0)
 					nonzero_c.erase(ind);
@@ -520,7 +513,6 @@ namespace SparseRREF {
 	}
 
 	// TODO: CHECK!!!
-	// SLOW!!!
 	template <typename T, typename index_t>
 	void triangular_solver_2_rec(sparse_mat<T, index_t>& mat, 
 		std::vector<std::vector<index_t>>& tranmat, 
@@ -553,7 +545,7 @@ namespace SparseRREF {
 
 		// for printing
 		size_t now_nnz = mat.nnz();
-		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 3;
+		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 2;
 		int bitlen_nrow = (int)std::floor(std::log(rank) / std::log(10)) + 1;
 
 		auto clock_begin = SparseRREF::clocknow();
@@ -603,9 +595,7 @@ namespace SparseRREF {
 		// prepare the tmp array
 		auto nthreads = pool.get_thread_count();
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
-		for (size_t i = 0; i < nthreads; i++)
-			nonzero_c[i].resize(mat.ncol);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, mat.ncol);
 
 		if (opt->abort)
 			return;
@@ -682,9 +672,7 @@ namespace SparseRREF {
 		// then do the elimination parallelly
 		auto nthreads = pool.get_thread_count();
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
-		for (size_t i = 0; i < nthreads; i++)
-			nonzero_c[i].resize(mat.ncol);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, mat.ncol);
 
 		size_t rank = pivots[0].size();
 
@@ -746,7 +734,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	std::vector<std::vector<std::pair<index_t, index_t>>>
-		sparse_mat_rref_c(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
+		sparse_mat_rref_forward(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
 		// first canonicalize, sort and compress the matrix
 
 		auto& pool = opt->pool;
@@ -813,9 +801,7 @@ namespace SparseRREF {
 		size_t kk = rank;
 
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
-		for (size_t i = 0; i < nthreads; i++)
-			nonzero_c[i].resize(mat.ncol);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, mat.ncol);
 
 		std::vector<index_t> leftrows;
 		leftrows.reserve(mat.nrow);
@@ -827,7 +813,7 @@ namespace SparseRREF {
 
 		// for printing
 		double oldpr = 0;
-		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 3;
+		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 2;
 		int bitlen_ncol = (int)std::floor(std::log(mat.ncol) / std::log(10)) + 1;
 
 		bit_array tmp_set(mat.ncol);
@@ -894,7 +880,7 @@ namespace SparseRREF {
 			for (auto [r, c] : ps)
 				tmp_set.insert(c);
 			for (auto it : leftcols) {
-				if (!tmp_set.count(it)) {
+				if (!tmp_set.test(it)) {
 					leftcols[localcount] = it;
 					localcount++;
 					tranmat[it].zero();
@@ -1053,9 +1039,7 @@ namespace SparseRREF {
 		size_t kk = rank;
 
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::bit_array> nonzero_c(nthreads);
-		for (size_t i = 0; i < nthreads; i++)
-			nonzero_c[i].resize(mat.ncol);
+		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, mat.ncol);
 
 		std::vector<index_t> leftrows;
 		leftrows.reserve(mat.nrow);
@@ -1067,7 +1051,7 @@ namespace SparseRREF {
 
 		// for printing
 		double oldpr = 0;
-		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 3;
+		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 2;
 		int bitlen_ncol = (int)std::floor(std::log(mat.ncol) / std::log(10)) + 1;
 
 		bit_array tmp_set(mat.ncol);
@@ -1140,7 +1124,7 @@ namespace SparseRREF {
 			for (auto [r, c] : ps)
 				tmp_set.insert(c);
 			for (auto it : leftcols) {
-				if (!tmp_set.count(it)) {
+				if (!tmp_set.test(it)) {
 					leftcols[localcount] = it;
 					localcount++;
 					tranmat[it].zero();
@@ -1227,7 +1211,7 @@ namespace SparseRREF {
 	std::vector<std::vector<std::pair<index_t, index_t>>> 
 		sparse_mat_rref(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
 
-		auto pivots = sparse_mat_rref_c(mat, F, opt);
+		auto pivots = sparse_mat_rref_forward(mat, F, opt);
 
 		if (opt->shrink_memory) {
 			opt->pool.detach_loop(0, mat.nrow, [&](auto i) {
@@ -1278,7 +1262,7 @@ namespace SparseRREF {
 
 		ulong mat_height_bits = mat.height_bits() + 64 - std::countl_zero(mat.ncol);
 
-		pivots = sparse_mat_rref_c(matul, F, opt);
+		pivots = sparse_mat_rref_forward(matul, F, opt);
 
 		if (opt->abort) 
 			return pivots;
