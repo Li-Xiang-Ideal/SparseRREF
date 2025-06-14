@@ -117,7 +117,7 @@ namespace SparseRREF {
 	struct rref_option {
 		bool verbose = false;
 		bool is_back_sub = true;
-		uint8_t method = 0;
+		int method = 0;
 		int print_step = 100;
 		bool shrink_memory = false;
 		std::function<int64_t(int64_t)> col_weight = [](int64_t i) { return i; };

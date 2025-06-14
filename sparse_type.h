@@ -465,6 +465,16 @@ namespace SparseRREF {
 				rows[i].zero();
 		}
 
+		void clear(){
+			for (size_t i = 0; i < nrow; i++) {
+				rows[i].clear();
+			}
+			std::vector<sparse_vec<T, index_t>> tmp;
+			rows.swap(tmp); // clear the vector and free memory
+			nrow = 0;
+			ncol = 0;
+		}
+
 		size_t nnz() const {
 			size_t n = 0;
 			for (size_t i = 0; i < nrow; i++)
