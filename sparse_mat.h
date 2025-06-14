@@ -166,7 +166,7 @@ namespace SparseRREF {
 	// first choose the pivot with minimal col_weight
 	// if the col_weight is negative, we do not choose it
 	template <typename T, typename index_t>
-	std::vector<std::pair<index_t, index_t>> findmanypivots(
+	std::vector<pivot_t<index_t>> pivots_search(
 		const sparse_mat<T, index_t>& mat, const sparse_mat<bool, index_t>& tranmat,
 		const std::vector<index_t>& rowpivs, const std::vector<index_t>& leftcols,
 		const std::function<int64_t(int64_t)>& col_weight = [](int64_t i) { return i; }) {
@@ -174,7 +174,7 @@ namespace SparseRREF {
 		auto nrow = mat.nrow;
 		auto ncol = mat.ncol;
 
-		std::list<std::pair<index_t, index_t>> pivots;
+		std::list<pivot_t<index_t>> pivots;
 		std::unordered_set<index_t> dict;
 		dict.reserve((size_t)4096);
 
@@ -210,7 +210,7 @@ namespace SparseRREF {
 			if (!flag)
 				continue;
 			if (mnnz != SIZE_MAX) {
-				pivots.push_back(std::make_pair(row, col));
+				pivots.emplace_back(row, col);
 				dict.insert(row);
 			}
 		}
@@ -218,8 +218,8 @@ namespace SparseRREF {
 		// leftlook then
 		dict.clear();
 
-		for (auto p : pivots)
-			dict.insert(p.second);
+		for (auto [r, c] : pivots)
+			dict.insert(c);
 
 		for (size_t i = 0; i < nrow; i++) {
 			auto row = i;
@@ -252,12 +252,12 @@ namespace SparseRREF {
 			if (!flag)
 				continue;
 			if (mnnz != SIZE_MAX) {
-				pivots.push_front(std::make_pair(row, col));
+				pivots.emplace_front(row, col);
 				dict.insert(col);
 			}
 		}
 
-		std::vector<std::pair<index_t, index_t>> result(pivots.begin(), pivots.end());
+		std::vector<pivot_t<index_t>> result(pivots.begin(), pivots.end());
 		return result;
 	}
 
@@ -265,7 +265,7 @@ namespace SparseRREF {
 	// lower solver : ordering = 1
 	template <typename T, typename index_t>
 	void triangular_solver(sparse_mat<T, index_t>& mat, 
-		std::vector<std::pair<index_t, index_t>>& pivots,
+		std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, rref_option_t opt, int ordering) {
 		bool verbose = opt->verbose;
 		auto printstep = opt->print_step;
@@ -275,11 +275,11 @@ namespace SparseRREF {
 
 		// we only need to compute the transpose of the submatrix involving pivots
 
-		for (auto p : pivots) {
-			for (auto [ind, val] : mat[p.first]) {
+		for (auto& [r, c] : pivots) {
+			for (auto [ind, val] : mat[r]) {
 				if (val == 0)
 					continue;
-				tranmat[ind].push_back(p.first);
+				tranmat[ind].push_back(r);
 			}
 		}
 
@@ -289,16 +289,16 @@ namespace SparseRREF {
 			size_t index = i;
 			if (ordering < 0)
 				index = pivots.size() - 1 - i;
-			auto pp = pivots[index];
-			auto& thecol = tranmat[pp.second];
+			auto [row, col] = pivots[index];
+			auto& thecol = tranmat[col];
 			auto start = SparseRREF::clocknow();
 			if (thecol.size() > 1) {
 				pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
 					auto r = thecol[j];
-					if (r == pp.first)
+					if (r == row)
 						return;
-					auto entry = *sparse_mat_entry(mat, r, pp.second);
-					sparse_vec_sub_mul(mat[r], mat[pp.first], entry, F);
+					auto entry = *sparse_mat_entry(mat, r, col);
+					sparse_vec_sub_mul(mat[r], mat[row], entry, F);
 					},
 					((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
 			}
@@ -324,9 +324,9 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	void triangular_solver(sparse_mat<T, index_t>& mat, 
-		std::vector<std::vector<std::pair<index_t, index_t>>>& pivots,
+		std::vector<std::vector<pivot_t<index_t>>>& pivots,
 		const field_t& F, rref_option_t opt, int ordering) {
-		std::vector<std::pair<index_t, index_t>> n_pivots;
+		std::vector<pivot_t<index_t>> n_pivots;
 		for (auto p : pivots)
 			n_pivots.insert(n_pivots.end(), p.begin(), p.end());
 		triangular_solver(mat, n_pivots, F, opt, ordering);
@@ -460,7 +460,7 @@ namespace SparseRREF {
 	// first write a stupid one
 	template <typename T, typename index_t>
 	void schur_complete(sparse_mat<T, index_t>& mat, index_t k, 
-		const std::vector<std::pair<index_t, index_t>>& pivots,
+		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, T* tmpvec, SparseRREF::bit_array& nonzero_c) {
 
 		if (mat[k].nnz() == 0)
@@ -516,7 +516,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	void triangular_solver_2_rec(sparse_mat<T, index_t>& mat, 
 		std::vector<std::vector<index_t>>& tranmat, 
-		std::vector<std::pair<index_t, index_t>>& pivots,
+		std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, rref_option_t opt, T* cachedensedmat,
 		std::vector<SparseRREF::bit_array>& nonzero_c, size_t n_split, size_t rank, size_t& process) {
 
@@ -533,8 +533,8 @@ namespace SparseRREF {
 			return;
 		}
 
-		std::vector<std::pair<index_t, index_t>> sub_pivots(pivots.end() - n_split, pivots.end());
-		std::vector<std::pair<index_t, index_t>> left_pivots(pivots.begin(), pivots.end() - n_split);
+		std::vector<pivot_t<index_t>> sub_pivots(pivots.end() - n_split, pivots.end());
+		std::vector<pivot_t<index_t>> left_pivots(pivots.begin(), pivots.end() - n_split);
 
 		std::unordered_set<index_t> pre_leftrows;
 		for (auto [r, c] : sub_pivots)
@@ -588,7 +588,7 @@ namespace SparseRREF {
 	}
 
 	template <typename T, typename index_t>
-	void triangular_solver_2(sparse_mat<T, index_t>& mat, std::vector<std::pair<index_t, index_t>>& pivots,
+	void triangular_solver_2(sparse_mat<T, index_t>& mat, std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, rref_option_t opt) {
 
 		auto& pool = opt->pool;
@@ -603,10 +603,10 @@ namespace SparseRREF {
 		// we only need to compute the transpose of the submatrix involving pivots
 		std::vector<std::vector<index_t>> tranmat(mat.ncol);
 		for (size_t i = 0; i < pivots.size(); i++) {
-			for (auto [col, val] : mat[pivots[i].first]) {
+			for (auto [col, val] : mat[pivots[i].r]) {
 				if (val == 0)
 					continue;
-				tranmat[col].push_back(pivots[i].first);
+				tranmat[col].push_back(pivots[i].r);
 			}
 		}
 
@@ -622,10 +622,10 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	void triangular_solver_2(sparse_mat<T, index_t>& mat, 
-		std::vector<std::vector<std::pair<index_t, index_t>>>& pivots,
+		std::vector<std::vector<pivot_t<index_t>>>& pivots,
 		const field_t& F, rref_option_t opt) {
 
-		std::vector<std::pair<index_t, index_t>> n_pivots;
+		std::vector<pivot_t<index_t>> n_pivots;
 		// the first pivot is the row with only one nonzero value, so there is no need to do the elimination
 		for (size_t i = 1; i < pivots.size(); i++)
 			n_pivots.insert(n_pivots.end(), pivots[i].begin(), pivots[i].end());
@@ -638,7 +638,7 @@ namespace SparseRREF {
 	// if already know the pivots, we can directly do the rref
 	template <typename T, typename index_t>
 	void sparse_mat_direct_rref(sparse_mat<T, index_t>& mat,
-		const std::vector<std::vector<std::pair<index_t, index_t>>>& pivots, 
+		const std::vector<std::vector<pivot_t<index_t>>>& pivots, 
 		const field_t& F, rref_option_t opt) {
 		auto& pool = opt->pool;
 
@@ -733,7 +733,7 @@ namespace SparseRREF {
 	}
 
 	template <typename T, typename index_t>
-	std::vector<std::vector<std::pair<index_t, index_t>>>
+	std::vector<std::vector<pivot_t<index_t>>>
 		sparse_mat_rref_forward(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
 		// first canonicalize, sort and compress the matrix
 
@@ -757,8 +757,8 @@ namespace SparseRREF {
 		// store the pivots that have been used
 		// -1 is not used
 		std::vector<index_t> rowpivs(mat.nrow, -1);
-		std::vector<std::vector<std::pair<index_t, index_t>>> pivots;
-		std::vector<std::pair<index_t, index_t>> n_pivots;
+		std::vector<std::vector<pivot_t<index_t>>> pivots;
+		std::vector<pivot_t<index_t>> n_pivots;
 
 		pool.wait();
 
@@ -773,7 +773,7 @@ namespace SparseRREF {
 			if (opt->col_weight(rowpivs[i]) < 0)
 				rowpivs[i] = -1; // mark as unused
 			if (rowpivs[i] != -1)
-				n_pivots.push_back(std::make_pair(i, rowpivs[i]));
+				n_pivots.emplace_back(i, rowpivs[i]);
 		}
 		pivots.push_back(n_pivots);
 
@@ -821,14 +821,15 @@ namespace SparseRREF {
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
 
-			auto ps = findmanypivots(mat, tranmat, rowpivs, leftcols, opt->col_weight);
+			auto ps = pivots_search(mat, tranmat, rowpivs, leftcols, opt->col_weight);
 			if (ps.size() == 0)
 				break;
 
 			n_pivots.clear();
 			for (auto i = ps.rbegin(); i != ps.rend(); i++) {
-				rowpivs[(*i).first] = (*i).second;
-				n_pivots.push_back(*i);
+				auto& [r, c] = *i;
+				rowpivs[r] = c;
+				n_pivots.emplace_back(r, c);
 			}
 			pivots.push_back(n_pivots);
 			rank += n_pivots.size();
@@ -964,7 +965,7 @@ namespace SparseRREF {
 	}
 
 	template <typename T, typename index_t>
-	std::vector<std::vector<std::pair<index_t, index_t>>>
+	std::vector<std::vector<pivot_t<index_t>>>
 		sparse_mat_rref_left(sparse_mat<T, index_t>& mat, const size_t fullrank, const field_t& F, rref_option_t opt) {
 		// first canonicalize, sort and compress the matrix
 
@@ -995,8 +996,8 @@ namespace SparseRREF {
 		// store the pivots that have been used
 		// -1 is not used
 		std::vector<index_t> rowpivs(mat.nrow, -1);
-		std::vector<std::vector<std::pair<index_t, index_t>>> pivots;
-		std::vector<std::pair<index_t, index_t>> n_pivots;
+		std::vector<std::vector<pivot_t<index_t>>> pivots;
+		std::vector<pivot_t<index_t>> n_pivots;
 
 		pool.wait();
 
@@ -1011,7 +1012,7 @@ namespace SparseRREF {
 			if (col_weight(rowpivs[i]) < 0)
 				rowpivs[i] = -1; // mark as unused
 			if (rowpivs[i] != -1)
-				n_pivots.push_back(std::make_pair(i, rowpivs[i]));
+				n_pivots.emplace_back(i, rowpivs[i]);
 		}
 		pivots.push_back(n_pivots);
 
@@ -1059,7 +1060,7 @@ namespace SparseRREF {
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
 
-			auto ps = findmanypivots(mat, tranmat, rowpivs, leftcols, col_weight);
+			auto ps = pivots_search(mat, tranmat, rowpivs, leftcols, col_weight);
 			if (ps.size() == 0) {
 				if (rank >= fullrank)
 					break;
@@ -1071,8 +1072,9 @@ namespace SparseRREF {
 
 			n_pivots.clear();
 			for (auto i = ps.rbegin(); i != ps.rend(); i++) {
-				rowpivs[(*i).first] = (*i).second;
-				n_pivots.push_back(*i);
+				auto& [r, c] = *i;
+				rowpivs[r] = c;
+				n_pivots.emplace_back(r, c);
 			}
 			pivots.push_back(n_pivots);
 			rank += n_pivots.size();
@@ -1208,7 +1210,7 @@ namespace SparseRREF {
 	}
 
 	template <typename T, typename index_t>
-	std::vector<std::vector<std::pair<index_t, index_t>>> 
+	std::vector<std::vector<pivot_t<index_t>>> 
 		sparse_mat_rref(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
 
 		auto pivots = sparse_mat_rref_forward(mat, F, opt);
@@ -1241,9 +1243,9 @@ namespace SparseRREF {
 	// where H is the height of a matrix, E is the reconstracted rref matrix
 	// d the denominartor of E such that d*E is a integer matrix
 	template <typename index_t>
-	std::vector<std::vector<std::pair<index_t, index_t>>> sparse_mat_rref_reconstruct(
+	std::vector<std::vector<pivot_t<index_t>>> sparse_mat_rref_reconstruct(
 		sparse_mat<rat_t, index_t>& mat, rref_option_t opt, const bool checkrank = false) {
-		std::vector<std::vector<std::pair<index_t, index_t>>> pivots;
+		std::vector<std::vector<pivot_t<index_t>>> pivots;
 
 		auto& pool = opt->pool;
 		auto nthreads = pool.get_thread_count();
@@ -1381,7 +1383,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_rref_kernel(const sparse_mat<T, index_t>& M,
-		const std::vector<std::pair<index_t, index_t>>& pivots, const field_t& F, rref_option_t opt) {
+		const std::vector<pivot_t<index_t>>& pivots, const field_t& F, rref_option_t opt) {
 
 		auto& pool = opt->pool;
 
@@ -1401,14 +1403,14 @@ namespace SparseRREF {
 		sparse_mat<T, index_t> rows(rank, M.ncol);
 		sparse_mat<T, index_t> trows(M.ncol, rank);
 		for (size_t i = 0; i < rank; i++) {
-			rows[i] = M[pivots[i].first];
+			rows[i] = M[pivots[i].r];
 		}
 		sparse_mat_transpose_replace(trows, rows);
 
 		std::vector<index_t> colpivs(M.ncol, -1);
 		std::vector<index_t> nonpivs;
 		for (size_t i = 0; i < rank; i++)
-			colpivs[pivots[i].second] = pivots[i].first;
+			colpivs[pivots[i].c] = pivots[i].r;
 
 		for (auto i = 0; i < M.ncol; i++)
 			if (colpivs[i] == -1)
@@ -1419,7 +1421,7 @@ namespace SparseRREF {
 			auto& thecol = trows[nonpivs[i]];
 			K[i].reserve(thecol.nnz() + 1);
 			for (size_t j = 0; j < thecol.nnz(); j++) {
-				K[i].push_back(pivots[thecol(j)].second, thecol[j]);
+				K[i].push_back(pivots[thecol(j)].c, thecol[j]);
 			}
 			K[i].push_back(nonpivs[i], m1);
 			K[i].sort_indices();
@@ -1431,9 +1433,9 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_rref_kernel(const sparse_mat<T, index_t>& M,
-		const std::vector<std::vector<std::pair<index_t, index_t>>>& pivots, 
+		const std::vector<std::vector<pivot_t<index_t>>>& pivots, 
 		const field_t& F, rref_option_t opt) {
-		std::vector<std::pair<index_t, index_t>> n_pivots;
+		std::vector<pivot_t<index_t>> n_pivots;
 		for (auto& p : pivots)
 			n_pivots.insert(n_pivots.end(), p.begin(), p.end());
 		return sparse_mat_rref_kernel(M, n_pivots, F, opt);
@@ -1470,7 +1472,7 @@ namespace SparseRREF {
 		bool is_back_sub = opt->is_back_sub;
 		opt->is_back_sub = true;
 
-		std::vector<std::vector<std::pair<index_t, index_t>>> pivots;
+		std::vector<std::vector<pivot_t<index_t>>> pivots;
 		if (F.ring == RING::FIELD_Fp)
 			pivots = sparse_mat_rref(M1, F, opt);
 		else if (F.ring == RING::FIELD_QQ)
@@ -1480,7 +1482,7 @@ namespace SparseRREF {
 			return sparse_mat<T, index_t>();
 		}
 
-		std::vector<std::pair<index_t, index_t>> flatten_pivots;
+		std::vector<pivot_t<index_t>> flatten_pivots;
 		size_t rank = 0;
 		for (auto& p : pivots) {
 			rank += p.size();
@@ -1495,10 +1497,10 @@ namespace SparseRREF {
 		auto perm = perm_init(M.nrow);
 		std::sort(perm.begin(), perm.end(),
 			[&](size_t a, size_t b) {
-				return flatten_pivots[a].second < flatten_pivots[b].second;
+				return flatten_pivots[a].c < flatten_pivots[b].c;
 			});
 		for (size_t i = 0; i < M.nrow; i++) {
-			perm[i] = flatten_pivots[perm[i]].first;
+			perm[i] = flatten_pivots[perm[i]].r;
 		}
 
 		permute(perm, M1.rows);

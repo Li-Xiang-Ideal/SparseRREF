@@ -16,7 +16,6 @@
 #include "argparse.hpp"
 #include "sparse_mat.h"
 
-
 #ifdef _WIN32
 #include <conio.h>
 int getch_key() {
@@ -235,7 +234,7 @@ int main(int argc, char** argv) {
 	}
 
 	start = SparseRREF::clocknow();
-	std::vector<std::vector<std::pair<index_t, index_t>>> pivots;
+	std::vector<std::vector<pivot_t<index_t>>> pivots;
 	if (prime == 0) {
 		pivots = sparse_mat_rref_reconstruct(std::get<sparse_mat<rat_t, index_t>>(mat), opt);
 	}
@@ -271,8 +270,8 @@ int main(int argc, char** argv) {
 		outname_add = ".piv";
 		file2.open(outname + outname_add);
 		for (auto p : pivots) {
-			for (auto ii : p)
-				file2 << ii.first + 1 << ", " << ii.second + 1 << '\n';
+			for (auto [r, c] : p)
+				file2 << r + 1 << ", " << c + 1 << '\n';
 		}
 		file2.close();
 	}
