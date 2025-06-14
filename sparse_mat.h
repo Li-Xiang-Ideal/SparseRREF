@@ -178,7 +178,7 @@ namespace SparseRREF {
 		std::unordered_set<index_t> dict;
 		dict.reserve((size_t)4096);
 
-		// rightlook first
+		// leftlook first
 		for (auto col : leftcols) {
 			if (tranmat[col].nnz() == 0)
 				continue;
@@ -210,12 +210,12 @@ namespace SparseRREF {
 			if (!flag)
 				continue;
 			if (mnnz != SIZE_MAX) {
-				pivots.emplace_back(row, col);
+				pivots.emplace_front(row, col);
 				dict.insert(row);
 			}
 		}
 
-		// leftlook then
+		// rightlook then
 		dict.clear();
 
 		for (auto [r, c] : pivots)
@@ -252,7 +252,7 @@ namespace SparseRREF {
 			if (!flag)
 				continue;
 			if (mnnz != SIZE_MAX) {
-				pivots.emplace_front(row, col);
+				pivots.emplace_back(row, col);
 				dict.insert(col);
 			}
 		}
@@ -263,9 +263,9 @@ namespace SparseRREF {
 
 	// first choose the pivot with minimal col_weight
 	// if the col_weight is negative, we do not choose it
-	// only left search version, do not need the full tranpose
+	// only right search version, do not need the full tranpose
 	template <typename T, typename index_t>
-	std::vector<pivot_t<index_t>> pivots_search_left(
+	std::vector<pivot_t<index_t>> pivots_search_right(
 		const sparse_mat<T, index_t>& mat, const std::vector<std::atomic<size_t>>& tranmat_nnz,
 		const std::vector<index_t>& rowpivs, const std::vector<index_t>& leftcols,
 		const std::function<int64_t(int64_t)>& col_weight = [](int64_t i) { return i; }) {
@@ -274,8 +274,8 @@ namespace SparseRREF {
 		auto ncol = mat.ncol;
 
 		std::vector<pivot_t<index_t>> pivots;
-		std::unordered_set<index_t> dict;
-		dict.reserve((size_t)4096);
+		std::unordered_set<index_t> c_dict;
+		c_dict.reserve((size_t)4096);
 
 		for (size_t i = 0; i < nrow; i++) {
 			auto row = i;
@@ -290,7 +290,7 @@ namespace SparseRREF {
 				// negative weight means that we do not want to select this column
 				if (col_weight(c) < 0)
 					continue;
-				flag = (dict.count(c) == 0);
+				flag = (c_dict.count(c) == 0);
 				if (!flag)
 					break;
 				if (tranmat_nnz[c] < mnnz) {
@@ -309,12 +309,11 @@ namespace SparseRREF {
 				continue;
 			if (mnnz != SIZE_MAX) {
 				pivots.emplace_back(row, col);
-				dict.insert(col);
+				c_dict.insert(col);
 			}
 		}
 
-		std::vector<pivot_t<index_t>> result(pivots.rbegin(), pivots.rend());
-		return result;
+		return pivots;
 	}
 
 	// upper solver : ordering = -1
@@ -871,7 +870,7 @@ namespace SparseRREF {
 		for (size_t i = 0; i < mat.ncol; i++) {
 			tranmat_nnz[i] = 0;
 		}
-		bool only_left_search = false;
+		bool only_right_search = false;
 
 		// for printing
 		double oldpr = 0;
@@ -885,8 +884,8 @@ namespace SparseRREF {
 
 			std::vector<pivot_t<index_t>> ps;
 
-			if (only_left_search) {
-				ps = pivots_search_left(mat, tranmat_nnz, rowpivs, leftcols, opt->col_weight);
+			if (only_right_search) {
+				ps = pivots_search_right(mat, tranmat_nnz, rowpivs, leftcols, opt->col_weight);
 			}
 			else {
 				ps = pivots_search(mat, tranmat, rowpivs, leftcols, opt->col_weight);
@@ -895,8 +894,7 @@ namespace SparseRREF {
 				break;
 
 			n_pivots.clear();
-			for (auto i = ps.rbegin(); i != ps.rend(); i++) {
-				auto& [r, c] = *i;
+			for (auto& [r, c] : ps) {
 				rowpivs[r] = c;
 				n_pivots.emplace_back(r, c);
 			}
@@ -933,7 +931,7 @@ namespace SparseRREF {
 			if (opt->abort)
 				return pivots;
 
-			if (only_left_search) {
+			if (only_right_search) {
 				// clear the tranmat and reset the tranmat_nnz
 				for (auto c : leftcols) {
 					tranmat[c].clear();
@@ -941,7 +939,7 @@ namespace SparseRREF {
 				}
 			}
 
-			if (only_left_search) {
+			if (only_right_search) {
 				std::atomic<size_t> done_count = 0;
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 					auto id = SparseRREF::thread_id();
@@ -1097,9 +1095,9 @@ namespace SparseRREF {
 
 			// if the number of new pivots is less than 1% of the total columns, 
 			// it is very expansive to compute the transpose of the matrix
-			// so we only search the left columns
-			if (!only_left_search && ps.size() < mat.ncol / 100) {
-				only_left_search = true;
+			// so we only search the right columns
+			if (!only_right_search && ps.size() < mat.ncol / 100) {
+				only_right_search = true;
 				// update the tranmat_nnz for the first time
 				for (auto r : leftrows) {
 					for (size_t j = 0; j < mat[r].nnz(); j++) {
@@ -1207,7 +1205,7 @@ namespace SparseRREF {
 		for (size_t i = 0; i < mat.ncol; i++) {
 			tranmat_nnz[i] = 0;
 		}
-		bool only_left_search = false;
+		bool only_right_search = false;
 
 		// for printing
 		double oldpr = 0;
@@ -1220,8 +1218,8 @@ namespace SparseRREF {
 			auto start = SparseRREF::clocknow();
 
 			std::vector<pivot_t<index_t>> ps;
-			if (only_left_search) {
-				ps = pivots_search_left(mat, tranmat_nnz, rowpivs, leftcols, col_weight);
+			if (only_right_search) {
+				ps = pivots_search_right(mat, tranmat_nnz, rowpivs, leftcols, col_weight);
 			}
 			else {
 				ps = pivots_search(mat, tranmat, rowpivs, leftcols, col_weight);
@@ -1239,8 +1237,7 @@ namespace SparseRREF {
 			}
 
 			n_pivots.clear();
-			for (auto i = ps.rbegin(); i != ps.rend(); i++) {
-				auto& [r, c] = *i;
+			for (auto& [r, c] : ps) {
 				rowpivs[r] = c;
 				n_pivots.emplace_back(r, c);
 			}
@@ -1277,7 +1274,7 @@ namespace SparseRREF {
 			if (opt->abort)
 				return pivots;
 
-			if (only_left_search) {
+			if (only_right_search) {
 				// clear the tranmat and reset the tranmat_nnz
 				for (auto c : leftcols) {
 					tranmat[c].clear();
@@ -1285,7 +1282,7 @@ namespace SparseRREF {
 				}
 			}
 
-			if (only_left_search) {
+			if (only_right_search) {
 				std::atomic<size_t> done_count = 0;
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 					auto id = SparseRREF::thread_id();
@@ -1441,9 +1438,9 @@ namespace SparseRREF {
 
 			// if the number of new pivots is less than 1% of the total columns, 
 			// it is very expansive to compute the transpose of the matrix
-			// so we only search the left columns
-			if (!only_left_search && ps.size() < mat.ncol / 100) {
-				only_left_search = true;
+			// so we only search the right columns
+			if (!only_right_search && ps.size() < mat.ncol / 100) {
+				only_right_search = true;
 				// update the tranmat_nnz for the first time
 				for (auto r : leftrows) {
 					for (size_t j = 0; j < mat[r].nnz(); j++) {
