@@ -1098,8 +1098,14 @@ namespace SparseRREF {
 			// if the number of new pivots is less than 1% of the total columns, 
 			// it is very expansive to compute the transpose of the matrix
 			// so we only search the left columns
-			if (ps.size() < mat.ncol / 100) {
+			if (!only_left_search && ps.size() < mat.ncol / 100) {
 				only_left_search = true;
+				// update the tranmat_nnz for the first time
+				for (auto r : leftrows) {
+					for (size_t j = 0; j < mat[r].nnz(); j++) {
+						tranmat_nnz[mat[r](j)]++;
+					}
+				}
 			}
 
 			kk += ps.size();
@@ -1436,8 +1442,14 @@ namespace SparseRREF {
 			// if the number of new pivots is less than 1% of the total columns, 
 			// it is very expansive to compute the transpose of the matrix
 			// so we only search the left columns
-			if (ps.size() < mat.ncol / 100) {
+			if (!only_left_search && ps.size() < mat.ncol / 100) {
 				only_left_search = true;
+				// update the tranmat_nnz for the first time
+				for (auto r : leftrows) {
+					for (size_t j = 0; j < mat[r].nnz(); j++) {
+						tranmat_nnz[mat[r](j)]++;
+					}
+				}
 			}
 
 			kk += ps.size();
