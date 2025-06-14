@@ -902,14 +902,14 @@ namespace SparseRREF {
 					}
 
 					pool.detach_loop(0, newleftrows.size(), [&](size_t i) {
-							auto row = newleftrows[i];
-							for (size_t j = 0; j < mat[row].nnz(); j++) {
-								auto col = mat[row](j);
-								std::lock_guard<std::mutex> lock(mtxes[col % mtx_size]);
-								tranmat[col].push_back(row, true);
-							}
-							localcount++;
-						});
+						auto row = newleftrows[i];
+						for (size_t j = 0; j < mat[row].nnz(); j++) {
+							auto col = mat[row](j);
+							std::lock_guard<std::mutex> lock(mtxes[col % mtx_size]);
+							tranmat[col].push_back(row, true);
+						}
+						localcount++;
+						}, (newleftrows.size() < 20 * nthreads ? 0 : newleftrows.size() / 10));
 					pool.wait();
 				}
 
@@ -1153,7 +1153,7 @@ namespace SparseRREF {
 							tranmat[col].push_back(row, true);
 						}
 						localcount++;
-						});
+						}, (newleftrows.size() < 20 * nthreads ? 0 : newleftrows.size() / 10));
 					pool.wait();
 				}
 
