@@ -114,6 +114,9 @@ namespace SparseRREF {
 	}
 
 	// rref_option
+	// method 0: right and left search
+	// method 1: only right search
+	// method 2: hibrid
 	struct rref_option {
 		bool verbose = false;
 		bool is_back_sub = true;
