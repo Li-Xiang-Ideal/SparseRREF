@@ -723,11 +723,14 @@ namespace SparseRREF {
 				continue;
 
 			// rescale the pivots
-			for (auto [r, c] : pivots[i]) {
+			pool.detach_loop(0, pivots[i].size(), [&](size_t j) {
+				auto [r, c] = pivots[i][j];
 				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
 				sparse_vec_rescale(mat[r], scalar, F);
+				mat[r].reserve(mat[r].nnz());
 				rowset[r] = -1;
-			}
+				});
+			pool.wait();
 
 			leftrows.clear();
 			for (size_t j = 0; j < mat.nrow; j++) {
@@ -1896,7 +1899,10 @@ namespace SparseRREF {
 
 		ulong mat_height_bits = mat.height_bits() + 64 - std::countl_zero(mat.ncol);
 
-		pivots = sparse_mat_rref_forward(matul, F, opt);
+		if (opt->method == 0 || opt->method == 2)
+			pivots = sparse_mat_rref_forward(matul, F, opt);
+		else
+			pivots = sparse_mat_rref_forward_2(matul, F, opt);
 
 		if (opt->abort) 
 			return pivots;
