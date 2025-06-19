@@ -763,6 +763,7 @@ namespace SparseRREF {
 							<< "  speed: " << ((1.0 * (cc - old_cc)) / usedtime(cn,clocknow()))
 							<< " row/s          " << std::flush;
 						old_cc = cc;
+						cn = clocknow();
 					}
 				}
 			}
@@ -1296,7 +1297,7 @@ namespace SparseRREF {
 		auto& pool = opt->pool;
 		auto nthreads = pool.get_thread_count();
 		size_t p_bound = fullrank;
-		std::function<int64_t(int64_t)> col_weight = [&p_bound](int64_t i) {
+		std::function<int64_t(int64_t)> col_weight = [&](int64_t i) {
 			if (i < p_bound)
 				return opt->col_weight(i);
 			else
