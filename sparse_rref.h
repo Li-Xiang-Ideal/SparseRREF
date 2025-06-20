@@ -119,13 +119,14 @@ namespace SparseRREF {
 	// method 2: hibrid
 	struct rref_option {
 		bool verbose = false;
+		bool shrink_memory = false;
+		std::atomic<bool> abort = false;
 		bool is_back_sub = true;
+		bool sort_rows = false;
 		int method = 0;
 		int print_step = 100;
-		bool shrink_memory = false;
 		std::function<int64_t(int64_t)> col_weight = [](int64_t i) { return i; };
 		thread_pool pool = thread_pool(1); // default: thread pool with 1 thread
-		std::atomic<bool> abort = false;
 	};
 	using rref_option_t = rref_option[1];
 
@@ -365,10 +366,11 @@ namespace SparseRREF {
 			for (size_t i = 0; i < data.size(); i++) {
 				if (data[i] != 0) {
 					uint64_t c = data[i];
+					size_t base = i * bitset_size;
 
 					while (c) {
 						auto ctzpos = ctz(c);
-						ptr[pos] = i * bitset_size + ctzpos;
+						ptr[pos] = base + ctzpos;
 						pos++;
 						c ^= ((uint64_t)1 << ctzpos);
 					}

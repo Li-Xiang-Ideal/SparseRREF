@@ -307,7 +307,7 @@ namespace SparseRREF {
 	// lower solver : ordering = 1
 	template <typename T, typename index_t>
 	void triangular_solver(sparse_mat<T, index_t>& mat, 
-		std::vector<pivot_t<index_t>>& pivots,
+		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, rref_option_t opt, int ordering) {
 		bool verbose = opt->verbose;
 		auto printstep = opt->print_step;
@@ -557,8 +557,8 @@ namespace SparseRREF {
 	// TODO: CHECK!!!
 	template <typename T, typename index_t>
 	void triangular_solver_2_rec(sparse_mat<T, index_t>& mat, 
-		std::vector<std::vector<index_t>>& tranmat, 
-		std::vector<pivot_t<index_t>>& pivots,
+		const std::vector<std::vector<index_t>>& tranmat, 
+		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, rref_option_t opt, T* cachedensedmat,
 		std::vector<SparseRREF::bit_array>& nonzero_c, size_t n_split, size_t rank, size_t& process) {
 
@@ -645,10 +645,10 @@ namespace SparseRREF {
 		// we only need to compute the transpose of the submatrix involving pivots
 		std::vector<std::vector<index_t>> tranmat(mat.ncol);
 		for (size_t i = 0; i < pivots.size(); i++) {
-			for (auto [col, val] : mat[pivots[i].r]) {
-				if (val == 0)
-					continue;
-				tranmat[col].push_back(pivots[i].r);
+			auto row = pivots[i].r;
+			auto indices = mat[row].indices;
+			for (auto j = 0; j < mat[row].nnz(); j++) {
+				tranmat[indices[j]].push_back(row);
 			}
 		}
 
@@ -664,7 +664,7 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	void triangular_solver_2(sparse_mat<T, index_t>& mat, 
-		std::vector<std::vector<pivot_t<index_t>>>& pivots,
+		const std::vector<std::vector<pivot_t<index_t>>>& pivots,
 		const field_t& F, rref_option_t opt) {
 
 		std::vector<pivot_t<index_t>> n_pivots;
@@ -763,7 +763,8 @@ namespace SparseRREF {
 						std::cout << "\r-- Row: "
 							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * pivots[i].size())
 							<< "/" << total_rank << "  nnz: " << mat.nnz()
-							<< "  speed: " << ((1.0 * (cc - old_cc)) / usedtime(cn,clocknow()))
+							<< "  alloc: " << mat.alloc()
+							<< "  speed: " << (((cc - old_cc) * 1.0 / leftrows.size()) * pivots[i].size() / usedtime(cn, clocknow()))
 							<< " row/s          " << std::flush;
 						old_cc = cc;
 						cn = clocknow();
@@ -875,6 +876,15 @@ namespace SparseRREF {
 
 			std::vector<pivot_t<index_t>> ps;
 
+			if (opt->sort_rows) {
+				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
+					if (mat[a].nnz() < mat[b].nnz())
+						return true;
+					if (mat[a].nnz() == mat[b].nnz())
+						return lexico_compare(mat[a].indices, mat[b].indices, mat[a].nnz()) < 0;
+					return false;
+					});
+			}
 			if (only_right_search) {
 				ps = pivots_search_right(mat, tranmat_nnz, leftrows, leftcols, opt->col_weight);
 			}
@@ -1184,6 +1194,15 @@ namespace SparseRREF {
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
 
+			if (opt->sort_rows) {
+				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
+					if (mat[a].nnz() < mat[b].nnz())
+						return true;
+					if (mat[a].nnz() == mat[b].nnz())
+						return lexico_compare(mat[a].indices, mat[b].indices, mat[a].nnz()) < 0;
+					return false;
+					});
+			}
 			auto ps = pivots_search_right(mat, tranmat_nnz, leftrows, leftcols, opt->col_weight);
 			if (ps.size() == 0)
 				break;
@@ -1220,7 +1239,7 @@ namespace SparseRREF {
 					if (mat[row].alloc() > 8 * mat[row].nnz()) {
 						mat[row].reserve(4 * mat[row].nnz());
 					}});
-					pool.wait();
+				pool.wait();
 			}
 
 			if (opt->abort)
@@ -1394,6 +1413,15 @@ namespace SparseRREF {
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
 
+			if (opt->sort_rows) {
+				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
+					if (mat[a].nnz() < mat[b].nnz())
+						return true;
+					if (mat[a].nnz() == mat[b].nnz())
+						return lexico_compare(mat[a].indices, mat[b].indices, mat[a].nnz()) < 0;
+					return false;
+					});
+			}
 			std::vector<pivot_t<index_t>> ps;
 			if (only_right_search) {
 				ps = pivots_search_right(mat, tranmat_nnz, leftrows, leftcols, col_weight);
@@ -1721,6 +1749,15 @@ namespace SparseRREF {
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
 
+			if (opt->sort_rows) {
+				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
+					if (mat[a].nnz() < mat[b].nnz())
+						return true;
+					if (mat[a].nnz() == mat[b].nnz())
+						return lexico_compare(mat[a].indices, mat[b].indices, mat[a].nnz()) < 0;
+					return false;
+					});
+			}
 			std::vector<pivot_t<index_t>> ps;
 			ps = pivots_search_right(mat, tranmat_nnz, leftrows, leftcols, col_weight);
 			if (ps.size() == 0)
