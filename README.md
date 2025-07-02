@@ -49,7 +49,7 @@ The `main.cpp` is an example to use the head only library, the help is
 
 ```
 Usage: SparseRREF [--help] [--version] [--output VAR]
-                  [--kernel] [--output-pivots]
+                  [--kernel] [--method VAR] [--output-pivots]
                   [--field VAR] [--prime VAR] [--threads VAR]
                   [--verbose] [--print_step VAR]
                   [--no-backward-substitution]
@@ -66,6 +66,7 @@ Optional arguments:
   -v, --version               prints version information and exits
   -o, --output                output file in MTX format [default: "<input_file>.rref"]
   -k, --kernel                output the kernel (null vectors)
+  -m, --method                method of RREF  [default: 0]
   --output-pivots             output pivots
   -F, --field                 QQ: rational field
                               Zp or Fp: Z/p for a prime p [default: "QQ"]

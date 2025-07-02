@@ -95,6 +95,11 @@ int main(int argc, char** argv) {
 		.help("output the kernel (null vectors)")
 		.implicit_value(true)
 		.nargs(0);
+	program.add_argument("-m", "--method")
+		.help("method of RREF ")
+		.default_value(0)
+		.nargs(1)
+		.scan<'i', int>();
 	program.add_argument("--output-pivots")
 		.help("output pivots")
 		.default_value(false)
@@ -112,11 +117,6 @@ int main(int argc, char** argv) {
 	program.add_argument("-t", "--threads")
 		.help("the number of threads ")
 		.default_value(1)
-		.nargs(1)
-		.scan<'i', int>();
-	program.add_argument("-m", "--method")
-		.help("method of RREF ")
-		.default_value(0)
 		.nargs(1)
 		.scan<'i', int>();
 	program.add_usage_newline();
