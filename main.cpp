@@ -114,6 +114,11 @@ int main(int argc, char** argv) {
 		.default_value(1)
 		.nargs(1)
 		.scan<'i', int>();
+	program.add_argument("-m", "--method")
+		.help("method of RREF ")
+		.default_value(0)
+		.nargs(1)
+		.scan<'i', int>();
 	program.add_usage_newline();
 	program.add_argument("-V", "--verbose")
 		.default_value(false)
@@ -178,6 +183,7 @@ int main(int argc, char** argv) {
 
 	rref_option_t opt;
 	int nthread = program.get<int>("--threads");
+	opt->method = program.get<int>("--method");
 	if (nthread == 0)
 		opt->pool.reset(); // automatic mode, use all possible threads
 	else
@@ -203,7 +209,7 @@ int main(int argc, char** argv) {
 
 	std::ifstream file(filePath);
 
-	using index_t = slong;
+	using index_t = int;
 	std::variant<sparse_mat<rat_t, index_t>, sparse_mat<ulong, index_t>> mat;
 
 	if (prime == 0)

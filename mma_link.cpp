@@ -210,7 +210,7 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 			});
 
 		auto pivots = sparse_mat_rref_reconstruct(mat, opt);
-		std::vector<std::pair<int, int>> pivots_vec;
+		std::vector<pivot_t<int>> pivots_vec;
 		for (auto& p : pivots) {
 			pivots_vec.insert(pivots_vec.end(), p.begin(), p.end());
 		}
@@ -247,8 +247,8 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 				uint8_t int64_buf[16];
 				for (auto& p : pivots_vec) {
 					// output the pivot position
-					int64_t row = p.first + 1; // 1-based index
-					int64_t col = p.second + 1; // 1-based index
+					int64_t row = p.r + 1; // 1-based index
+					int64_t col = p.c + 1; // 1-based index
 					memcpy(int64_buf, &row, sizeof(row));
 					memcpy(int64_buf + sizeof(row), &col, sizeof(col));
 					res_str.insert(res_str.end(), int64_buf, int64_buf + sizeof(row) + sizeof(col));
