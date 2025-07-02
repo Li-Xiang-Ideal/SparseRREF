@@ -147,13 +147,15 @@ namespace SparseRREF {
 			count += localcounter;
 			if (verbose) {
 				oldnnz = mat.nnz();
-				std::cout << "-- " << dirstr << ": " << std::setw(bitlen_ndir)
-					<< count << "/" << ndir
-					<< "  rank: " << std::setw(bitlen_ndir) << count
-					<< "  nnz: " << std::setw(bitlen_nnz) << oldnnz
-					<< "  density: " << std::setprecision(6) << std::setw(8)
-					<< 100 * (double)oldnnz / (mat.nrow * mat.ncol) << "%"
-					<< "    \r" << std::flush;
+				std::cout << std::format(
+					"-- {}: {:{}}/{:<{}}  rank: {:{}}  nnz: {:{}}  density: {:8.6f}%    \r",
+					dirstr,
+					count, bitlen_ndir,
+					ndir, bitlen_ndir,
+					count, bitlen_ndir,
+					oldnnz, bitlen_nnz,
+					100.0 * oldnnz / (mat.nrow * mat.ncol)
+				) << std::flush;
 			}
 			depth++;
 			if (opt->abort)
@@ -350,12 +352,15 @@ namespace SparseRREF {
 				count++;
 				auto end = SparseRREF::clocknow();
 				auto now_nnz = mat.nnz();
-				std::cout << "\r-- Row: " << (i + 1) << "/" << pivots.size()
-					<< "  " << "row to eliminate: " << thecol.size() - 1
-					<< "  " << "nnz: " << now_nnz << "  " << "density: "
-					<< (double)100 * now_nnz / (mat.nrow * mat.ncol)
-					<< "%  " << "speed: " << count / SparseRREF::usedtime(start, end)
-					<< " row/s" << std::flush;
+				std::cout << std::format(
+					"\r-- Row: {}/{}  row to eliminate: {}  nnz: {}  density: {:8.6f}%  speed: {:8.6f} row/s  ",
+					i + 1,
+					pivots.size(),
+					thecol.size() - 1,
+					now_nnz,
+					100.0 * (double)(now_nnz) / (mat.nrow * mat.ncol),
+					count / SparseRREF::usedtime(start, end)
+				) << std::flush;
 				start = SparseRREF::clocknow();
 				count = 0;
 			}
@@ -607,14 +612,15 @@ namespace SparseRREF {
 				std::this_thread::sleep_for(std::chrono::microseconds(1000));
 				now_nnz = mat.nnz();
 				size_t status = (size_t)std::floor(1.0 * sub_pivots.size() * cc / leftrows.size());
-				std::cout << "-- Row: " << std::setw(bitlen_nrow)
-					<< process + status << "/" << rank
-					<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-					<< "  density: " << std::setprecision(6) << std::setw(8)
-					<< 100 * (double)now_nnz / (rank * mat.ncol) << "%"
-					<< "  speed: " << std::setprecision(6) << std::setw(6)
-					<< 1.0 * sub_pivots.size() * (cc - old_cc) / leftrows.size() / SparseRREF::usedtime(clock_begin, SparseRREF::clocknow())
-					<< " row/s    \r" << std::flush;
+				std::cout << std::format(
+					"-- Row: {:{}}/{:<}  nnz: {:{}}  density: {:8.6f}%  speed: {:6.6f} row/s    \r",
+					process + status, bitlen_nrow,
+					rank,
+					now_nnz, bitlen_nnz,
+					(100.0 * now_nnz) / (mat.nrow * mat.ncol),
+					1.0 * sub_pivots.size() * (cc - old_cc) / leftrows.size() /
+					SparseRREF::usedtime(clock_begin, SparseRREF::clocknow())
+				) << std::flush;
 				clock_begin = SparseRREF::clocknow();
 				old_cc = cc;
 			}
@@ -760,12 +766,15 @@ namespace SparseRREF {
 						return;
 					}
 					if (cc - old_cc > opt->print_step) {
-						std::cout << "\r-- Row: "
-							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * pivots[i].size())
-							<< "/" << total_rank << "  nnz: " << mat.nnz()
-							<< "  alloc: " << mat.alloc()
-							<< "  speed: " << (((cc - old_cc) * 1.0 / leftrows.size()) * pivots[i].size() / usedtime(cn, clocknow()))
-							<< " row/s          " << std::flush;
+						std::cout << std::format(
+							"\r-- Row: {}/{}  nnz: {}  alloc: {}  speed: {:8.6f} row/s          ",
+							(int)(std::floor(rank + (cc * 1.0 / leftrows.size()) * pivots[i].size())),
+							total_rank,
+							mat.nnz(),
+							mat.alloc(),
+							((double)(cc - old_cc) / leftrows.size()) * pivots[i].size() /
+							usedtime(cn, clocknow())
+						) << std::flush;
 						old_cc = cc;
 						cn = clocknow();
 					}
@@ -982,16 +991,16 @@ namespace SparseRREF {
 						auto end = SparseRREF::clocknow();
 						now_nnz = mat.nnz();
 						auto now_alloc = mat.alloc();
-						std::cout << "-- Col: " << std::setw(bitlen_ncol)
-							<< (int)pr << "/" << mat.ncol
-							<< "  rank: " << std::setw(bitlen_ncol) << rank
-							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-							<< "  density: " << std::setprecision(6) << std::setw(8)
-							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-							((pr - oldpr) / SparseRREF::usedtime(start, end))
-							<< " col/s    \r" << std::flush;
+						std::cout << std::format(
+							"-- Col: {:{}}/{:<}  rank: {:{}}  nnz: {:{}}  alloc: {:{}}"
+							"  density: {:8.6f}%  speed: {:8.6f} col/s    \r",
+							(int)(pr), bitlen_ncol, mat.ncol,
+							rank, bitlen_ncol,
+							now_nnz, bitlen_nnz,
+							now_alloc, bitlen_nnz,
+							(100.0 * now_nnz) / (mat.nrow * mat.ncol),
+							(double)(pr - oldpr) / SparseRREF::usedtime(start, end)
+						) << std::flush;
 						oldpr = pr;
 						start = end;
 						print_once = false;
@@ -1076,16 +1085,16 @@ namespace SparseRREF {
 						auto end = SparseRREF::clocknow();
 						now_nnz = mat.nnz();
 						auto now_alloc = mat.alloc();
-						std::cout << "-- Col: " << std::setw(bitlen_ncol)
-							<< (int)pr << "/" << mat.ncol
-							<< "  rank: " << std::setw(bitlen_ncol) << rank
-							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-							<< "  density: " << std::setprecision(6) << std::setw(8)
-							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-							((pr - oldpr) / SparseRREF::usedtime(start, end))
-							<< " col/s    \r" << std::flush;
+						std::cout << std::format(
+							"-- Col: {:{}}/{:<}  rank: {:{}}  nnz: {:{}}  alloc: {:{}}"
+							"  density: {:8.6f}%  speed: {:8.6f} col/s    \r",
+							(int)(pr), bitlen_ncol, mat.ncol,
+							rank, bitlen_ncol,
+							now_nnz, bitlen_nnz,
+							now_alloc, bitlen_nnz,
+							(100.0 * now_nnz) / (mat.nrow * mat.ncol),
+							(double)(pr - oldpr) / SparseRREF::usedtime(start, end)
+						) << std::flush;
 						oldpr = pr;
 						start = end;
 						print_once = false;
@@ -1283,16 +1292,16 @@ namespace SparseRREF {
 					auto end = SparseRREF::clocknow();
 					now_nnz = mat.nnz();
 					auto now_alloc = mat.alloc();
-					std::cout << "-- Col: " << std::setw(bitlen_ncol)
-						<< (int)pr << "/" << mat.ncol
-						<< "  rank: " << std::setw(bitlen_ncol) << rank
-						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-						<< "  density: " << std::setprecision(6) << std::setw(8)
-						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-						((pr - oldpr) / SparseRREF::usedtime(start, end))
-						<< " col/s    \r" << std::flush;
+					std::cout << std::format(
+						"-- Col: {:{}}/{:<}  rank: {:{}}  nnz: {:{}}  alloc: {:{}}"
+						"  density: {:8.6f}%  speed: {:8.6f} col/s    \r",
+						(int)(pr), bitlen_ncol, mat.ncol,
+						rank, bitlen_ncol,
+						now_nnz, bitlen_nnz,
+						now_alloc, bitlen_nnz,
+						(100.0 * now_nnz) / (mat.nrow * mat.ncol),
+						(double)(pr - oldpr) / SparseRREF::usedtime(start, end)
+					) << std::flush;
 					oldpr = pr;
 					start = end;
 					print_once = false;
@@ -1529,16 +1538,16 @@ namespace SparseRREF {
 						auto end = SparseRREF::clocknow();
 						now_nnz = mat.nnz();
 						auto now_alloc = mat.alloc();
-						std::cout << "-- Col: " << std::setw(bitlen_ncol)
-							<< (int)pr << "/" << mat.ncol
-							<< "  rank: " << std::setw(bitlen_ncol) << rank
-							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-							<< "  density: " << std::setprecision(6) << std::setw(8)
-							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-							((pr - oldpr) / SparseRREF::usedtime(start, end))
-							<< " col/s    \r" << std::flush;
+						std::cout << std::format(
+							"-- Col: {:{}}/{:<}  rank: {:{}}  nnz: {:{}}  alloc: {:{}}"
+							"  density: {:8.6f}%  speed: {:8.6f} col/s    \r",
+							(int)(pr), bitlen_ncol, mat.ncol,
+							rank, bitlen_ncol,
+							now_nnz, bitlen_nnz,
+							now_alloc, bitlen_nnz,
+							(100.0 * now_nnz) / (mat.nrow * mat.ncol),
+							(double)(pr - oldpr) / SparseRREF::usedtime(start, end)
+						) << std::flush;
 						oldpr = pr;
 						start = end;
 						print_once = false;
@@ -1623,16 +1632,16 @@ namespace SparseRREF {
 						auto end = SparseRREF::clocknow();
 						now_nnz = mat.nnz();
 						auto now_alloc = mat.alloc();
-						std::cout << "-- Col: " << std::setw(bitlen_ncol)
-							<< (int)pr << "/" << mat.ncol
-							<< "  rank: " << std::setw(bitlen_ncol) << rank
-							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-							<< "  density: " << std::setprecision(6) << std::setw(8)
-							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-							((pr - oldpr) / SparseRREF::usedtime(start, end))
-							<< " col/s    \r" << std::flush;
+						std::cout << std::format(
+							"-- Col: {:{}}/{:<}  rank: {:{}}  nnz: {:{}}  alloc: {:{}}"
+							"  density: {:8.6f}%  speed: {:8.6f} col/s    \r",
+							(int)(pr), bitlen_ncol, mat.ncol,
+							rank, bitlen_ncol,
+							now_nnz, bitlen_nnz,
+							now_alloc, bitlen_nnz,
+							(100.0 * now_nnz) / (mat.nrow * mat.ncol),
+							(double)(pr - oldpr) / SparseRREF::usedtime(start, end)
+						) << std::flush;
 						oldpr = pr;
 						start = end;
 						print_once = false;
@@ -1848,16 +1857,16 @@ namespace SparseRREF {
 					auto end = SparseRREF::clocknow();
 					now_nnz = mat.nnz();
 					auto now_alloc = mat.alloc();
-					std::cout << "-- Col: " << std::setw(bitlen_ncol)
-						<< (int)pr << "/" << mat.ncol
-						<< "  rank: " << std::setw(bitlen_ncol) << rank
-						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-						<< "  density: " << std::setprecision(6) << std::setw(8)
-						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-						((pr - oldpr) / SparseRREF::usedtime(start, end))
-						<< " col/s    \r" << std::flush;
+					std::cout << std::format(
+						"-- Col: {:{}}/{:<}  rank: {:{}}  nnz: {:{}}  alloc: {:{}}"
+						"  density: {:8.6f}%  speed: {:8.6f} col/s    \r",
+						(int)(pr), bitlen_ncol, mat.ncol,
+						rank, bitlen_ncol,
+						now_nnz, bitlen_nnz,
+						now_alloc, bitlen_nnz,
+						(100.0 * now_nnz) / (mat.nrow * mat.ncol),
+						(double)(pr - oldpr) / SparseRREF::usedtime(start, end)
+					) << std::flush;
 					oldpr = pr;
 					start = end;
 					print_once = false;
