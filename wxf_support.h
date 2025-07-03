@@ -558,7 +558,10 @@ namespace WXF_PARSER {
 		ExprNode() : index(0), size(0), children(nullptr), type(i8) {} // default constructor
 
 		ExprNode(size_t idx, size_t sz, WXF_HEAD t) : index(idx), size(sz), type(t) {
-			if (size > 0) {
+			constexpr size_t MAX_ALLOC = std::numeric_limits<ssize_t>::max();
+			if (size > MAX_ALLOC) {
+    			throw std::bad_alloc();
+			} else if (size > 0) {
 				children = std::make_unique<ExprNode[]>(size);
 			}
 		}
