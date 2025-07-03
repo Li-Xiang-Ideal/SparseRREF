@@ -406,3 +406,10 @@ FodyWeavers.xsd
 # Windows Executable files
 *.exe
 *.dll
+
+# Windows Batch files
+*.bat
+*.cmd
+
+# VS Code settings
+.vscode/

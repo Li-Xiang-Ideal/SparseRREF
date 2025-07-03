@@ -41,6 +41,9 @@
 	```
 */
 
+// Use mimalloc for memory management or not
+#define USE_MIMALLOC 1
+
 #include <string>
 #include "sparse_mat.h"
 #include "wxf_support.h"
