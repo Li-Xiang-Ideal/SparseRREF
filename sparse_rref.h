@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <bit>
-#include <bitset>
 #include <charconv> 
 #include <chrono>
 #include <climits>
@@ -42,6 +41,10 @@
 #endif
 #define NULL nullptr
 
+#ifdef USE_MIMALLOC
+#include "mimalloc.h"
+#endif
+
 namespace SparseRREF {
 	// version
 	static const char version[] = "v0.3.2";
@@ -55,6 +58,27 @@ namespace SparseRREF {
 	};
 
 	// Memory management
+#ifdef USE_MIMALLOC
+	template <typename T>
+	inline T* s_malloc(const size_t size) {
+		return (T*)mi_malloc(size * sizeof(T));
+	}
+
+	template <typename T>
+	inline void s_free(T* s) {
+		mi_free(s);
+	}
+
+	template <typename T>
+	inline T* s_realloc(T* s, const size_t size) {
+		return (T*)mi_realloc(s, size * sizeof(T));
+	}
+
+	template <typename T>
+	inline T* s_expand(T* s, const size_t size) {
+		return (T*)mi_expand(s, size * sizeof(T));
+	}
+#else
 	template <typename T>
 	inline T* s_malloc(const size_t size) {
 		return (T*)std::malloc(size * sizeof(T));
@@ -71,6 +95,12 @@ namespace SparseRREF {
 	}
 
 	template <typename T>
+	inline T* s_expand(T* s, const size_t size) {
+		return (T*)std::realloc(s, size * sizeof(T));
+	}
+#endif
+
+	template <typename T>
 	void s_copy(T* des, T* ini, const size_t size) {
 		if (des == ini)
 			return;
@@ -84,15 +114,19 @@ namespace SparseRREF {
 	}
 
 	// rref_option
+	// method 0: right and left search
+	// method 1: only right search
+	// method 2: hibrid
 	struct rref_option {
 		bool verbose = false;
-		bool is_back_sub = true;
-		uint8_t method = 0;
-		int print_step = 100;
 		bool shrink_memory = false;
+		std::atomic<bool> abort = false;
+		bool is_back_sub = true;
+		bool sort_rows = false;
+		int method = 0;
+		int print_step = 100;
 		std::function<int64_t(int64_t)> col_weight = [](int64_t i) { return i; };
 		thread_pool pool = thread_pool(1); // default: thread pool with 1 thread
-		std::atomic<bool> abort = false;
 	};
 	using rref_option_t = rref_option[1];
 
@@ -236,84 +270,69 @@ namespace SparseRREF {
 
 	// bit_array
 	struct bit_array {
-		constexpr static size_t bitset_size = 64; // 64 bits per bitset
-		std::vector<std::bitset<bitset_size>> data;
+		std::vector<uint64_t> data;
 
 		bit_array() {}
+		~bit_array() {}
+
+		void clear() {
+			std::fill(data.begin(), data.end(), 0);
+		}
 
 		void resize(size_t size) {
-			auto len = size / bitset_size + 1;
-			data.resize(len);
+			data.resize(size / 64 + 1);
+			clear();
 		}
 
 		bit_array(size_t size) {
 			resize(size);
-		}
-
-		~bit_array() {
-			data.clear();
+			clear();
 		}
 
 		void insert(size_t val) {
-			auto idx = val / bitset_size;
-			auto pos = val % bitset_size;
-			data[idx].set(pos);
+			auto idx = val / 64;
+			auto pos = val % 64;
+			data[idx] |= ((uint64_t)1 << pos);
 		}
 
-		bool test(size_t val) {
-			auto idx = val / bitset_size;
-			auto pos = val % bitset_size;
-			return data[idx].test(pos);
-		}
-
-		bool count(size_t val) {
-			return test(val);
+		bool test(size_t val) const {
+			auto idx = val / 64;
+			auto pos = val % 64;
+			return data[idx] & ((uint64_t)1 << pos);
 		}
 
 		void erase(size_t val) {
-			auto idx = val / bitset_size;
-			auto pos = val % bitset_size;
-			data[idx].reset(pos);
+			auto idx = val / 64;
+			auto pos = val % 64;
+			data[idx] &= ~((uint64_t)1 << pos);
 		}
 
-		void clear() {
-			for (auto& d : data)
-				d.reset();
+		bool operator[](size_t idx) const {
+			return test(idx);
 		}
 
-		bool operator[](size_t idx) {
-			return count(idx);
-		}
-
-		size_t size() {
-			return data.size();
-		}
-
-		size_t length() {
-			return data.size() * bitset_size;
-		}
-
-		size_t nnz() {
+		size_t nnz() const {
 			size_t nz = 0;
 			for (auto& bb : data) {
-				nz += bb.count();
+				nz += popcount(bb);
 			}
 			return nz;
 		}
 
-		std::vector<size_t> nonzero() {
+		std::vector<size_t> nonzero() const {
 			auto nz = nnz();
 			if (nz == 0)
 				return std::vector<size_t>();
 
+			const size_t bitset_size = 64;
 			std::vector<size_t> result;
 			result.reserve(nz);
-			size_t tmp[bitset_size];
+			size_t tmp[64];
 			size_t tmp_size = 0;
 			for (size_t i = 0; i < data.size(); i++) {
-				if (data[i].any()) {
+				if (data[i] != 0) {
 					tmp_size = 0;
-					uint64_t c = data[i].to_ullong();
+					uint64_t c = data[i];
 
 					// only ctz version
 					// while (c) {
@@ -330,7 +349,7 @@ namespace SparseRREF {
 							break;
 						tmp[tmp_size] = i * bitset_size + clzpos;
 						tmp_size++;
-						c = c ^ (1ULL << clzpos) ^ (1ULL << ctzpos);
+						c = c ^ ((uint64_t)1 << clzpos) ^ ((uint64_t)1 << ctzpos);
 					}
 					for (size_t j = tmp_size; j > 0; j--) {
 						result.push_back(tmp[j - 1]);
@@ -341,29 +360,19 @@ namespace SparseRREF {
 		}
 
 		template <typename T>
-		void nonzero(T* ptr) {
+		void nonzero(T* ptr) const {
+			const size_t bitset_size = 64;
 			size_t pos = 0;
-			size_t tmp[bitset_size];
-			size_t tmp_size = 0;
 			for (size_t i = 0; i < data.size(); i++) {
-				if (data[i].any()) {
-					tmp_size = 0;
-					uint64_t c = data[i].to_ullong();
+				if (data[i] != 0) {
+					uint64_t c = data[i];
+					size_t base = i * bitset_size;
 
 					while (c) {
 						auto ctzpos = ctz(c);
-						auto clzpos = bitset_size - 1 - clz(c);
-						ptr[pos] = i * bitset_size + ctzpos;
+						ptr[pos] = base + ctzpos;
 						pos++;
-						if (ctzpos == clzpos)
-							break;
-						tmp[tmp_size] = i * bitset_size + clzpos;
-						tmp_size++;
-						c = c ^ (1ULL << clzpos) ^ (1ULL << ctzpos);
-					}
-					for (size_t j = tmp_size; j > 0; j--) {
-						ptr[pos] = tmp[j - 1];
-						pos++;
+						c ^= ((uint64_t)1 << ctzpos);
 					}
 				}
 			}

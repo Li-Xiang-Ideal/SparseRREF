@@ -10,9 +10,11 @@
 #include <fstream>
 #include <iostream>
 
+// Use mimalloc for memory management or not
+// #define USE_MIMALLOC 1
+
 #include "argparse.hpp"
 #include "sparse_mat.h"
-
 
 #ifdef _WIN32
 #include <conio.h>
@@ -93,6 +95,11 @@ int main(int argc, char** argv) {
 		.help("output the kernel (null vectors)")
 		.implicit_value(true)
 		.nargs(0);
+	program.add_argument("-m", "--method")
+		.help("method of RREF ")
+		.default_value(0)
+		.nargs(1)
+		.scan<'i', int>();
 	program.add_argument("--output-pivots")
 		.help("output pivots")
 		.default_value(false)
@@ -176,6 +183,7 @@ int main(int argc, char** argv) {
 
 	rref_option_t opt;
 	int nthread = program.get<int>("--threads");
+	opt->method = program.get<int>("--method");
 	if (nthread == 0)
 		opt->pool.reset(); // automatic mode, use all possible threads
 	else
@@ -201,7 +209,7 @@ int main(int argc, char** argv) {
 
 	std::ifstream file(filePath);
 
-	using index_t = slong;
+	using index_t = int;
 	std::variant<sparse_mat<rat_t, index_t>, sparse_mat<ulong, index_t>> mat;
 
 	if (prime == 0)
@@ -232,7 +240,7 @@ int main(int argc, char** argv) {
 	}
 
 	start = SparseRREF::clocknow();
-	std::vector<std::vector<std::pair<index_t, index_t>>> pivots;
+	std::vector<std::vector<pivot_t<index_t>>> pivots;
 	if (prime == 0) {
 		pivots = sparse_mat_rref_reconstruct(std::get<sparse_mat<rat_t, index_t>>(mat), opt);
 	}
@@ -268,8 +276,8 @@ int main(int argc, char** argv) {
 		outname_add = ".piv";
 		file2.open(outname + outname_add);
 		for (auto p : pivots) {
-			for (auto ii : p)
-				file2 << ii.first + 1 << ", " << ii.second + 1 << '\n';
+			for (auto [r, c] : p)
+				file2 << r + 1 << ", " << c + 1 << '\n';
 		}
 		file2.close();
 	}
