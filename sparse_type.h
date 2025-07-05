@@ -27,8 +27,8 @@ namespace SparseRREF {
 
 	// sparse vector
 	template <typename T, Flint::signed_builtin_integral index_t = int> struct sparse_vec {
-		index_t* indices = NULL;
-		T* entries = NULL;
+		index_t* indices = nullptr;
+		T* entries = nullptr;
 		size_t _nnz = 0;
 		size_t _alloc = 0;
 
@@ -73,8 +73,8 @@ namespace SparseRREF {
 		// auto combine_view() const { return std::ranges::zip_view(index_view(), entry_view()); }
 
 		sparse_vec() {
-			indices = NULL;
-			entries = NULL;
+			indices = nullptr;
+			entries = nullptr;
 			_nnz = 0;
 			_alloc = 0;
 		}
@@ -83,11 +83,11 @@ namespace SparseRREF {
 			if (_alloc == 0)
 				return;
 			s_free(indices);
-			indices = NULL;
+			indices = nullptr;
 			for (size_t i = 0; i < _alloc; i++)
 				entries[i].~T();
 			s_free(entries);
-			entries = NULL;
+			entries = nullptr;
 			_alloc = 0;
 			_nnz = 0;
 		}
@@ -115,14 +115,14 @@ namespace SparseRREF {
 			if (!is_copy && n > _alloc) {
 				auto ii = s_expand(indices, n);
 				auto ee = s_expand(entries, n);
-				if (ii == NULL) {
+				if (ii == nullptr) {
 					s_free(indices);
 					indices = s_malloc<index_t>(n);
 				}
 				else {
 					indices = ii;
 				}
-				if (ee == NULL) {
+				if (ee == nullptr) {
 					for (size_t i = 0; i < _alloc; i++) {
 						entries[i].~T();
 					}
@@ -186,8 +186,8 @@ namespace SparseRREF {
 			entries = l.entries;
 			_nnz = l._nnz;
 			_alloc = l._alloc;
-			l.indices = NULL;
-			l.entries = NULL;
+			l.indices = nullptr;
+			l.entries = nullptr;
 			l._nnz = 0;
 			l._alloc = 0;
 		}
@@ -209,8 +209,8 @@ namespace SparseRREF {
 			entries = l.entries;
 			_nnz = l._nnz;
 			_alloc = l._alloc;
-			l.indices = NULL;
-			l.entries = NULL;
+			l.indices = nullptr;
+			l.entries = nullptr;
 			l._nnz = 0;
 			l._alloc = 0;
 			return *this;
@@ -315,14 +315,14 @@ namespace SparseRREF {
 	};
 
 	template <Flint::signed_builtin_integral index_t> struct sparse_vec<bool, index_t> {
-		index_t* indices = NULL;
+		index_t* indices = nullptr;
 		size_t _nnz = 0;
 		size_t _alloc = 0;
 
 		auto index_span() const { return std::span<index_t>(indices, _nnz); }
 
 		sparse_vec() {
-			indices = NULL;
+			indices = nullptr;
 			_nnz = 0;
 			_alloc = 0;
 		}
@@ -370,7 +370,7 @@ namespace SparseRREF {
 			indices = l.indices;
 			_nnz = l._nnz;
 			_alloc = l._alloc;
-			l.indices = NULL;
+			l.indices = nullptr;
 			l._nnz = 0;
 			l._alloc = 0;
 		}
@@ -391,7 +391,7 @@ namespace SparseRREF {
 			indices = l.indices;
 			_nnz = l._nnz;
 			_alloc = l._alloc;
-			l.indices = NULL;
+			l.indices = nullptr;
 			l._nnz = 0;
 			l._alloc = 0;
 			return *this;
@@ -575,8 +575,8 @@ namespace SparseRREF {
 		sparse_tensor_struct() {
 			rank = 0;
 			alloc = 0;
-			colptr = NULL;
-			valptr = NULL;
+			colptr = nullptr;
+			valptr = nullptr;
 		}
 
 		// Constructor with dimensions
@@ -612,9 +612,9 @@ namespace SparseRREF {
 			rowptr = l.rowptr;
 			alloc = l.alloc;
 			colptr = l.colptr;
-			l.colptr = NULL;
+			l.colptr = nullptr;
 			valptr = l.valptr;
-			l.valptr = NULL;
+			l.valptr = nullptr;
 			l.alloc = 0; // important for no repeating clear
 		}
 
@@ -625,8 +625,8 @@ namespace SparseRREF {
 				valptr[i].~T();
 			s_free(valptr);
 			s_free(colptr);
-			valptr = NULL;
-			colptr = NULL;
+			valptr = nullptr;
+			colptr = nullptr;
 			alloc = 0;
 		}
 
@@ -700,9 +700,9 @@ namespace SparseRREF {
 			rowptr = l.rowptr;
 			alloc = l.alloc;
 			colptr = l.colptr;
-			l.colptr = NULL;
+			l.colptr = nullptr;
 			valptr = l.valptr;
-			l.valptr = NULL;
+			l.valptr = nullptr;
 			l.alloc = 0; // important for no repeating clear
 			return *this;
 		}

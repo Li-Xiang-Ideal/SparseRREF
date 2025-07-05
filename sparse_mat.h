@@ -1033,7 +1033,8 @@ namespace SparseRREF {
 						localcount++;
 						tranmat[c].zero();
 					}
-					tranmat[c].clear();
+					else
+						tranmat[c].clear();
 				}
 				leftcols.resize(localcount);
 
@@ -1580,7 +1581,8 @@ namespace SparseRREF {
 						localcount++;
 						tranmat[c].zero();
 					}
-					tranmat[c].clear();
+					else
+						tranmat[c].clear();
 				}
 				leftcols.resize(localcount);
 
