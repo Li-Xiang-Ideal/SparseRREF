@@ -22,14 +22,14 @@ namespace SparseRREF {
 	template <typename index_type, typename T>
 	inline T* sparse_vec_entry(const sparse_vec<T, index_type>& vec, const index_type index, const bool isbinary = true) {
 		if (vec.nnz() == 0)
-			return NULL;
+			return nullptr;
 		index_type* ptr;
 		if (isbinary)
 			ptr = SparseRREF::binary_search(vec.indices, vec.indices + vec.nnz(), index);
 		else
 			ptr = std::find(vec.indices, vec.indices + vec.nnz(), index);
 		if (ptr == vec.indices + vec.nnz())
-			return NULL;
+			return nullptr;
 		return vec.entries + (ptr - vec.indices);
 	}
 
@@ -272,11 +272,11 @@ namespace SparseRREF {
 	}
 
 	template <typename index_type>
-	std::pair<char*, char*> snmod_vec_to_binary(const sparse_vec<ulong, index_type>& vec, char* buffer = NULL) {
+	std::pair<char*, char*> snmod_vec_to_binary(const sparse_vec<ulong, index_type>& vec, char* buffer = nullptr) {
 		constexpr auto ratio_i = sizeof(index_type) / sizeof(char);
 		constexpr auto ratio_e = sizeof(ulong) / sizeof(char);
 		auto nnz = vec.nnz();
-		if (buffer == NULL)
+		if (buffer == nullptr)
 			buffer = s_malloc<char>(ratio_e + nnz * (ratio_i + ratio_e));
 		auto ptr = buffer;
 		std::memcpy(ptr, &nnz, sizeof(ulong));
