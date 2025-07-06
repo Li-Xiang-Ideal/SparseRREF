@@ -17,7 +17,6 @@
 #include <cmath>
 #include <cstring>
 #include <execution> 
-#include <format>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
