@@ -36,11 +36,6 @@
 
 #include "thread_pool.hpp"
 
-#ifdef NULL
-#undef NULL
-#endif
-#define NULL nullptr
-
 #ifdef USE_MIMALLOC
 #include "mimalloc.h"
 #endif
