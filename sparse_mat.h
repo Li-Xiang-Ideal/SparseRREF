@@ -1452,8 +1452,7 @@ namespace SparseRREF {
 		auto printstep = opt->print_step;
 		bool verbose = opt->verbose;
 
-		size_t step = fullrank;
-		size_t p_bound = step;
+		size_t p_bound = fullrank;
 
 		size_t mtx_size;
 		if (pool.get_thread_count() > 16)
@@ -1543,10 +1542,13 @@ namespace SparseRREF {
 				if (rank >= fullrank)
 					break;
 				else {
-					for (auto r = p_bound; r < p_bound + std::min(fullrank - rank, step); r++) {
+					if (p_bound == mat.nrow)
+						break;
+					auto np_bound = std::min(p_bound + fullrank - rank, mat.nrow);
+					for (auto r = p_bound; r < np_bound; r++) {
 						leftrows.push_back(r);
 					}
-					p_bound += std::min(fullrank - rank, step);
+					p_bound = np_bound;
 					continue;
 				}
 			}
