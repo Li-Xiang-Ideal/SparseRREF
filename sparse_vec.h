@@ -16,14 +16,14 @@
 
 namespace SparseRREF {
 
-	template <typename index_type> using snmod_vec = sparse_vec<ulong, index_type>;
-	template <typename index_type> using sfmpq_vec = sparse_vec<rat_t, index_type>;
+	template <typename index_t> using snmod_vec = sparse_vec<ulong, index_t>;
+	template <typename index_t> using sfmpq_vec = sparse_vec<rat_t, index_t>;
 
-	template <typename index_type, typename T>
-	inline T* sparse_vec_entry(const sparse_vec<T, index_type>& vec, const index_type index, const bool isbinary = true) {
+	template <typename index_t, typename T>
+	inline T* sparse_vec_entry(const sparse_vec<T, index_t>& vec, const index_t index, const bool isbinary = true) {
 		if (vec.nnz() == 0)
 			return nullptr;
-		index_type* ptr;
+		index_t* ptr;
 		if (isbinary)
 			ptr = SparseRREF::binary_search(vec.indices, vec.indices + vec.nnz(), index);
 		else
@@ -33,8 +33,8 @@ namespace SparseRREF {
 		return vec.entries + (ptr - vec.indices);
 	}
 
-	template <typename index_type, typename T>
-	inline void sparse_vec_rescale(sparse_vec<T, index_type>& vec, const T& scalar, const field_t& F) {
+	template <typename index_t, typename T>
+	inline void sparse_vec_rescale(sparse_vec<T, index_t>& vec, const T& scalar, const field_t& F) {
 		if (scalar == 1)
 			return;
 		if constexpr (std::is_same_v<T, ulong>) {
@@ -49,9 +49,9 @@ namespace SparseRREF {
 	}
 
 	// we assume that vec and src are sorted, and the result is also sorted
-	template <typename index_type>
+	template <typename index_t>
 	static int snmod_vec_add_mul(
-		snmod_vec<index_type>& vec, const snmod_vec<index_type>& src,
+		snmod_vec<index_t>& vec, const snmod_vec<index_t>& src,
 		const ulong a, const field_t& F) {
 		if (src.nnz() == 0)
 			return 0;
@@ -120,8 +120,8 @@ namespace SparseRREF {
 		return 0;
 	}
 
-	template <typename index_type, bool dir>
-	int sfmpq_vec_addsub_mul(sfmpq_vec<index_type>& vec, const sfmpq_vec<index_type>& src, const rat_t& a) {
+	template <typename index_t, bool dir>
+	int sfmpq_vec_addsub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
 		if (src.nnz() == 0)
 			return 0;
 
@@ -193,44 +193,44 @@ namespace SparseRREF {
 		return 0;
 	}
 
-	template <typename index_type>
-	static inline int sfmpq_vec_add_mul(sfmpq_vec<index_type>& vec, const sfmpq_vec<index_type>& src, const rat_t& a) {
-		return sfmpq_vec_addsub_mul<index_type, true>(vec, src, a);
+	template <typename index_t>
+	static inline int sfmpq_vec_add_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
+		return sfmpq_vec_addsub_mul<index_t, true>(vec, src, a);
 	}
 
-	template <typename index_type>
-	static inline int sfmpq_vec_sub_mul(sfmpq_vec<index_type>& vec, const sfmpq_vec<index_type>& src, const rat_t& a) {
-		return sfmpq_vec_addsub_mul<index_type, false>(vec, src, a);
+	template <typename index_t>
+	static inline int sfmpq_vec_sub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
+		return sfmpq_vec_addsub_mul<index_t, false>(vec, src, a);
 	}
 
-	template <typename index_type>
-	static inline int snmod_vec_sub_mul(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const ulong a, const field_t& F) {
+	template <typename index_t>
+	static inline int snmod_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, F.mod.n - a, F);
 	}
 
-	template <typename index_type>
-	static inline int sparse_vec_add(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const field_t& F) {
+	template <typename index_t>
+	static inline int sparse_vec_add(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, 1, F);
 	}
 
-	template <typename index_type>
-	static inline int sparse_vec_sub(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const field_t& F) {
+	template <typename index_t>
+	static inline int sparse_vec_sub(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, F.mod.n - 1, F);
 	}
 
-	template <typename index_type>
-	static inline int sparse_vec_sub_mul(snmod_vec<index_type>& vec, const snmod_vec<index_type>& src, const ulong a, const field_t& F) {
+	template <typename index_t>
+	static inline int sparse_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
 		return snmod_vec_sub_mul(vec, src, a, F);
 	}
 
-	template <typename index_type>
-	static inline int sparse_vec_sub_mul(sfmpq_vec<index_type>& vec, const sfmpq_vec<index_type>& src, const rat_t& a, const field_t& F) {
+	template <typename index_t>
+	static inline int sparse_vec_sub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a, const field_t& F) {
 		return sfmpq_vec_sub_mul(vec, src, a);
 	}
 
 	// dot product
-	template <typename index_type, typename T>
-	T sparse_vec_dot(const sparse_vec<T, index_type>& v1, const sparse_vec<T, index_type>& v2, const field_t& F) {
+	template <typename index_t, typename T>
+	T sparse_vec_dot(const sparse_vec<T, index_t>& v1, const sparse_vec<T, index_t>& v2, const field_t& F) {
 		if (v1.nnz() == 0 || v2.nnz() == 0) {
 			return T(0);
 		}
@@ -257,8 +257,8 @@ namespace SparseRREF {
 
 	// we do not check the boundry of v2, so it is not safe to use this function, 
 	// be careful
-	template <typename index_type, typename T>
-	T sparse_vec_dot_dense_vec(const sparse_vec<T, index_type>& v1, const T* v2, const field_t& F) {
+	template <typename index_t, typename T>
+	T sparse_vec_dot_dense_vec(const sparse_vec<T, index_t>& v1, const T* v2, const field_t& F) {
 		if (v1.nnz() == 0) {
 			return T(0);
 		}
@@ -271,9 +271,9 @@ namespace SparseRREF {
 		return result;
 	}
 
-	template <typename index_type>
-	std::pair<char*, char*> snmod_vec_to_binary(const sparse_vec<ulong, index_type>& vec, char* buffer = nullptr) {
-		constexpr auto ratio_i = sizeof(index_type) / sizeof(char);
+	template <typename index_t>
+	std::pair<char*, char*> snmod_vec_to_binary(const sparse_vec<ulong, index_t>& vec, char* buffer = nullptr) {
+		constexpr auto ratio_i = sizeof(index_t) / sizeof(char);
 		constexpr auto ratio_e = sizeof(ulong) / sizeof(char);
 		auto nnz = vec.nnz();
 		if (buffer == nullptr)
@@ -281,29 +281,29 @@ namespace SparseRREF {
 		auto ptr = buffer;
 		std::memcpy(ptr, &nnz, sizeof(ulong));
 		ptr += ratio_e;
-		std::memcpy(ptr, vec.indices, nnz * sizeof(index_type));
+		std::memcpy(ptr, vec.indices, nnz * sizeof(index_t));
 		ptr += nnz * ratio_i;
 		std::memcpy(ptr, vec.entries, nnz * sizeof(ulong));
 		ptr += nnz * ratio_e;
 		return std::make_pair(buffer, ptr);
 	}
 
-	template <typename index_type>
-	char* snmod_vec_from_binary(sparse_vec<ulong, index_type>& vec, const char* buffer) {
-		constexpr auto ratio_i = sizeof(index_type) / sizeof(char);
+	template <typename index_t>
+	char* snmod_vec_from_binary(sparse_vec<ulong, index_t>& vec, const char* buffer) {
+		constexpr auto ratio_i = sizeof(index_t) / sizeof(char);
 		constexpr auto ratio_e = sizeof(ulong) / sizeof(char);
 		ulong nnz;
 		std::memcpy(&nnz, buffer, sizeof(ulong));
 		vec.reserve(nnz);
 		vec.resize(nnz);
-		std::memcpy(vec.indices, buffer + ratio_e, nnz * sizeof(index_type));
+		std::memcpy(vec.indices, buffer + ratio_e, nnz * sizeof(index_t));
 		std::memcpy(vec.entries, buffer + ratio_e + nnz * ratio_i, nnz * sizeof(ulong));
 		char* ptr = (char*)(buffer + ratio_e + nnz * (ratio_i + ratio_e));
 		return ptr;
 	}
 
 	// debug only, not used to the large vector
-	template <typename index_type, typename T> void print_vec_info(const sparse_vec<T, index_type>& vec) {
+	template <typename index_t, typename T> void print_vec_info(const sparse_vec<T, index_t>& vec) {
 		std::cout << "-------------------" << std::endl;
 		std::cout << "nnz: " << vec.nnz() << std::endl;
 		std::cout << "indices: ";
