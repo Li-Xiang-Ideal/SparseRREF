@@ -32,8 +32,7 @@ namespace SparseRREF {
 		size_t _nnz = 0;
 		size_t _alloc = 0;
 
-		struct de_iterator {
-			// use ref if need to modify the value
+		struct de_iterator_ref {
 			index_t& ind;
 			T& val;
 		};
@@ -53,7 +52,7 @@ namespace SparseRREF {
 			bool operator==(const iterator& other) const { return ind_ptr == other.ind_ptr; }
 			bool operator!=(const iterator& other) const { return ind_ptr != other.ind_ptr; }
 
-			de_iterator operator*() const { return { *ind_ptr, *val_ptr }; }
+			de_iterator_ref operator*() const { return { *ind_ptr, *val_ptr }; }
 		};
 
 		// functions of iterator 
