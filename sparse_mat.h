@@ -2464,17 +2464,15 @@ namespace SparseRREF {
 	template <typename T, typename S, typename index_t>
 	void sparse_mat_write(sparse_mat<T, index_t>& mat, S& st, enum SPARSE_FILE_TYPE type) {
 		switch (type) {
-		case SPARSE_FILE_TYPE_PLAIN: {
+		case SPARSE_FILE_TYPE_PLAIN:
 			st << mat.nrow << ' ' << mat.ncol << ' ' << mat.nnz() << '\n';
 			break;
-		}
-		case SPARSE_FILE_TYPE_MTX: {
+		case SPARSE_FILE_TYPE_MTX:
 			if constexpr (std::is_same_v<T, ulong>) {
 				st << "%%MatrixMarket matrix coordinate integer general\n";
 			}
 			st << mat.nrow << ' ' << mat.ncol << ' ' << mat.nnz() << '\n';
 			break;
-		}
 		case SPARSE_FILE_TYPE_SMS: {
 			char type_char =
 				std::is_same_v<T, rat_t> ? 'Q' :
@@ -2490,24 +2488,34 @@ namespace SparseRREF {
 		}
 
 		char num_buf[32];
+		std::string line_buf;
+		line_buf.reserve(mat.nnz() * 32);
 
 		for (size_t i = 0; i < mat.nrow; ++i) {
 			for (auto [ind, val] : mat[i]) {
-				if (val == 0) {
-					continue;
-				}
+				if (val == 0) continue;
+
 				auto [ptr1, ec1] = std::to_chars(num_buf, num_buf + sizeof(num_buf), i + 1);
-				st.write(num_buf, ptr1 - num_buf);
-				st.put(' ');
+				line_buf.append(num_buf, ptr1);
+				line_buf.push_back(' ');
 
 				auto [ptr2, ec2] = std::to_chars(num_buf, num_buf + sizeof(num_buf), ind + 1);
-				st.write(num_buf, ptr2 - num_buf);
-				st.put(' ');
+				line_buf.append(num_buf, ptr2);
+				line_buf.push_back(' ');
 
-				st << val;
-				st.put('\n');
+				if constexpr (std::is_integral_v<T>) {
+					auto [ptr3, ec3] = std::to_chars(num_buf, num_buf + sizeof(num_buf), val);
+					line_buf.append(num_buf, ptr3);
+				}
+				else if constexpr (std::is_same_v<T, rat_t> || std::is_same_v<T, int_t>) {
+					line_buf += val.get_str();
+				}
+
+				line_buf.push_back('\n');
 			}
 		}
+
+		st.write(line_buf.data(), line_buf.size());
 
 		if (type == SPARSE_FILE_TYPE_SMS) {
 			st << "0 0 0\n";

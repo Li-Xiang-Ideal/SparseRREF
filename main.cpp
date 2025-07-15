@@ -206,18 +206,25 @@ int main(int argc, char** argv) {
 		std::cerr << "File does not exist: " << filePath << std::endl;
 		return 1;
 	}
-
-	std::ifstream file(filePath);
-
+	
 	using index_t = int;
 	std::variant<sparse_mat<rat_t, index_t>, sparse_mat<ulong, index_t>> mat;
 
-	if (prime == 0)
-		mat = sparse_mat_read<rat_t, index_t>(file, F);
-	else 
-		mat = sparse_mat_read<ulong, index_t>(file, F);
+	auto file_ext = filePath.extension().string();
+	if (file_ext == ".wxf" || file_ext == ".WXF") {
+		if (prime == 0)
+			mat = sparse_mat_read_wxf<rat_t, index_t>(filePath, F);
+		else
+			mat = sparse_mat_read_wxf<ulong, index_t>(filePath, F);
+	}
+	else {
+		std::ifstream file(filePath);
 
-	file.close();
+		if (prime == 0)
+			mat = sparse_mat_read<rat_t, index_t>(file, F);
+		else
+			mat = sparse_mat_read<ulong, index_t>(file, F);
+	}
 
 	auto end = SparseRREF::clocknow();
 	std::cout << "-------------------" << std::endl;
