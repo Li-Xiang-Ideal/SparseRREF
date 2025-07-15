@@ -42,7 +42,7 @@
 
 namespace SparseRREF {
 	// version
-	static const char version[] = "v0.3.2";
+	static const char version[] = "v0.3.3";
 
 	enum SPARSE_FILE_TYPE {
 		SPARSE_FILE_TYPE_PLAIN,
@@ -367,7 +367,7 @@ namespace SparseRREF {
 						auto ctzpos = ctz(c);
 						ptr[pos] = base + ctzpos;
 						pos++;
-						c ^= ((uint64_t)1 << ctzpos);
+						c &= c - 1;
 					}
 				}
 			}

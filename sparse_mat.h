@@ -14,8 +14,8 @@
 #include "wxf_support.h"
 
 namespace SparseRREF {
-	template <typename T, typename index_type>
-	inline T* sparse_mat_entry(sparse_mat<T, index_type>& mat, size_t r, index_type c, bool isbinary = true) {
+	template <typename T, typename index_t>
+	inline T* sparse_mat_entry(sparse_mat<T, index_t>& mat, size_t r, index_t c, bool isbinary = true) {
 		return sparse_vec_entry(mat[r], c, isbinary);
 	}
 
@@ -259,8 +259,7 @@ namespace SparseRREF {
 	// if the col_weight is negative, we do not choose it
 	// only right search version, do not need the full tranpose
 	template <typename T, typename index_t>
-	std::vector<pivot_t<index_t>> pivots_search_right(
-		const sparse_mat<T, index_t>& mat, const std::vector<std::atomic<size_t>>& tranmat_nnz,
+	std::vector<pivot_t<index_t>> pivots_search_right(const sparse_mat<T, index_t>& mat,
 		const std::vector<index_t>& leftrows, const std::vector<index_t>& leftcols,
 		const std::function<int64_t(int64_t)>& col_weight = [](int64_t i) { return i; }) {
 
@@ -280,12 +279,12 @@ namespace SparseRREF {
 				flag = (c_dict.count(c) == 0);
 				if (!flag)
 					break;
-				if (tranmat_nnz[c] < mnnz) {
-					mnnz = tranmat_nnz[c];
+				if (mnnz > 0) {
+					mnnz = 0;
 					col = c;
 				}
 				// make the result stable
-				else if (tranmat_nnz[c] == mnnz) {
+				else if (mnnz == 0) {
 					if (col_weight(c) < col_weight(col))
 						col = c;
 					else if (col_weight(c) == col_weight(col) && c < col)
@@ -827,9 +826,6 @@ namespace SparseRREF {
 		if (opt->abort)
 			return pivots;
 
-		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
-		sparse_mat_transpose_replace(tranmat, mat, &pool);
-
 		// use a vector to label the left columns
 		std::vector<index_t> leftcols = perm_init((index_t)(mat.ncol));
 		for (size_t i = 0; i < mat.nrow; i++) {
@@ -837,12 +833,6 @@ namespace SparseRREF {
 				leftcols[rowpivs[i]] = -1; // mark as used
 		}
 		std::erase_if(leftcols, [](index_t i) { return i == -1; });
-
-		// sort pivots by nnz, it will be faster
-		std::stable_sort(leftcols.begin(), leftcols.end(),
-			[&tranmat](index_t a, index_t b) {
-				return tranmat[a].nnz() < tranmat[b].nnz();
-			});
 
 		auto rank = pivots[0].size();
 		size_t kk = rank;
@@ -858,11 +848,20 @@ namespace SparseRREF {
 			leftrows.push_back(i);
 		}
 
-		std::vector<std::atomic<size_t>> tranmat_nnz(mat.ncol);
-		for (size_t i = 0; i < mat.ncol; i++) {
-			tranmat_nnz[i] = 0;
+		bool only_right_search = true;
+
+		sparse_mat<bool, index_t> tranmat;
+		if (opt->method != 1) {
+			only_right_search = false;
+			tranmat = sparse_mat<bool, index_t>(mat.ncol, mat.nrow);
+			sparse_mat_transpose_replace(tranmat, mat, &pool);
+
+			// sort pivots by nnz, it will be faster
+			std::stable_sort(leftcols.begin(), leftcols.end(),
+				[&tranmat](index_t a, index_t b) {
+					return tranmat[a].nnz() < tranmat[b].nnz();
+				});
 		}
-		bool only_right_search = false;
 
 		// for printing
 		double oldpr = 0;
@@ -886,7 +885,7 @@ namespace SparseRREF {
 					});
 			}
 			if (only_right_search) {
-				ps = pivots_search_right(mat, tranmat_nnz, leftrows, leftcols, opt->col_weight);
+				ps = pivots_search_right(mat, leftrows, leftcols, opt->col_weight);
 			}
 			else {
 				ps = pivots_search(mat, tranmat, rowpivs, leftrows, leftcols, opt->col_weight);
@@ -933,22 +932,11 @@ namespace SparseRREF {
 				return pivots;
 
 			if (only_right_search) {
-				// clear the tranmat and reset the tranmat_nnz
-				for (auto c : leftcols) {
-					tranmat[c].clear();
-					tranmat_nnz[c] = 0;
-				}
-			}
-
-			if (only_right_search) {
 				std::atomic<size_t> done_count = 0;
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 					auto id = SparseRREF::thread_id();
 					for (size_t i = s; i < e; i++) {
 						schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
-						for (size_t j = 0; j < mat[leftrows[i]].nnz(); j++) {
-							tranmat_nnz[mat[leftrows[i]](j)]++;
-						}
 						done_count++;
 						if (opt->abort)
 							break;
@@ -1100,208 +1088,8 @@ namespace SparseRREF {
 			// so we only search the right columns
 			if (opt->method == 2 && !only_right_search && ps.size() < mat.ncol / 100) {
 				only_right_search = true;
-				// update the tranmat_nnz for the first time
-				for (auto r : leftrows) {
-					for (size_t j = 0; j < mat[r].nnz(); j++) {
-						tranmat_nnz[mat[r](j)]++;
-					}
-				}
+				tranmat.clear();
 			}
-
-			kk += ps.size();
-		}
-
-		if (verbose)
-			std::cout << "\n** Rank: " << rank << " nnz: " << mat.nnz() << std::endl;
-
-		return pivots;
-	}
-
-	template <typename T, typename index_t>
-	std::vector<std::vector<pivot_t<index_t>>>
-		sparse_mat_rref_forward_2(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
-		// first canonicalize, sort and compress the matrix
-
-		auto& pool = opt->pool;
-		auto nthreads = pool.get_thread_count();
-
-		pool.detach_loop(0, mat.nrow, [&](auto i) { mat[i].compress(); });
-
-		auto printstep = opt->print_step;
-		bool verbose = opt->verbose;
-
-		size_t now_nnz = mat.nnz();
-
-		// store the pivots that have been used
-		// -1 is not used
-		std::vector<index_t> rowpivs(mat.nrow, -1);
-		std::vector<std::vector<pivot_t<index_t>>> pivots;
-		std::vector<pivot_t<index_t>> n_pivots;
-
-		pool.wait();
-
-		if (opt->abort)
-			return pivots;
-
-		// eliminate rows with only one non-zero entry
-		size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
-		now_nnz = mat.nnz();
-
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (opt->col_weight(rowpivs[i]) < 0)
-				rowpivs[i] = -1; // mark as unused
-			if (rowpivs[i] != -1)
-				n_pivots.emplace_back(i, rowpivs[i]);
-		}
-		pivots.push_back(n_pivots);
-
-		if (opt->abort)
-			return pivots;
-
-		// use a vector to label the left columns
-		std::vector<index_t> leftcols = perm_init((index_t)(mat.ncol));
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (rowpivs[i] != -1)
-				leftcols[rowpivs[i]] = -1; // mark as used
-		}
-		std::erase_if(leftcols, [](index_t i) { return i == -1; });
-
-		auto rank = pivots[0].size();
-		size_t kk = rank;
-
-		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, mat.ncol);
-
-		std::vector<index_t> leftrows;
-		leftrows.reserve(mat.nrow);
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (rowpivs[i] != -1 || mat[i].nnz() == 0)
-				continue;
-			leftrows.push_back(i);
-		}
-
-		std::vector<std::atomic<size_t>> tranmat_nnz(mat.ncol);
-		for (size_t i = 0; i < mat.ncol; i++) {
-			tranmat_nnz[i] = 0;
-		}
-
-		// for printing
-		double oldpr = 0;
-		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 2;
-		int bitlen_ncol = (int)std::floor(std::log(mat.ncol) / std::log(10)) + 1;
-
-		bit_array tmp_set(mat.ncol);
-
-		while (kk < mat.ncol) {
-			auto start = SparseRREF::clocknow();
-
-			if (opt->sort_rows) {
-				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
-					if (mat[a].nnz() < mat[b].nnz())
-						return true;
-					if (mat[a].nnz() == mat[b].nnz())
-						return lexico_compare(mat[a].indices, mat[b].indices, mat[a].nnz()) < 0;
-					return false;
-					});
-			}
-			auto ps = pivots_search_right(mat, tranmat_nnz, leftrows, leftcols, opt->col_weight);
-			if (ps.size() == 0)
-				break;
-
-			n_pivots.clear();
-			for (auto& [r, c] : ps) {
-				rowpivs[r] = c;
-				n_pivots.emplace_back(r, c);
-			}
-			pivots.push_back(n_pivots);
-			rank += n_pivots.size();
-
-			pool.detach_loop(0, n_pivots.size(), [&](size_t i) {
-				auto [r, c] = n_pivots[i];
-				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
-				sparse_vec_rescale(mat[r], scalar, F);
-				mat[r].reserve(mat[r].nnz());
-				});
-
-			size_t n_leftrows = 0;
-			for (size_t i = 0; i < leftrows.size(); i++) {
-				auto row = leftrows[i];
-				if (rowpivs[row] != -1 || mat[row].nnz() == 0)
-					continue;
-				leftrows[n_leftrows] = row;
-				n_leftrows++;
-			}
-			leftrows.resize(n_leftrows);
-			pool.wait();
-
-			if (opt->shrink_memory) {
-				pool.detach_loop(0, leftrows.size(), [&](size_t i) {
-					auto row = leftrows[i];
-					if (mat[row].alloc() > 8 * mat[row].nnz()) {
-						mat[row].reserve(4 * mat[row].nnz());
-					}});
-				pool.wait();
-			}
-
-			if (opt->abort)
-				return pivots;
-
-			std::atomic<size_t> done_count = 0;
-			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
-				auto id = SparseRREF::thread_id();
-				for (size_t i = s; i < e; i++) {
-					schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
-					done_count++;
-					if (opt->abort)
-						break;
-				}
-				}, (leftrows.size() < 20 * nthreads ? 0 : leftrows.size() / 10));
-
-			// remove used cols
-			size_t localcount = 0;
-			tmp_set.clear();
-			for (auto [r, c] : ps)
-				tmp_set.insert(c);
-			for (auto c : leftcols) {
-				if (!tmp_set.test(c)) {
-					leftcols[localcount] = c;
-					localcount++;
-				}
-			}
-			leftcols.resize(localcount);
-
-			bool print_once = true; // print at least once
-
-			localcount = 0;
-			while (done_count < leftrows.size()) {
-				if (opt->abort) {
-					pool.purge();
-					return pivots;
-				}
-
-				double pr = kk + (1.0 * ps.size() * done_count) / leftrows.size();
-				if (verbose && (print_once || pr - oldpr > printstep)) {
-					auto end = SparseRREF::clocknow();
-					now_nnz = mat.nnz();
-					auto now_alloc = mat.alloc();
-					std::cout << "-- Col: " << std::setw(bitlen_ncol)
-						<< (int)pr << "/" << mat.ncol
-						<< "  rank: " << std::setw(bitlen_ncol) << rank
-						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-						<< "  density: " << std::setprecision(6) << std::setw(8)
-						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-						((pr - oldpr) / SparseRREF::usedtime(start, end))
-						<< " col/s    \r" << std::flush;
-					oldpr = pr;
-					start = end;
-					print_once = false;
-				}
-
-				std::this_thread::sleep_for(std::chrono::microseconds(10));
-			}
-			pool.wait();
 
 			kk += ps.size();
 		}
@@ -1357,7 +1145,7 @@ namespace SparseRREF {
 		now_nnz = mat.nnz();
 
 		for (size_t i = 0; i < mat.nrow; i++) {
-			if (col_weight(rowpivs[i]) < 0)
+			if (opt->col_weight(rowpivs[i]) < 0)
 				rowpivs[i] = -1; // mark as unused
 			if (rowpivs[i] != -1)
 				n_pivots.emplace_back(i, rowpivs[i]);
@@ -1367,9 +1155,6 @@ namespace SparseRREF {
 		if (opt->abort)
 			return pivots;
 
-		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
-		sparse_mat_transpose_replace(tranmat, mat, &pool);
-
 		// use a vector to label the left columns
 		std::vector<index_t> leftcols = perm_init((index_t)(mat.ncol));
 		for (size_t i = 0; i < mat.nrow; i++) {
@@ -1378,12 +1163,6 @@ namespace SparseRREF {
 		}
 		std::erase_if(leftcols, [](index_t i) { return i == -1; });
 
-		// sort pivots by nnz, it will be faster
-		std::stable_sort(leftcols.begin(), leftcols.end(),
-			[&tranmat](index_t a, index_t b) {
-				return tranmat[a].nnz() < tranmat[b].nnz();
-			});
-		
 		auto rank = pivots[0].size();
 		size_t kk = rank;
 
@@ -1398,11 +1177,20 @@ namespace SparseRREF {
 			leftrows.push_back(i);
 		}
 
-		std::vector<std::atomic<size_t>> tranmat_nnz(mat.ncol);
-		for (size_t i = 0; i < mat.ncol; i++) {
-			tranmat_nnz[i] = 0;
+		bool only_right_search = true;
+
+		sparse_mat<bool, index_t> tranmat;
+		if (opt->method != 1) {
+			only_right_search = false;
+			tranmat = sparse_mat<bool, index_t>(mat.ncol, mat.nrow);
+			sparse_mat_transpose_replace(tranmat, mat, &pool);
+
+			// sort pivots by nnz, it will be faster
+			std::stable_sort(leftcols.begin(), leftcols.end(),
+				[&tranmat](index_t a, index_t b) {
+					return tranmat[a].nnz() < tranmat[b].nnz();
+				});
 		}
-		bool only_right_search = false;
 
 		// for printing
 		double oldpr = 0;
@@ -1414,6 +1202,8 @@ namespace SparseRREF {
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
 
+			std::vector<pivot_t<index_t>> ps;
+
 			if (opt->sort_rows) {
 				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
 					if (mat[a].nnz() < mat[b].nnz())
@@ -1423,16 +1213,12 @@ namespace SparseRREF {
 					return false;
 					});
 			}
-			std::vector<pivot_t<index_t>> ps;
 			if (only_right_search) {
-				ps = pivots_search_right(mat, tranmat_nnz, leftrows, leftcols, col_weight);
+				ps = pivots_search_right(mat, leftrows, leftcols, col_weight);
 			}
 			else {
 				ps = pivots_search(mat, tranmat, rowpivs, leftrows, leftcols, col_weight);
 			}
-			if (ps.size() == 0)
-				break;
-
 			if (ps.size() == 0) {
 				if (rank >= fullrank)
 					break;
@@ -1481,22 +1267,11 @@ namespace SparseRREF {
 				return pivots;
 
 			if (only_right_search) {
-				// clear the tranmat and reset the tranmat_nnz
-				for (auto c : leftcols) {
-					tranmat[c].clear();
-					tranmat_nnz[c] = 0;
-				}
-			}
-
-			if (only_right_search) {
 				std::atomic<size_t> done_count = 0;
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 					auto id = SparseRREF::thread_id();
 					for (size_t i = s; i < e; i++) {
 						schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
-						for (size_t j = 0; j < mat[leftrows[i]].nnz(); j++) {
-							tranmat_nnz[mat[leftrows[i]](j)]++;
-						}
 						done_count++;
 						if (opt->abort)
 							break;
@@ -1646,14 +1421,9 @@ namespace SparseRREF {
 			// if the number of new pivots is less than 1% of the total columns, 
 			// it is very expansive to compute the transpose of the matrix
 			// so we only search the right columns
-			if (!only_right_search && ps.size() < mat.ncol / 100) {
+			if (opt->method == 2 && !only_right_search && ps.size() < mat.ncol / 100) {
 				only_right_search = true;
-				// update the tranmat_nnz for the first time
-				for (auto r : leftrows) {
-					for (size_t j = 0; j < mat[r].nnz(); j++) {
-						tranmat_nnz[mat[r](j)]++;
-					}
-				}
+				tranmat.clear();
 			}
 
 			kk += ps.size();
@@ -1665,26 +1435,31 @@ namespace SparseRREF {
 		return pivots;
 	}
 
-	// only search the right columns, no need to compute the transpose of the matrix
+	// we assume that the column space is full rank, and want to find the most upper pivots
 	template <typename T, typename index_t>
 	std::vector<std::vector<pivot_t<index_t>>>
-		sparse_mat_rref_left_2(sparse_mat<T, index_t>& mat, const size_t fullrank, const field_t& F, rref_option_t opt) {
+		sparse_mat_rref_up(sparse_mat<T, index_t>& mat, const size_t fullrank, const field_t& F, rref_option_t opt) {
 		// first canonicalize, sort and compress the matrix
+
+		if (fullrank == 0)
+			return std::vector<std::vector<pivot_t<index_t>>>();
 
 		auto& pool = opt->pool;
 		auto nthreads = pool.get_thread_count();
-		size_t p_bound = fullrank;
-		std::function<int64_t(int64_t)> col_weight = [&](int64_t i) {
-			if (i < p_bound)
-				return opt->col_weight(i);
-			else
-				return (int64_t)(-1);
-			};
 
 		pool.detach_loop(0, mat.nrow, [&](auto i) { mat[i].compress(); });
 
 		auto printstep = opt->print_step;
 		bool verbose = opt->verbose;
+
+		size_t p_bound = fullrank;
+
+		size_t mtx_size;
+		if (pool.get_thread_count() > 16)
+			mtx_size = 65536;
+		else
+			mtx_size = 1 << pool.get_thread_count();
+		std::vector<std::mutex> mtxes(mtx_size);
 
 		size_t now_nnz = mat.nnz();
 
@@ -1699,16 +1474,7 @@ namespace SparseRREF {
 		if (opt->abort)
 			return pivots;
 
-		// eliminate rows with only one non-zero entry
-		size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
 		now_nnz = mat.nnz();
-
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (col_weight(rowpivs[i]) < 0)
-				rowpivs[i] = -1; // mark as unused
-			if (rowpivs[i] != -1)
-				n_pivots.emplace_back(i, rowpivs[i]);
-		}
 		pivots.push_back(n_pivots);
 
 		if (opt->abort)
@@ -1716,11 +1482,6 @@ namespace SparseRREF {
 
 		// use a vector to label the left columns
 		std::vector<index_t> leftcols = perm_init((index_t)(mat.ncol));
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (rowpivs[i] != -1)
-				leftcols[rowpivs[i]] = -1; // mark as used
-		}
-		std::erase_if(leftcols, [](index_t i) { return i == -1; });
 
 		auto rank = pivots[0].size();
 		size_t kk = rank;
@@ -1730,15 +1491,23 @@ namespace SparseRREF {
 
 		std::vector<index_t> leftrows;
 		leftrows.reserve(mat.nrow);
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (rowpivs[i] != -1 || mat[i].nnz() == 0)
-				continue;
+		for (size_t i = 0; i < p_bound; i++) {
 			leftrows.push_back(i);
 		}
 
-		std::vector<std::atomic<size_t>> tranmat_nnz(mat.ncol);
-		for (size_t i = 0; i < mat.ncol; i++) {
-			tranmat_nnz[i] = 0;
+		bool only_right_search = true;
+
+		sparse_mat<bool, index_t> tranmat;
+		if (opt->method != 1) {
+			only_right_search = false;
+			tranmat = sparse_mat<bool, index_t>(mat.ncol, mat.nrow);
+			sparse_mat_transpose_part_replace(tranmat, mat, leftrows, &pool);
+
+			// sort pivots by nnz, it will be faster
+			std::stable_sort(leftcols.begin(), leftcols.end(),
+				[&tranmat](index_t a, index_t b) {
+					return tranmat[a].nnz() < tranmat[b].nnz();
+				});
 		}
 
 		// for printing
@@ -1747,9 +1516,12 @@ namespace SparseRREF {
 		int bitlen_ncol = (int)std::floor(std::log(mat.ncol) / std::log(10)) + 1;
 
 		bit_array tmp_set(mat.ncol);
+		std::vector<index_t> leftrows_ext = leftrows;
 
 		while (kk < mat.ncol) {
 			auto start = SparseRREF::clocknow();
+
+			std::vector<pivot_t<index_t>> ps;
 
 			if (opt->sort_rows) {
 				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
@@ -1760,16 +1532,23 @@ namespace SparseRREF {
 					return false;
 					});
 			}
-			std::vector<pivot_t<index_t>> ps;
-			ps = pivots_search_right(mat, tranmat_nnz, leftrows, leftcols, col_weight);
-			if (ps.size() == 0)
-				break;
-
+			if (only_right_search) {
+				ps = pivots_search_right(mat, leftrows, leftcols, opt->col_weight);
+			}
+			else {
+				ps = pivots_search(mat, tranmat, rowpivs, leftrows, leftcols, opt->col_weight);
+			}
 			if (ps.size() == 0) {
 				if (rank >= fullrank)
 					break;
 				else {
-					p_bound += fullrank - rank;
+					if (p_bound == mat.nrow)
+						break;
+					auto np_bound = std::min(p_bound + fullrank - rank, mat.nrow);
+					for (auto r = p_bound; r < np_bound; r++) {
+						leftrows.push_back(r);
+					}
+					p_bound = np_bound;
 					continue;
 				}
 			}
@@ -1812,62 +1591,171 @@ namespace SparseRREF {
 			if (opt->abort)
 				return pivots;
 
-			std::atomic<size_t> done_count = 0;
-			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
-				auto id = SparseRREF::thread_id();
-				for (size_t i = s; i < e; i++) {
-					schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
-					done_count++;
-					if (opt->abort)
-						break;
-				}
-				}, (leftrows.size() < 20 * nthreads ? 0 : leftrows.size() / 10));
-
-			// remove used cols
-			size_t localcount = 0;
-			tmp_set.clear();
-			for (auto [r, c] : ps)
-				tmp_set.insert(c);
-			for (auto c : leftcols) {
-				if (!tmp_set.test(c)) {
-					leftcols[localcount] = c;
-					localcount++;
-				}
+			leftrows_ext = leftrows;
+			for (index_t i = p_bound; i < mat.nrow; i++) {
+				leftrows_ext.push_back(i);
 			}
-			leftcols.resize(localcount);
 
-			bool print_once = true; // print at least once
+			if (only_right_search) {
+				std::atomic<size_t> done_count = 0;
+				pool.detach_blocks<size_t>(0, leftrows_ext.size(), [&](const size_t s, const size_t e) {
+					auto id = SparseRREF::thread_id();
+					for (size_t i = s; i < e; i++) {
+						schur_complete(mat, leftrows_ext[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+						done_count++;
+						if (opt->abort)
+							break;
+					}
+					}, (leftrows_ext.size() < 20 * nthreads ? 0 : leftrows_ext.size() / 10));
 
-			localcount = 0;
-			while (done_count < leftrows.size()) {
-				if (opt->abort) {
-					pool.purge();
-					return pivots;
+				// remove used cols
+				size_t localcount = 0;
+				tmp_set.clear();
+				for (auto [r, c] : ps)
+					tmp_set.insert(c);
+				for (auto c : leftcols) {
+					if (!tmp_set.test(c)) {
+						leftcols[localcount] = c;
+						localcount++;
+					}
 				}
+				leftcols.resize(localcount);
 
-				double pr = kk + (1.0 * ps.size() * done_count) / leftrows.size();
-				if (verbose && (print_once || pr - oldpr > printstep)) {
-					auto end = SparseRREF::clocknow();
-					now_nnz = mat.nnz();
-					auto now_alloc = mat.alloc();
-					std::cout << "-- Col: " << std::setw(bitlen_ncol)
-						<< (int)pr << "/" << mat.ncol
-						<< "  rank: " << std::setw(bitlen_ncol) << rank
-						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-						<< "  density: " << std::setprecision(6) << std::setw(8)
-						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-						((pr - oldpr) / SparseRREF::usedtime(start, end))
-						<< " col/s    \r" << std::flush;
-					oldpr = pr;
-					start = end;
-					print_once = false;
+				bool print_once = true; // print at least once
+
+				localcount = 0;
+				while (done_count < leftrows_ext.size()) {
+					if (opt->abort) {
+						pool.purge();
+						return pivots;
+					}
+
+					double pr = kk + (1.0 * ps.size() * done_count) / leftrows_ext.size();
+					if (verbose && (print_once || pr - oldpr > printstep)) {
+						auto end = SparseRREF::clocknow();
+						now_nnz = mat.nnz();
+						auto now_alloc = mat.alloc();
+						std::cout << "-- Col: " << std::setw(bitlen_ncol)
+							<< (int)pr << "/" << mat.ncol
+							<< "  rank: " << std::setw(bitlen_ncol) << rank
+							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
+							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
+							<< "  density: " << std::setprecision(6) << std::setw(8)
+							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
+							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
+							((pr - oldpr) / SparseRREF::usedtime(start, end))
+							<< " col/s    \r" << std::flush;
+						oldpr = pr;
+						start = end;
+						print_once = false;
+					}
+
+					std::this_thread::sleep_for(std::chrono::microseconds(10));
 				}
-
-				std::this_thread::sleep_for(std::chrono::microseconds(10));
+				pool.wait();
 			}
-			pool.wait();
+			else {
+				std::vector<int> flags(leftrows.size(), 0);
+				pool.detach_blocks<size_t>(0, leftrows_ext.size(), [&](const size_t s, const size_t e) {
+					auto id = SparseRREF::thread_id();
+					for (size_t i = s; i < e; i++) {
+						schur_complete(mat, leftrows_ext[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+						if (i < leftrows.size())
+							flags[i] = 1;
+						if (opt->abort)
+							break;
+					}
+					}, (leftrows_ext.size() < 20 * nthreads ? 0 : leftrows_ext.size() / 10));
+
+				// remove used cols
+				std::atomic<size_t> localcount = 0;
+				tmp_set.clear();
+				for (auto [r, c] : ps)
+					tmp_set.insert(c);
+				for (auto c : leftcols) {
+					if (!tmp_set.test(c)) {
+						leftcols[localcount] = c;
+						localcount++;
+						tranmat[c].zero();
+					}
+					else
+						tranmat[c].clear();
+				}
+				leftcols.resize(localcount);
+
+				bool print_once = true; // print at least once
+
+				localcount = 0;
+				while (localcount < leftrows.size()) {
+					// if the pool is free and too many rows left, use pool
+					if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0) {
+						std::vector<index_t> newleftrows;
+						for (auto i = 0; i < leftrows.size(); i++) {
+							if (flags[i])
+								newleftrows.push_back(leftrows[i]);
+						}
+
+						pool.detach_loop(0, newleftrows.size(), [&](size_t i) {
+							auto row = newleftrows[i];
+							for (size_t j = 0; j < mat[row].nnz(); j++) {
+								auto col = mat[row](j);
+								std::lock_guard<std::mutex> lock(mtxes[col % mtx_size]);
+								tranmat[col].push_back(row, true);
+							}
+							localcount++;
+							}, (newleftrows.size() < 20 * nthreads ? 0 : newleftrows.size() / 10));
+						pool.wait();
+					}
+
+					for (size_t i = 0; i < leftrows.size() && localcount < leftrows.size(); i++) {
+						if (flags[i]) {
+							auto row = leftrows[i];
+							for (size_t j = 0; j < mat[row].nnz(); j++) {
+								tranmat[mat[row](j)].push_back(row, true);
+							}
+							flags[i] = 0;
+							localcount++;
+
+							if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0)
+								break;
+						}
+					}
+
+					if (opt->abort) {
+						pool.purge();
+						return pivots;
+					}
+
+					double pr = kk + (1.0 * ps.size() * localcount) / leftrows.size();
+					if (verbose && (print_once || pr - oldpr > printstep)) {
+						auto end = SparseRREF::clocknow();
+						now_nnz = mat.nnz();
+						auto now_alloc = mat.alloc();
+						std::cout << "-- Col: " << std::setw(bitlen_ncol)
+							<< (int)pr << "/" << mat.ncol
+							<< "  rank: " << std::setw(bitlen_ncol) << rank
+							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
+							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
+							<< "  density: " << std::setprecision(6) << std::setw(8)
+							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
+							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
+							((pr - oldpr) / SparseRREF::usedtime(start, end))
+							<< " col/s    \r" << std::flush;
+						oldpr = pr;
+						start = end;
+						print_once = false;
+					}
+				}
+				pool.wait();
+			}
+
+			// if the number of new pivots is less than 1% of the total columns, 
+			// it is very expansive to compute the transpose of the matrix
+			// so we only search the right columns
+			if (opt->method == 2 && !only_right_search && ps.size() < mat.ncol / 100) {
+				only_right_search = true;
+				tranmat.clear();
+			}
 
 			kk += ps.size();
 		}
@@ -1883,11 +1771,7 @@ namespace SparseRREF {
 		sparse_mat_rref(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
 
 		std::vector<std::vector<pivot_t<index_t>>> pivots;
-		if (opt->method == 0 || opt->method == 2)
-			pivots = sparse_mat_rref_forward(mat, F, opt);
-		else
-			pivots = sparse_mat_rref_forward_2(mat, F, opt);
-
+		pivots = sparse_mat_rref_forward(mat, F, opt);
 
 		if (opt->shrink_memory) {
 			opt->pool.detach_loop(0, mat.nrow, [&](auto i) {
@@ -1938,10 +1822,7 @@ namespace SparseRREF {
 
 		ulong mat_height_bits = mat.height_bits() + 64 - std::countl_zero(mat.ncol);
 
-		if (opt->method == 0 || opt->method == 2)
-			pivots = sparse_mat_rref_forward(matul, F, opt);
-		else
-			pivots = sparse_mat_rref_forward_2(matul, F, opt);
+		pivots = sparse_mat_rref_forward(matul, F, opt);
 
 		if (opt->abort) 
 			return pivots;
