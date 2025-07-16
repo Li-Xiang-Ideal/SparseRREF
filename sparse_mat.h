@@ -498,7 +498,8 @@ namespace SparseRREF {
 		return A;
 	}
 
-	// first write a stupid one
+	// make sure nonzero_c is cleared before calling this function
+	// after this function, nonzero_c is also cleared
 	template <typename T, typename index_t>
 	void schur_complete(sparse_mat<T, index_t>& mat, index_t k, 
 		const std::vector<pivot_t<index_t>>& pivots,
@@ -506,8 +507,6 @@ namespace SparseRREF {
 
 		if (mat[k].nnz() == 0)
 			return;
-
-		nonzero_c.clear();
 
 		for (auto [ind, val] : mat[k]) {
 			nonzero_c.insert(ind);
@@ -547,7 +546,7 @@ namespace SparseRREF {
 			mat[k].reserve(nnz, false);
 		}
 		mat[k].resize(nnz);
-		nonzero_c.nonzero(mat[k].indices);
+		nonzero_c.nonzero_and_clear(mat[k].indices);
 		for (size_t i = 0; i < nnz; i++) {
 			mat[k][i] = tmpvec[mat[k](i)];
 		}
