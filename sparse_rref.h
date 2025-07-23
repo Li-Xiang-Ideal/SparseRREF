@@ -372,6 +372,27 @@ namespace SparseRREF {
 				}
 			}
 		}
+
+		// and clear data
+		template <typename T>
+		void nonzero_and_clear(T* ptr) {
+			const size_t bitset_size = 64;
+			size_t pos = 0;
+			for (size_t i = 0; i < data.size(); i++) {
+				if (data[i] != 0) {
+					uint64_t c = data[i];
+					size_t base = i * bitset_size;
+
+					while (c) {
+						auto ctzpos = ctz(c);
+						ptr[pos] = base + ctzpos;
+						pos++;
+						c &= c - 1;
+					}
+					data[i] = 0; // clear data
+				}
+			}
+		}
 	};
 
 	template <typename T> inline T* binary_search(T* begin, T* end, T val) {
