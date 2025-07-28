@@ -189,6 +189,13 @@ namespace WXF_PARSER {
 			str[length] = '\0'; // null-terminate the string
 		}
 
+		TOKEN(WXF_HEAD t, const char* s, const size_t len) : type(t), rank(0) {
+			length = len;
+			str = (char*)malloc(length + 1);
+			std::memcpy(str, s, length);
+			str[length] = '\0'; // null-terminate the string
+		}
+
 		// machine number, val (length is given by the sizeof(val))
 		TOKEN(WXF_HEAD t, int8_t v) : type(t), rank(0), i(v), length(1) {}
 		TOKEN(WXF_HEAD t, int16_t v) : type(t), rank(0), i(v), length(2) {}
@@ -196,6 +203,9 @@ namespace WXF_PARSER {
 		TOKEN(WXF_HEAD t, int64_t v) : type(t), rank(0), i(v), length(4) {}
 		TOKEN(WXF_HEAD t, float v) : type(t), rank(0), d(v), length(2) {}
 		TOKEN(WXF_HEAD t, double v) : type(t), rank(0), d(v), length(4) {}
+		
+		// function, association, delay_rule, rule
+		TOKEN(WXF_HEAD t, uint64_t len) : type(t), rank(0), i(0), length(len) {}
 
 		// array/narray
 		TOKEN(WXF_HEAD t, const std::vector<size_t>& dims, int num_type, size_t len) : type(t) {
@@ -384,35 +394,58 @@ namespace WXF_PARSER {
 					break;
 
 				switch (type) {
-					case WXF_HEAD::i8:
-						tokens.push_back(makeNumber<int8_t>(type));
+					case WXF_HEAD::i8:{
+						int8_t val;
+						std::memcpy(&val, buffer + pos, sizeof(int8_t));
+						pos += sizeof(int8_t) / sizeof(uint8_t);
+						tokens.emplace_back(type, val);
 						break;
-					case WXF_HEAD::i16:
-						tokens.push_back(makeNumber<int16_t>(type));
+					}
+					case WXF_HEAD::i16: {
+						int16_t val;
+						std::memcpy(&val, buffer + pos, sizeof(int16_t));
+						pos += sizeof(int16_t) / sizeof(uint8_t);
+						tokens.emplace_back(type, val);
 						break;
-					case WXF_HEAD::i32:
-						tokens.push_back(makeNumber<int32_t>(type));
+					}
+					case WXF_HEAD::i32: {
+						int32_t val;
+						std::memcpy(&val, buffer + pos, sizeof(int32_t));
+						pos += sizeof(int32_t) / sizeof(uint8_t);
+						tokens.emplace_back(type, val);
 						break;
-					case WXF_HEAD::i64:
-						tokens.push_back(makeNumber<int64_t>(type));
+					}
+					case WXF_HEAD::i64: {
+						int64_t val;
+						std::memcpy(&val, buffer + pos, sizeof(int64_t));
+						pos += sizeof(int64_t) / sizeof(uint8_t);
+						tokens.emplace_back(type, val);
 						break;
-					case WXF_HEAD::f64:
-						tokens.push_back(makeNumber<double>(type));
+					}
+					case WXF_HEAD::f64: {
+						double val;
+						std::memcpy(&val, buffer + pos, sizeof(double));
+						pos += sizeof(double) / sizeof(uint8_t);
+						tokens.emplace_back(type, val);
 						break;
+					}
 					case WXF_HEAD::symbol: 
 					case WXF_HEAD::bigint:
 					case WXF_HEAD::bigreal:
 					case WXF_HEAD::string:
-					case WXF_HEAD::binary_string:
-						tokens.push_back(makeString(type));
+					case WXF_HEAD::binary_string: {
+						auto length = ReadVarint();
+						tokens.emplace_back(type, (const char*)(buffer + pos), length);
+						pos += length; 
 						break;
+					}
 					case WXF_HEAD::func: 
 					case WXF_HEAD::association:
-						tokens.push_back(makeFunction(type));
+						tokens.emplace_back(type, uint64_t(ReadVarint()));
 						break;
 					case WXF_HEAD::delay_rule:
 					case WXF_HEAD::rule:
-						tokens.push_back(makeRule(type));
+						tokens.emplace_back(type, uint64_t(2));
 						break;
 					case WXF_HEAD::array: 
 					case WXF_HEAD::narray:
@@ -423,43 +456,6 @@ namespace WXF_PARSER {
 						break;
 				}
 			}
-		}
-
-		// machine number, val (length is given by the sizeof(val))
-		template <typename T>
-		TOKEN makeNumber(WXF_HEAD type) {
-			T val;
-			std::memcpy(&val, buffer + pos, sizeof(val));
-			pos += sizeof(T) / sizeof(uint8_t);
-			
-			return TOKEN(type, val);
-		}
-
-		// symbol/bigint/string/binary_string, length, str
-		TOKEN makeString(WXF_HEAD type) {
-			TOKEN node;
-			node.type = type;
-			node.length = ReadVarint();
-			node.str = (char*)malloc((node.length + 1) * sizeof(char)); // +1 for null terminator
-			std::memcpy(node.str, buffer + pos, node.length);
-			node.str[node.length] = '\0'; // add null terminator
-			pos += node.length;
-			return node;
-		}
-
-		// func/association, length
-		TOKEN makeFunction(WXF_HEAD type) {
-			TOKEN node;
-			node.type = type;
-			node.length = ReadVarint();
-			return node;
-		}
-
-		TOKEN makeRule(WXF_HEAD type) {
-			TOKEN node;
-			node.type = type;
-			node.length = 2;
-			return node;
 		}
 
 		// numeric/packed array, rank, dimensions, data
