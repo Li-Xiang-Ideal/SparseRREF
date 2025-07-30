@@ -901,6 +901,7 @@ namespace SparseRREF {
 		inline void push_back(const index_v& l, const T& val) { data.push_back(l, val); }
 		inline void canonicalize() { data.canonicalize(); }
 		inline void sort_indices() { data.sort_indices(); }
+		inline void reserve(size_t size) { data.reserve(size); }
 		inline sparse_tensor transpose(const std::vector<size_t>& perm) {
 			sparse_tensor B;
 			B.data = data.transpose(perm);
@@ -908,79 +909,71 @@ namespace SparseRREF {
 		}
 
 		void convert_from_COO(const sparse_tensor<T, index_t, SPARSE_COO>& l) {
-			std::vector<size_t> dims(l.data.dims.begin() + 1, l.data.dims.end()); // remove the first dimension
-			size_t nnz = l.data.rowptr[1];
-			size_t rank = dims.size();
-			data.init(dims, nnz);
-			std::vector<index_t> index(rank);
+			data.dims = l.data.dims;
+			data.rank = l.data.rank;
+			auto nnz = l.nnz();
+			if (alloc() < nnz)
+				reserve(nnz);
+			std::copy(l.data.valptr, l.data.valptr + nnz, data.valptr);
+			auto newrank = data.rank - 1;
+			for (size_t i = 0; i < newrank; i++)
+				data.dims[i] = data.dims[i + 1];
+			data.dims.resize(newrank);
+			// then recompute the rowptr and colptr
+			// first compute nnz for each row
+			data.rowptr.resize(data.dims[0] + 1, 0);
 			for (size_t i = 0; i < nnz; i++) {
-				for (size_t j = 0; j < rank; j++)
-					index[j] = l.data.colptr[i * rank + j];
-				data.push_back(index, l.data.valptr[i]);
+				auto oldptr = l.data.colptr + i * newrank;
+				auto nowptr = data.colptr + i * (newrank - 1);
+				data.rowptr[oldptr[0] + 1]++;
+				for (size_t j = 0; j < newrank - 1; j++)
+					nowptr[j] = oldptr[j + 1];
 			}
+			for (size_t i = 0; i < data.dims[0]; i++)
+				data.rowptr[i + 1] += data.rowptr[i];
+			data.rank = newrank;
+		}
+
+		void move_from_COO(sparse_tensor<T, index_t, SPARSE_COO>&& l) noexcept {
+			// use move to avoid memory problems, then no need to mention l
+			data = std::move(l.data);
+			// remove the first dimension
+			auto newrank = data.rank - 1;
+			for (size_t i = 0; i < newrank; i++)
+				data.dims[i] = data.dims[i + 1];
+			data.dims.resize(newrank);
+			// then recompute the rowptr and colptr
+			// first compute nnz for each row
+			std::vector<size_t> rowptr(data.dims[0] + 1, 0);
+			auto nnz = data.rowptr[1];
+			for (size_t i = 0; i < nnz; i++) {
+				auto oldptr = data.colptr + i * newrank;
+				auto nowptr = data.colptr + i * (newrank - 1);
+				rowptr[oldptr[0] + 1]++;
+				for (size_t j = 0; j < newrank - 1; j++)
+					nowptr[j] = oldptr[j + 1];
+			}
+			for (size_t i = 0; i < data.dims[0]; i++)
+				rowptr[i + 1] += rowptr[i];
+			data.rowptr = rowptr;
+			data.colptr = s_realloc<index_t>(data.colptr, nnz * (newrank - 1));
+			data.rank = newrank;
 		}
 
 		// constructor from COO
 		sparse_tensor(const sparse_tensor<T, index_t, SPARSE_COO>& l) { convert_from_COO(l); }
 		sparse_tensor& operator=(const sparse_tensor<T, index_t, SPARSE_COO>& l) {
-			data.clear();
 			convert_from_COO(l);
 			return *this;
 		}
 
 		// suppose that COO tensor is sorted
 		sparse_tensor(sparse_tensor<T, index_t, SPARSE_COO>&& l) noexcept {
-			// use move to avoid memory problems, then no need to mention l
-			data = std::move(l.data); 
-			// remove the first dimension
-			data.rank--;
-			for (size_t i = 0; i < data.rank; i++)
-				data.dims[i] = data.dims[i + 1];
-			data.dims.resize(data.rank);
-			// then recompute the rowptr and colptr
-			// first compute nnz for each row
-			std::vector<size_t> rowptr(data.dims[0] + 1, 0);
-			auto nnz = data.rowptr[1];
-			for (size_t i = 0; i < nnz; i++) {
-				auto oldptr = data.colptr + i * data.rank;
-				auto nowptr = data.colptr + i * (data.rank - 1);
-				rowptr[oldptr[0] + 1]++;
-				for (size_t j = 0; j < data.rank - 1; j++)
-					nowptr[j] = oldptr[j + 1];
-			}
-			for (size_t i = 0; i < data.dims[0]; i++)
-				rowptr[i + 1] += rowptr[i];
-			data.rowptr = rowptr;
-			data.colptr = s_realloc<index_t>(data.colptr, nnz * (data.rank - 1));
+			move_from_COO(std::move(l));
 		}
 
 		sparse_tensor& operator=(sparse_tensor<T, index_t, SPARSE_COO>&& l) noexcept {
-			if (this == &l)
-				return *this;
-
-			// use move to avoid memory problems, then no need to mention l
-			data = std::move(l.data);
-			// remove the first dimension
-			data.rank--;
-			for (size_t i = 0; i < data.rank; i++)
-				data.dims[i] = data.dims[i + 1];
-			data.dims.resize(data.rank);
-			// then recompute the rowptr and colptr
-			// first compute nnz for each row
-			std::vector<size_t> rowptr(data.dims[0] + 1, 0);
-			auto nnz = data.rowptr[1];
-			for (size_t i = 0; i < nnz; i++) {
-				auto oldptr = data.colptr + i * data.rank;
-				auto nowptr = data.colptr + i * (data.rank - 1);
-				rowptr[oldptr[0] + 1]++;
-				for (size_t j = 0; j < data.rank - 1; j++)
-					nowptr[j] = oldptr[j + 1];
-			}
-			for (size_t i = 0; i < data.dims[0]; i++)
-				rowptr[i + 1] += rowptr[i];
-			data.rowptr = rowptr;
-			data.colptr = s_realloc<index_t>(data.colptr, nnz * (data.rank - 1));
-
+			move_from_COO(std::move(l));
 			return *this;
 		}
 
