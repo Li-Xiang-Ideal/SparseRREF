@@ -11,7 +11,7 @@
 #include <iostream>
 
 // Use mimalloc for memory management or not
-// #define USE_MIMALLOC 1
+#define USE_MIMALLOC 1
 
 #include "argparse.hpp"
 #include "sparse_mat.h"

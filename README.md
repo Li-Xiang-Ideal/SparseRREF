@@ -19,7 +19,7 @@ Some algorithms are inspired by [Spasm](https://github.com/cbouilla/spasm), but 
 
 The code mainly depends on [FLINT](https://flintlib.org/) to support arithmetic, and [BS::thread_pool](https://github.com/bshoshany/thread-pool) and [argparse](https://github.com/p-ranav/argparse) (they are included) are also used to support thread pool and parse args.
 
-If one use functions on sparse_tensor, it also requires to link tbb (Threading Building Blocks) library (for GCC and CLANG), since the Parallel STL of C++20 is used there.
+If one use functions on sparse_tensor, it also requires to link tbb (Threading Building Blocks) library (for GCC and CLANG), since the Parallel STL of C++20 is used there. MSYS2 users may need to link with `-ltbb<version>` (e.g. `-ltbb12`) instead of `-ltbb`.
 
 ### What to compute?
 
