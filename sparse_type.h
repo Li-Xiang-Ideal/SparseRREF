@@ -520,6 +520,32 @@ namespace SparseRREF {
 			return res;
 		}
 
+		// take a span of rows
+		// sparse_mat.take({start, end}) returns a sparse_mat with rows indexed in [start, end)
+		sparse_mat<T, index_t> take(const std::pair<size_t, size_t>& span, thread_pool* pool = nullptr) const {
+			sparse_mat<T, index_t> res(span.second - span.first, ncol);
+			
+			if (pool == nullptr) {
+				for (size_t i = span.first; i < span.second; i++) {
+					res[i - span.first] = rows[i];
+				}
+			}
+			else {
+				pool->detach_loop(span.first, span.second, [&](size_t i) {
+					res[i - span.first] = rows[i];
+				});
+				pool->wait();
+			}
+			return res;
+		}
+
+		// sort rows by nnz
+		void sort_rows_by_nnz() {
+			std::sort(rows.begin(), rows.end(), [](const sparse_vec<T, index_t>& a, const sparse_vec<T, index_t>& b) {
+				return a.nnz() < b.nnz();
+			});
+		}
+
 		template <typename U = T> requires std::is_same_v<U, rat_t>
 		sparse_mat<ulong> operator%(const nmod_t mod) const {
 			sparse_mat<ulong> result(nrow, ncol);

@@ -72,6 +72,38 @@ namespace SparseRREF {
 		sparse_mat_transpose_part_replace(tranmat, mat, rows, pool);
 	}
 
+	
+
+	// join two sparse matrices
+	template <typename T, typename index_t>
+	sparse_mat<T, index_t> sparse_mat_join(const sparse_mat<T, index_t>& A, const sparse_mat<T, index_t>& B, thread_pool* pool = nullptr) {
+		if (A.ncol != B.ncol)
+			throw std::invalid_argument("sparse_mat_join: column number mismatch");
+
+		sparse_mat<T, index_t> res(A.nrow + B.nrow, A.ncol);
+
+		if (pool == nullptr) {
+			for (size_t i = 0; i < A.nrow; i++) {
+				res[i] = A[i];
+			}
+			for (size_t i = 0; i < B.nrow; i++) {
+				res[i + A.nrow] = B[i];
+			}
+		}
+		else {
+			pool->detach_loop(0, A.nrow, [&](size_t i) {
+				res[i] = A[i];
+			});
+			pool->wait();
+			pool->detach_loop(0, B.nrow, [&](size_t i) {
+				res[i + A.nrow] = B[i];
+			});
+			pool->wait();
+		}
+
+		return res;
+	}
+
 	// rref staffs
 
 	// first look for rows with only one nonzero value and eliminate them
