@@ -98,6 +98,16 @@ namespace SparseRREF {
 		return res;
 	}
 
+	template <typename T, typename index_t>
+	sparse_mat<T, index_t> sparse_mat_join(sparse_mat<T, index_t>&& A, sparse_mat<T, index_t>&& B) {
+		if (A.ncol != B.ncol)
+			throw std::invalid_argument("sparse_mat_join: column number mismatch");
+
+		sparse_mat<T, index_t> res = std::move(A);
+		res.append(std::move(B));
+		return res;
+	}
+
 	// split a sparse matrix into two parts
 	template <typename T, typename index_t>
 	std::pair<sparse_mat<T, index_t>, sparse_mat<T, index_t>> sparse_mat_split(const sparse_mat<T, index_t>& mat, const size_t split_row, thread_pool* pool = nullptr) {
@@ -136,18 +146,16 @@ namespace SparseRREF {
 		B.nrow = mat.nrow - split_row;
 		B.ncol = mat.ncol;
 
-		A.rows = std::vector<sparse_vec<T, index_t>>(
-			std::make_move_iterator(mat.rows.begin()),
+		A.rows = std::vector<sparse_vec<T, index_t>>(std::make_move_iterator(mat.rows.begin()),
 			std::make_move_iterator(mat.rows.begin() + split_row));
-		B.rows = std::vector<sparse_vec<T, index_t>>(
-			std::make_move_iterator(mat.rows.begin() + split_row),
+		B.rows = std::vector<sparse_vec<T, index_t>>(std::make_move_iterator(mat.rows.begin() + split_row),
 			std::make_move_iterator(mat.rows.end()));
 
 		mat.rows.clear();
 		mat.nrow = 0;
 		mat.ncol = 0;
-		
-		return {A, B};
+
+		return {std::move(A), std::move(B)};
 	}
 
 	// rref staffs
