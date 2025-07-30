@@ -81,12 +81,8 @@ namespace SparseRREF {
 		sparse_mat<T, index_t> res(A.nrow + B.nrow, A.ncol);
 
 		if (pool == nullptr) {
-			for (size_t i = 0; i < A.nrow; i++) {
-				res[i] = A[i];
-			}
-			for (size_t i = 0; i < B.nrow; i++) {
-				res[i + A.nrow] = B[i];
-			}
+			std::copy(A.rows.begin(), A.rows.end(), res.rows.begin());
+			std::copy(B.rows.begin(), B.rows.end(), res.rows.begin() + A.nrow);
 		}
 		else {
 			pool->detach_loop(0, A.nrow, [&](size_t i) {
@@ -100,6 +96,58 @@ namespace SparseRREF {
 		}
 
 		return res;
+	}
+
+	// split a sparse matrix into two parts
+	template <typename T, typename index_t>
+	std::pair<sparse_mat<T, index_t>, sparse_mat<T, index_t>> sparse_mat_split(const sparse_mat<T, index_t>& mat, const size_t split_row, thread_pool* pool = nullptr) {
+		if (split_row > mat.nrow)
+			throw std::out_of_range("sparse_mat_split: split_row out of range");
+
+		sparse_mat<T, index_t> A(split_row, mat.ncol);
+		sparse_mat<T, index_t> B(mat.nrow - split_row, mat.ncol);
+		
+		if (pool == nullptr) {
+			std::copy(mat.rows.begin(), mat.rows.begin() + split_row, A.rows.begin());
+			std::copy(mat.rows.begin() + split_row, mat.rows.end(), B.rows.begin());
+		}
+		else {
+			pool->detach_loop(0, split_row, [&](size_t i) {
+				A[i] = mat[i];
+			});
+			pool->wait();
+			pool->detach_loop(split_row, mat.nrow, [&](size_t i) {
+				B[i - split_row] = mat[i];
+			});
+			pool->wait();
+		}
+
+		return {A, B};
+	}
+
+	template <typename T, typename index_t>
+	std::pair<sparse_mat<T, index_t>, sparse_mat<T, index_t>> sparse_mat_split(sparse_mat<T, index_t>&& mat, const size_t split_row) {
+		if (split_row > mat.nrow)
+			throw std::out_of_range("sparse_mat_split: split_row out of range");
+
+		sparse_mat<T, index_t> A, B;
+		A.nrow = split_row;
+		A.ncol = mat.ncol;
+		B.nrow = mat.nrow - split_row;
+		B.ncol = mat.ncol;
+
+		A.rows = std::vector<sparse_vec<T, index_t>>(
+			std::make_move_iterator(mat.rows.begin()),
+			std::make_move_iterator(mat.rows.begin() + split_row));
+		B.rows = std::vector<sparse_vec<T, index_t>>(
+			std::make_move_iterator(mat.rows.begin() + split_row),
+			std::make_move_iterator(mat.rows.end()));
+
+		mat.rows.clear();
+		mat.nrow = 0;
+		mat.ncol = 0;
+		
+		return {A, B};
 	}
 
 	// rref staffs
