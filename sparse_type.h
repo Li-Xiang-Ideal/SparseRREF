@@ -526,9 +526,7 @@ namespace SparseRREF {
 			sparse_mat<T, index_t> res(span.second - span.first, ncol);
 			
 			if (pool == nullptr) {
-				for (size_t i = span.first; i < span.second; i++) {
-					res[i - span.first] = rows[i];
-				}
+				res.rows.assign(rows.begin() + span.first, rows.begin() + span.second);
 			}
 			else {
 				pool->detach_loop(span.first, span.second, [&](size_t i) {
@@ -537,6 +535,36 @@ namespace SparseRREF {
 				pool->wait();
 			}
 			return res;
+		}
+
+		// append other sparse_mat to this one
+		void append(const sparse_mat<T, index_t>& other, thread_pool* pool = nullptr) {
+			if (other.ncol != ncol) {
+				throw std::invalid_argument("sparse_mat.append: column number mismatch");
+			}
+
+			if (pool == nullptr) {
+				rows.insert(rows.end(), other.rows.begin(), other.rows.end());
+				nrow += other.nrow;
+				return;
+			}
+
+			rows.reserve(nrow + other.nrow);
+			pool->detach_loop(0, other.nrow, [&](size_t i) {
+				rows.emplace_back(other.rows[i]);
+			});
+			pool->wait();
+			nrow += other.nrow;
+		}
+
+		void append(sparse_mat<T, index_t>&& other) {
+			if (other.ncol != ncol) {
+				throw std::invalid_argument("sparse_mat.append: column number mismatch");
+			}
+
+			rows.insert(rows.end(), std::make_move_iterator(other.rows.begin()), std::make_move_iterator(other.rows.end()));
+			nrow += other.nrow;
+			other.clear(); // clear the other matrix
 		}
 
 		// sort rows by nnz
