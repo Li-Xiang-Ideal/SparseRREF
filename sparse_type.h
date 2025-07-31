@@ -1031,6 +1031,34 @@ namespace SparseRREF {
 			return *this;
 		}
 
+		// convert a sparse matrix to a sparse tensor
+		void convert_from_sparse_mat(const sparse_mat<T, index_t>& mat) {
+			data.dims = { mat.nrow, mat.ncol };
+			data.rank = 2;
+
+			auto nnz = mat.nnz();
+			if (alloc() < nnz) 
+				reserve(nnz);
+
+			// compute the rowptr
+			data.rowptr.resize(mat.nrow + 1, 0);
+			// copy the values and column indices
+			for (size_t i = 0; i < mat.nrow; i++) {
+				data.rowptr[i + 1] = data.rowptr[i] + mat[i].nnz();
+				std::copy(mat[i].indices, mat[i].indices + mat[i].nnz(), data.colptr + data.rowptr[i]);
+				std::copy(mat[i].entries, mat[i].entries + mat[i].nnz(), data.valptr + data.rowptr[i]);
+			}
+		}
+
+		sparse_tensor(const sparse_mat<T, index_t>& mat) {
+			convert_from_sparse_mat(mat);
+		}
+
+		sparse_tensor& operator=(const sparse_mat<T, index_t>& mat) {
+			convert_from_sparse_mat(mat);
+			return *this;
+		}
+
 		// only for test
 		void print_test() {
 			for (size_t i = 0; i < data.dims[0]; i++) {
@@ -1141,8 +1169,8 @@ namespace SparseRREF {
 			data.rank = nr + 1;
 		}
 
-		// TODO: resharp, for example {2,100} to {2,5,20}
-		inline void resharp() {}
+		// TODO: reshape, for example {2,100} to {2,5,20}
+		inline void reshape() {}
 
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(prepend_num(l), val, mode); }
 		inline void insert_add(const index_v& l, const T& val) { data.insert_add(prepend_num(l), val); }
