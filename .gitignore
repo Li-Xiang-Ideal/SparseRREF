@@ -402,3 +402,14 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# Windows Executable files
+*.exe
+*.dll
+
+# Windows Batch files
+*.bat
+*.cmd
+
+# VS Code settings
+.vscode/
