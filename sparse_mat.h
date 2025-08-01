@@ -996,8 +996,12 @@ namespace SparseRREF {
 			size_t n_leftrows = 0;
 			for (size_t i = 0; i < leftrows.size(); i++) {
 				auto row = leftrows[i];
-				if (rowpivs[row] != -1 || mat[row].nnz() == 0) 
+				if (rowpivs[row] != -1) 
 					continue;
+				if (mat[row].nnz() == 0) {
+					mat[row].clear();
+					continue;
+				}
 				leftrows[n_leftrows] = row;
 				n_leftrows++;
 			}
@@ -1331,8 +1335,12 @@ namespace SparseRREF {
 			size_t n_leftrows = 0;
 			for (size_t i = 0; i < leftrows.size(); i++) {
 				auto row = leftrows[i];
-				if (rowpivs[row] != -1 || mat[row].nnz() == 0)
+				if (rowpivs[row] != -1)
 					continue;
+				if (mat[row].nnz() == 0) {
+					mat[row].clear();
+					continue;
+				}
 				leftrows[n_leftrows] = row;
 				n_leftrows++;
 			}

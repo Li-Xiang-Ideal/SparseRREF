@@ -96,8 +96,13 @@ namespace SparseRREF {
 		}
 
 		void reserve(size_t n, const bool is_copy = true) {
-			if (n == _alloc || n == 0)
+			if (n == _alloc)
 				return;
+
+			if (n == 0) {
+				clear();
+				return;
+			}
 
 			if (_alloc == 0) {
 				indices = s_malloc<index_t>(n);
