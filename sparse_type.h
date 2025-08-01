@@ -344,6 +344,11 @@ namespace SparseRREF {
 			if (n == _alloc)
 				return;
 
+			if (n == 0) {
+				clear();
+				return;
+			}
+
 			if (_alloc == 0) {
 				indices = s_malloc<index_t>(n);
 				_alloc = n;
@@ -693,8 +698,12 @@ namespace SparseRREF {
 		}
 
 		void reserve(size_t size) {
-			if (size == 0 || size == alloc)
+			if (size == alloc)
 				return;
+			if (size == 0) {
+				clear();
+				return;
+			}
 			if (alloc == 0) {
 				alloc = size;
 				colptr = s_malloc<index_t>(size * (rank - 1));
