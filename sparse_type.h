@@ -1064,6 +1064,22 @@ namespace SparseRREF {
 			}
 		}
 
+		sparse_mat<T, index_t> to_sparse_mat() const {
+			if (rank() != 2) {
+				std::cerr << "sparse_tensor.to_sparse_mat: rank must be 2" << std::endl;
+				return sparse_mat<T, index_t>();
+			}
+			sparse_mat<T, index_t> mat(data.dims[0], data.dims[1]);
+			for (size_t i = 0; i < data.dims[0]; i++) {
+				auto nz = data.rowptr[i + 1] - data.rowptr[i];
+				mat[i].reserve(nz);
+				mat[i].resize(nz);
+				std::copy(data.colptr + data.rowptr[i], data.colptr + data.rowptr[i + 1], mat[i].indices);
+				std::copy(data.valptr + data.rowptr[i], data.valptr + data.rowptr[i + 1], mat[i].entries);
+			}
+			return mat;
+		}
+
 		sparse_tensor(const sparse_mat<T, index_t>& mat) {
 			convert_from_sparse_mat(mat);
 		}
@@ -1141,6 +1157,18 @@ namespace SparseRREF {
 			data.rowptr[1] = new_nnz;
 		}
 
+		// we assume that the tensor is sorted
+		inline std::vector<size_t> rowptr() const {
+			std::vector<size_t> result(dim(0) + 1);
+			result[0] = 0;
+			for (auto i = 0; i < nnz(); i++) {
+				result[index(i)[0] + 1]++;
+			}
+			for (size_t i = 0; i < dim(0); i++)
+				result[i + 1] += result[i];
+			return result;
+		}
+
 		// change the dimensions of the tensor
 		// it is dangerous, only for internal use
 		inline void change_dims(const std::vector<size_t>& new_dims) {
@@ -1183,8 +1211,33 @@ namespace SparseRREF {
 			data.rank = nr + 1;
 		}
 
-		// TODO: reshape, for example {2,100} to {2,5,20}
-		inline void reshape() {}
+		// reshape, for example {2,100} to {2,5,20}
+		// TODO: check more examples
+		inline void reshape(const std::vector<size_t>& new_dims) {
+			auto old_dims = dims();
+			index_t* newcolptr = s_malloc<index_t>(nnz() * new_dims.size());
+			auto r = rank();
+
+			int_t flatten_index = 0;
+			int_t tmp;
+			for (size_t i = 0; i < nnz(); i++) {
+				auto ptr = index(i);
+				flatten_index = 0;
+				for (size_t j = 0; j < r; j++) {
+					flatten_index *= old_dims[j];
+					flatten_index += ptr[j];
+				}
+				for (auto j = new_dims.size(); j > 0; j--) {
+					tmp = flatten_index % new_dims[j - 1];
+					flatten_index /= new_dims[j - 1];
+					newcolptr[i * new_dims.size() + j - 1] = tmp.to_si();
+				}
+			}
+			s_free(data.colptr);
+			data.colptr = newcolptr;
+			data.dims = prepend_num(new_dims, (size_t)1);
+			data.rank = new_dims.size() + 1;
+		}
 
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(prepend_num(l), val, mode); }
 		inline void insert_add(const index_v& l, const T& val) { data.insert_add(prepend_num(l), val); }
@@ -1214,6 +1267,31 @@ namespace SparseRREF {
 			B.data = data.transpose(perm_new);
 			B.sort_indices();
 			return B;
+		}
+
+		sparse_mat<T, index_t> to_sparse_mat(const bool sort_ind = true) {
+			if (rank() != 2) {
+				std::cerr << "sparse_tensor.to_sparse_mat: rank must be 2" << std::endl;
+				return sparse_mat<T, index_t>();
+			}
+			if (sort_ind)
+				sort_indices();
+			auto r = dim(0);
+			auto c = dim(1);
+			auto rptr = rowptr();
+
+			sparse_mat<T, index_t> mat(r, c);
+			for (size_t i = 0; i < r; i++) {
+				auto nz = rptr[i + 1] - rptr[i];
+				mat[i].reserve(nz);
+				mat[i].resize(nz);
+				std::copy(data.valptr + rptr[i], data.valptr + rptr[i + 1], mat[i].entries);
+				// skip the first index, which is the row index
+				auto ptr = index(rptr[i]) + 1;
+				for (size_t j = 0; j < nz; j++)
+					mat[i].indices[j] = ptr[2 * j];
+			}
+			return mat;
 		}
 
 		std::vector<size_t> gen_perm() const {

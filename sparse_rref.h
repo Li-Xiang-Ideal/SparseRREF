@@ -465,6 +465,11 @@ namespace SparseRREF {
 
 	template <typename T>
 	void permute(const std::vector<size_t>& P, T* A, size_t block_size = 1) {
+		// If P is already sorted, no need to permute
+		if (std::is_sorted(P.begin(), P.end())) {
+			return;
+		}
+
 		std::vector<bool> visited(P.size(), false);
 
 		auto permute_it = [&](auto& temp_block) {

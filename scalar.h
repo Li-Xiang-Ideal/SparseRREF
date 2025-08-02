@@ -108,6 +108,10 @@ namespace Flint {
 		template <unsigned_builtin_integral T> int_t operator%(const T other) const { int_t result; fmpz_mod_ui(&result._data, &_data, other); return result; }
 		ulong operator%(const nmod_t& other) const { return fmpz_get_nmod(&_data, other); }
 
+		int_t operator/(const int_t& other) const { int_t result; fmpz_tdiv_q(&result._data, &_data, &other._data); return result; }
+		template <unsigned_builtin_integral T> int_t operator/(const T other) const { int_t result; fmpz_fdiv_q_ui(&result._data, &_data, other); return result; }
+		template <signed_builtin_integral T> int_t operator/(const T other) const { int_t result; fmpz_fdiv_q_si(&result._data, &_data, other); return result; }
+
 		int_t operator<<(ulong n) const { int_t result; fmpz_mul_2exp(&result._data, &_data, n); return result; }
 		int_t operator>>(ulong n) const { int_t result; fmpz_fdiv_q_2exp(&result._data, &_data, n); return result; }
 		int_t operator&(const int_t& other) const { int_t result; fmpz_and(&result._data, &_data, &other._data); return result; }
@@ -130,6 +134,9 @@ namespace Flint {
 		void operator%=(const int_t& other) { fmpz_mod(&_data, &_data, &other._data); }
 		template <unsigned_builtin_integral T> void operator%=(const T other) { fmpz_mod_ui(&_data, &_data, other); }
 
+		void operator/=(const int_t& other) { fmpz_tdiv_q(&_data, &_data, &other._data); }
+		template <unsigned_builtin_integral T> void operator/=(const T other) { fmpz_fdiv_q_ui(&_data, &_data, other); }
+		template <signed_builtin_integral T> void operator/=(const T other) { fmpz_fdiv_q_si(&_data, &_data, other); }
 
 		template <unsigned_builtin_integral T>
 		int_t pow(const T n) const { int_t result; fmpz_pow_ui(&result._data, &_data, n); return result; }
