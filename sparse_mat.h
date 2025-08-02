@@ -762,10 +762,11 @@ namespace SparseRREF {
 	// TODO: TEST!!! 
 	// TODO: add ordering
 	// if already know the pivots, we can directly do the rref
+	// if the pivots are of submatrix, it is dangerous to set clear_zero_row to true
 	template <typename T, typename index_t>
 	void sparse_mat_direct_rref(sparse_mat<T, index_t>& mat,
 		const std::vector<std::vector<pivot_t<index_t>>>& pivots, 
-		const field_t& F, rref_option_t opt) {
+		const field_t& F, rref_option_t opt, const bool clear_zero_row = true) {
 		auto& pool = opt->pool;
 
 		// first set rows not in pivots to zero
@@ -776,9 +777,15 @@ namespace SparseRREF {
 			for (auto [r, c] : p)
 				rowset[r] = c;
 		}
-		for (size_t i = 0; i < mat.nrow; i++)
-			if (rowset[i] == -1)
-				mat[i].zero();
+		if (clear_zero_row) {
+			// clear the rows not in pivots
+			for (size_t i = 0; i < mat.nrow; i++)
+				if (rowset[i] == -1)
+					mat[i].clear();
+		}
+		else {
+			std::fill(rowset.begin(), rowset.end(), 0);
+		}
 
 		for (auto [r, c] : pivots[0]) {
 			mat[r].zero();
@@ -818,7 +825,7 @@ namespace SparseRREF {
 
 			leftrows.clear();
 			for (size_t j = 0; j < mat.nrow; j++) {
-				if (rowset[j] != -1)
+				if (rowset[j] != -1 && mat[j].nnz() > 0)
 					leftrows.push_back(j);
 			}
 
@@ -861,6 +868,9 @@ namespace SparseRREF {
 		if (opt->verbose) {
 			std::cout << std::endl;
 		}
+
+		if (opt->is_back_sub)
+			triangular_solver_2(mat, pivots, F, opt);
 	}
 
 	template <typename T, typename index_t>
