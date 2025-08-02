@@ -152,6 +152,7 @@ namespace SparseRREF {
 			std::make_move_iterator(mat.rows.end()));
 
 		mat.rows.clear();
+		mat.rows.shrink_to_fit();
 		mat.nrow = 0;
 		mat.ncol = 0;
 
@@ -1977,8 +1978,9 @@ namespace SparseRREF {
 				for (auto [r, c] : p)
 					rowset[r] = c;
 			for (size_t i = 0; i < mat.nrow; i++)
-				if (rowset[i] == -1)
-					mat[i].zero();
+				if (rowset[i] == -1) {
+					mat[i].clear();
+				}
 		}
 
 		while (!isok || mod.bits() < mat_height_bits) {
