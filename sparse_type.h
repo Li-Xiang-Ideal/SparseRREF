@@ -1204,7 +1204,7 @@ namespace SparseRREF {
 				for (size_t j = 0; j < nr; j++)
 					init_ptr[i * nr + j] = newindex[j];
 			}
-			s_realloc(data.colptr, nr * nnz());
+			data.colptr = s_realloc(data.colptr, nr * nnz());
 
 			// change the dimensions
 			data.dims = new_dims;
