@@ -650,6 +650,7 @@ namespace SparseRREF {
 		if (opt->abort)
 			return;
 
+		auto printstep = opt->print_step;
 		bool verbose = opt->verbose;
 		auto& pool = opt->pool;
 		opt->verbose = false;
@@ -685,9 +686,11 @@ namespace SparseRREF {
 			}
 			}, ((n_split < 20 * pool.get_thread_count()) ? 0 : leftrows.size() / 10));
 
+		bool print_once = true;
+
 		if (verbose) {
 			size_t old_cc = cc;
-			while (cc < leftrows.size()) {
+			while (cc < leftrows.size() && (print_once || cc - old_cc > printstep)) {
 				// stop for a while
 				std::this_thread::sleep_for(std::chrono::microseconds(1000));
 				now_nnz = mat.nnz();
@@ -702,6 +705,7 @@ namespace SparseRREF {
 					<< " row/s    \r" << std::flush;
 				clock_begin = SparseRREF::clocknow();
 				old_cc = cc;
+				print_once = false;
 			}
 		}
 
