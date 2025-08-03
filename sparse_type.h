@@ -1110,11 +1110,11 @@ namespace SparseRREF {
 		using index_v = std::vector<index_t>;
 		using index_p = index_t*;
 
-		template <typename S>
-		std::vector<S> prepend_num(const std::vector<S>& l, S num = 0) {
+		template <typename S, typename U> requires std::convertible_to<U, S>
+		std::vector<S> prepend_num(const std::vector<S>& l, U num = 0) {
 			std::vector<S> lp;
 			lp.reserve(l.size() + 1);
-			lp.push_back(num);
+			lp.push_back(static_cast<S>(num));
 			lp.insert(lp.end(), l.begin(), l.end());
 			return lp;
 		}
