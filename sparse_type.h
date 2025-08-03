@@ -899,21 +899,23 @@ namespace SparseRREF {
 			valptr[index] += val;
 		}
 
-		sparse_tensor_struct<index_t, T> transpose(const std::vector<size_t>& perm) {
+		sparse_tensor_struct<T, index_t> transpose(const std::vector<size_t>& perm) {
 			std::vector<size_t> l(rank);
 			std::vector<size_t> lperm(rank);
+			std::vector<index_t> old_coord(rank);
+			std::vector<index_t> new_coord(rank);
 			for (size_t i = 0; i < rank; i++)
 				lperm[i] = dims[perm[i]];
 			sparse_tensor_struct<T, index_t> B(lperm, nnz());
 			for (size_t i = 0; i < dims[0]; i++) {
 				for (size_t j = rowptr[i]; j < rowptr[i + 1]; j++) {
-					l[0] = i;
+					old_coord[0] = i;
 					auto tmpptr = colptr + j * (rank - 1);
 					for (size_t k = 1; k < rank; k++)
-						l[k] = tmpptr[k - 1];
+						old_coord[k] = tmpptr[k - 1];
 					for (size_t k = 0; k < rank; k++)
-						lperm[k] = l[perm[k]];
-					B.push_back(lperm, valptr[j]);
+						new_coord[k] = old_coord[perm[k]];
+					B.push_back(new_coord, valptr[j]);
 				}
 			}
 			return B;
@@ -1108,11 +1110,11 @@ namespace SparseRREF {
 		using index_v = std::vector<index_t>;
 		using index_p = index_t*;
 
-		template <typename S>
-		std::vector<S> prepend_num(const std::vector<S>& l, S num = 0) {
+		template <typename S, typename U> requires std::convertible_to<U, S>
+		std::vector<S> prepend_num(const std::vector<S>& l, U num = 0) {
 			std::vector<S> lp;
 			lp.reserve(l.size() + 1);
-			lp.push_back(num);
+			lp.push_back(static_cast<S>(num));
 			lp.insert(lp.end(), l.begin(), l.end());
 			return lp;
 		}
@@ -1262,7 +1264,7 @@ namespace SparseRREF {
 		inline sparse_tensor transpose(const std::vector<size_t>& perm) {
 			std::vector<size_t> perm_new(perm);
 			for (auto& a : perm_new) { a++; }
-			perm_new = prepend_num(perm_new, 0);
+			perm_new = prepend_num(perm_new, (size_t)0);
 			sparse_tensor B;
 			B.data = data.transpose(perm_new);
 			B.sort_indices();
