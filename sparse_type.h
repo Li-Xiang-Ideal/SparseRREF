@@ -1427,7 +1427,7 @@ namespace SparseRREF {
 			auto n_row = data.dims[0];
 
 			// recompute the index
-			index_t* newcolptr = s_malloc<index_t>(data.colptr, data.alloc * r);
+			index_t* newcolptr = s_malloc<index_t>(data.alloc * r);
 			auto newcolptr_j = newcolptr;
 			auto nowcolptr_j = data.colptr;
 			for (size_t i = 0; i < n_row; i++) {
@@ -1474,6 +1474,15 @@ namespace SparseRREF {
 			data.rowptr = { 0, data.rowptr.back() };
 			data.dims = prepend_num(data.dims, (size_t)1);
 			data.rank++;
+		}
+
+		sparse_tensor(const sparse_mat<T, index_t>& mat) {
+			*this = sparse_tensor<T, index_t, SPARSE_CSR>(mat);
+		}
+
+		sparse_tensor& operator=(const sparse_mat<T, index_t>& mat) {
+			*this = sparse_tensor<T, index_t, SPARSE_CSR>(mat);
+			return *this;
 		}
 
 		void print_test() {
