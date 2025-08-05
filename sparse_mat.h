@@ -1129,7 +1129,7 @@ namespace SparseRREF {
 				localcount = 0;
 				while (localcount < leftrows.size()) {
 					// if the pool is free and too many rows left, use pool
-					if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0) {
+					if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0) {
 						std::vector<index_t> newleftrows;
 						for (auto i = 0; i < leftrows.size(); i++) {
 							if (flags[i])
@@ -1157,7 +1157,7 @@ namespace SparseRREF {
 							flags[i] = 0;
 							localcount++;
 
-							if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0)
+							if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0)
 								break;
 						}
 					}
@@ -1470,7 +1470,7 @@ namespace SparseRREF {
 				localcount = 0;
 				while (localcount < leftrows.size()) {
 					// if the pool is free and too many rows left, use pool
-					if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0) {
+					if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0) {
 						std::vector<index_t> newleftrows;
 						for (auto i = 0; i < leftrows.size(); i++) {
 							if (flags[i])
@@ -1498,7 +1498,7 @@ namespace SparseRREF {
 							flags[i] = 0;
 							localcount++;
 
-							if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0)
+							if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0)
 								break;
 						}
 					}
@@ -1801,7 +1801,7 @@ namespace SparseRREF {
 				localcount = 0;
 				while (localcount < leftrows.size()) {
 					// if the pool is free and too many rows left, use pool
-					if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0) {
+					if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0) {
 						std::vector<index_t> newleftrows;
 						for (auto i = 0; i < leftrows.size(); i++) {
 							if (flags[i])
@@ -1829,7 +1829,7 @@ namespace SparseRREF {
 							flags[i] = 0;
 							localcount++;
 
-							if (localcount * 2 < leftrows.size() && pool.get_tasks_queued() == 0)
+							if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0)
 								break;
 						}
 					}
