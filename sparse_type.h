@@ -220,6 +220,32 @@ namespace SparseRREF {
 			return *this;
 		}
 
+		// this comparison does not clear zero elements / sort the order of indices
+		bool operator==(const sparse_vec& l) const {
+			if (this == &l)
+				return true;
+			if (_nnz != l._nnz)
+				return false;
+			return std::equal(indices, indices + _nnz, l.indices) 
+				&& std::equal(entries, entries + _nnz, l.entries);
+		}
+
+		// this comparison will clear zero elements / sort the order of indices
+		bool is_equal_to(const sparse_vec& l) const {
+			if (this == &l)
+				return true;
+			auto this_temp = *this;
+			auto other_temp = l;
+			this_temp.canonicalize();
+			other_temp.canonicalize();
+			if (this_temp._nnz != other_temp._nnz)
+				return false;
+			this_temp.sort_indices();
+			other_temp.sort_indices();
+			return std::equal(this_temp.indices, this_temp.indices + this_temp._nnz, other_temp.indices)
+				&& std::equal(this_temp.entries, this_temp.entries + this_temp._nnz, other_temp.entries);
+		}
+
 		inline void push_back(const index_t index, const T& val) {
 			if (_nnz + 1 > _alloc)
 				reserve((1 + _alloc) * 2); // +1 to avoid _alloc = 0
