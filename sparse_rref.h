@@ -118,6 +118,7 @@ namespace SparseRREF {
 		std::atomic<bool> abort = false;
 		bool is_back_sub = true;
 		bool sort_rows = false;
+		bool eliminate_one_nnz = true;
 		int method = 0;
 		int print_step = 100;
 		std::function<int64_t(int64_t)> col_weight = [](int64_t i) { return i; };

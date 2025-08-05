@@ -803,7 +803,8 @@ namespace SparseRREF {
 		}
 
 		std::vector<index_t> leftrows(mat.nrow, -1);
-		eliminate_row_with_one_nnz(mat, leftrows, opt);
+		if (opt->eliminate_one_nnz)
+			eliminate_row_with_one_nnz(mat, leftrows, opt);
 
 		leftrows.clear();
 
@@ -912,14 +913,16 @@ namespace SparseRREF {
 			return pivots;
 
 		// eliminate rows with only one non-zero entry
-		size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
-		now_nnz = mat.nnz();
+		if (opt->eliminate_one_nnz) {
+			size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
+			now_nnz = mat.nnz();
 
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (opt->col_weight(rowpivs[i]) < 0)
-				rowpivs[i] = -1; // mark as unused
-			if (rowpivs[i] != -1)
-				n_pivots.emplace_back(i, rowpivs[i]);
+			for (size_t i = 0; i < mat.nrow; i++) {
+				if (opt->col_weight(rowpivs[i]) < 0)
+					rowpivs[i] = -1; // mark as unused
+				if (rowpivs[i] != -1)
+					n_pivots.emplace_back(i, rowpivs[i]);
+			}
 		}
 		pivots.push_back(n_pivots);
 
@@ -1244,15 +1247,17 @@ namespace SparseRREF {
 		if (opt->abort)
 			return pivots;
 
-		// eliminate rows with only one non-zero entry
-		size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
-		now_nnz = mat.nnz();
+		if (opt->eliminate_one_nnz) {
+			// eliminate rows with only one non-zero entry
+			size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
+			now_nnz = mat.nnz();
 
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (opt->col_weight(rowpivs[i]) < 0)
-				rowpivs[i] = -1; // mark as unused
-			if (rowpivs[i] != -1)
-				n_pivots.emplace_back(i, rowpivs[i]);
+			for (size_t i = 0; i < mat.nrow; i++) {
+				if (opt->col_weight(rowpivs[i]) < 0)
+					rowpivs[i] = -1; // mark as unused
+				if (rowpivs[i] != -1)
+					n_pivots.emplace_back(i, rowpivs[i]);
+			}
 		}
 		pivots.push_back(n_pivots);
 
