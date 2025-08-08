@@ -100,7 +100,7 @@ int main(int argc, char** argv) {
 		.default_value(0)
 		.nargs(1)
 		.scan<'i', int>();
-	program.add_argument("--output-pivots")
+	program.add_argument("-op", "--output-pivots")
 		.help("output pivots")
 		.default_value(false)
 		.implicit_value(true)
@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
 		.nargs(1)
 		.scan<'i', int>();
 	program.add_usage_newline();
-	program.add_argument("--no-backward-substitution")
+	program.add_argument("-nb", "--no-backward-substitution")
 		.help("no backward substitution")
 		.default_value(false)
 		.implicit_value(true)

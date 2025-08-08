@@ -275,6 +275,16 @@ namespace SparseRREF {
 		}
 	}
 
+	constexpr std::array<uint64_t, 64> make_mask_table() {
+		std::array<uint64_t, 64> table{};
+		for (size_t i = 0; i < 64; ++i) {
+			table[i] = uint64_t(1) << i;
+		}
+		return table;
+	}
+
+	alignas(64) constexpr auto mask_table = make_mask_table();
+
 	// bit_array
 	struct bit_array {
 		std::vector<uint64_t> data;
@@ -297,21 +307,21 @@ namespace SparseRREF {
 		}
 
 		void insert(size_t val) {
-			auto idx = val / 64;
-			auto pos = val % 64;
-			data[idx] |= ((uint64_t)1 << pos);
+			auto idx = val >> 6;
+			auto pos = val & 63;
+			data[idx] |= mask_table[pos];
 		}
 
 		bool test(size_t val) const {
-			auto idx = val / 64;
-			auto pos = val % 64;
-			return data[idx] & ((uint64_t)1 << pos);
+			auto idx = val >> 6;
+			auto pos = val & 63;
+			return data[idx] & mask_table[pos];
 		}
 
 		void erase(size_t val) {
-			auto idx = val / 64;
-			auto pos = val % 64;
-			data[idx] &= ~((uint64_t)1 << pos);
+			auto idx = val >> 6;
+			auto pos = val & 63;
+			data[idx] &= ~mask_table[pos];
 		}
 
 		bool operator[](size_t idx) const {
@@ -341,13 +351,6 @@ namespace SparseRREF {
 					tmp_size = 0;
 					uint64_t c = data[i];
 
-					// only ctz version
-					// while (c) {
-					// 	auto ctzpos = ctz(c);
-					// 	result.push_back(i * bitset_size + ctzpos);
-					// 	c &= c - 1;
-					// }
-
 					while (c) {
 						auto ctzpos = ctz(c);
 						auto clzpos = bitset_size - 1 - clz(c);
@@ -356,7 +359,7 @@ namespace SparseRREF {
 							break;
 						tmp[tmp_size] = i * bitset_size + clzpos;
 						tmp_size++;
-						c = c ^ ((uint64_t)1 << clzpos) ^ ((uint64_t)1 << ctzpos);
+						c = c ^ mask_table[ctzpos] ^ mask_table[clzpos];
 					}
 					for (size_t j = tmp_size; j > 0; j--) {
 						result.push_back(tmp[j - 1]);
@@ -388,7 +391,7 @@ namespace SparseRREF {
 		// and clear data
 		template <typename T>
 		void nonzero_and_clear(T* ptr) {
-			const size_t bitset_size = 64;
+			constexpr size_t bitset_size = 64;
 			size_t pos = 0;
 			for (size_t i = 0; i < data.size(); i++) {
 				if (data[i] != 0) {
