@@ -1136,6 +1136,11 @@ namespace SparseRREF {
 		return res;
 	}
 	
+	template <typename T, typename index_t>
+	auto sparse_tensor_read_wxf(const std::filesystem::path file, const field_t& F) {
+		return sparse_tensor_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(file), F);
+	}
+
 	// TODO...
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	template <typename T, typename index_t>
