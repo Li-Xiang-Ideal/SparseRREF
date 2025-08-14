@@ -448,9 +448,23 @@ namespace WXF_PARSER {
 						tokens.emplace_back(type, uint64_t(2));
 						break;
 					case WXF_HEAD::array: 
-					case WXF_HEAD::narray:
-						tokens.push_back(makeArray(type));
+					case WXF_HEAD::narray: {
+						int num_type = ReadVarint();
+						if (num_type > 50) {
+							std::cerr << "Unsupported type: " << num_type << std::endl;
+							break;
+						}
+						int r = ReadVarint();
+						std::vector<size_t> dims(r);
+						size_t all_len = 1;
+						for (int i = 0; i < r; i++) {
+							dims[i] = ReadVarint();
+							all_len *= dims[i];
+						}
+						tokens.emplace_back(type, dims, num_type, all_len);
+						makeArray(type, tokens.back());
 						break;
+					}
 					default:
 						std::cerr << "Unknown head type: " << (int)type << " pos: " << pos << std::endl;
 						break;
@@ -468,13 +482,9 @@ namespace WXF_PARSER {
 		// 51 complex float 52 complex double
 		// we only support int8_t, int16_t, int32_t, int64_t, float, double
 
-		TOKEN makeArray(WXF_HEAD type) {
-			auto num_type = (int)ReadVarint();
-			if (num_type > 50) {
-				std::cerr << "Unsupported type: " << num_type << std::endl;
-				return TOKEN();
-			}
-
+		void makeArray(WXF_HEAD type, TOKEN& token) {
+			auto num_type = token.dimensions[0];
+			auto all_len = token.dimensions[1];
 			size_t size_of_type;
 			if (num_type >= 16 && num_type < 20) {
 				size_of_type = (size_t)1 << (num_type - 16);
@@ -486,62 +496,27 @@ namespace WXF_PARSER {
 				size_of_type = (size_t)1 << num_type;
 			}
 
-			int r = (int)ReadVarint();
-			std::vector<size_t> dims(r);
-			size_t all_len = 1;
-			for (int i = 0; i < r; i++) {
-				dims[i] = ReadVarint();
-				all_len *= dims[i];
-			}
-			if (type == WXF_HEAD::narray && num_type >= 16 && num_type < 20) {
-				auto token = TOKEN(type, dims, num_type, all_len);
-
+			auto load_array = [&](auto&& assign) {
 				std::visit([&](auto&& x) {
 					using T = std::decay_t<decltype(x)>;
 					T val;
 					for (size_t i = 0; i < all_len; i++) {
-						std::memcpy(&val, buffer + pos, size_of_type * sizeof(uint8_t));
-						token.u_arr[i] = (uint64_t)val;
+						std::memcpy(&val, buffer + pos, size_of_type);
+						assign(i, val);
 						pos += size_of_type;
 					}
-					}
-				, select_type(num_type));
+					}, select_type(num_type));
+				};
 
-				return token;
+			if (type == WXF_HEAD::narray && num_type >= 16 && num_type < 20) {
+				load_array([&](size_t i, auto val) { token.u_arr[i] = static_cast<uint64_t>(val); });
 			}
 			else if (num_type < 10) {
-				auto token = TOKEN(type, dims, num_type, all_len);
-
-				std::visit([&](auto&& x) {
-					using T = std::decay_t<decltype(x)>;
-					T val;
-					for (size_t i = 0; i < all_len; i++) {
-						std::memcpy(&val, buffer + pos, size_of_type * sizeof(uint8_t));
-						token.i_arr[i] = (int64_t)val;
-						pos += size_of_type;
-					}
-					}
-				, select_type(num_type));
-
-				return token;
+				load_array([&](size_t i, auto val) { token.i_arr[i] = static_cast<int64_t>(val); });
 			}
 			else if (num_type >= 34 && num_type <= 35) {
-				auto token = TOKEN(type, dims, num_type, all_len);
-
-				std::visit([&](auto&& x) {
-					using T = std::decay_t<decltype(x)>;
-					T val;
-					for (size_t i = 0; i < all_len; i++) {
-						std::memcpy(&val, buffer + pos, size_of_type * sizeof(uint8_t));
-						token.d_arr[i] = (double)val;
-						pos += size_of_type;
-					}
-					}
-				, select_type(num_type));
-
-				return token;
+				load_array([&](size_t i, auto val) { token.d_arr[i] = static_cast<double>(val); });
 			}
-			return TOKEN();
 		}
 	};
 
