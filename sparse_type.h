@@ -966,6 +966,8 @@ namespace SparseRREF {
 		inline auto& valptr() const { return data.valptr; }
 		inline auto& dims() const { return data.dims; }
 		inline size_t dim(size_t i) const { return data.dims[i]; }
+		index_p index(size_t i) const { return data.colptr + i * (rank() - 1); }
+		T& val(size_t i) const { return data.valptr[i]; }
 		inline void zero() { data.zero(); }
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(l, val, mode); }
 		inline void push_back(const index_v& l, const T& val) { data.push_back(l, val); }

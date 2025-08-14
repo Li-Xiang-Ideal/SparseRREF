@@ -2064,7 +2064,7 @@ namespace SparseRREF {
 			}
 			else if constexpr (std::is_same_v<T, ulong>) {
 				for (size_t i = 0; i < nnz; i++) {
-					vals[i] = int_t(ptr[i]) % F.mod;
+					vals[i] = nmod_set_si(ptr[i], F.mod);
 				}
 			}
 		}
@@ -2127,6 +2127,7 @@ namespace SparseRREF {
 
 		sparse_mat<T, index_t> mat(dims[0], dims[1]);
 		for (size_t i = 0; i < rowptr.size() - 1; i++) {
+			mat[i].reserve(rowptr[i + 1] - rowptr[i]);
 			for (size_t j = rowptr[i]; j < rowptr[i + 1]; j++) {
 				// mathematica is 1-indexed
 				mat[i].push_back(colindex[j] - 1, vals[j]);
@@ -2166,7 +2167,7 @@ namespace SparseRREF {
 			}
 			};
 
-		auto push_symbol = [&](const std::string& str) {
+		auto push_symbol = [&](const std::string_view str) {
 			buffer.push_back(WXF_PARSER::symbol); buffer.push_back(str.size());
 			buffer.insert(buffer.end(), str.begin(), str.end());
 			};
@@ -2174,7 +2175,7 @@ namespace SparseRREF {
 			toVarint(size);
 			buffer.insert(buffer.end(), short_buffer.begin(), short_buffer.end());
 			};
-		auto push_function = [&](const std::string& symbol, uint64_t size) {
+		auto push_function = [&](const std::string_view symbol, uint64_t size) {
 			buffer.push_back(WXF_PARSER::func); 
 			push_varint(size);
 			push_symbol(symbol);

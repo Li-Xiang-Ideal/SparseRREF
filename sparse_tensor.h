@@ -1012,10 +1012,7 @@ namespace SparseRREF {
 
 		sparse_tensor<T, index_t, SPARSE_CSR> res;
 
-		// SparseArray
-		std::string tmp_str(tree[root].str);
-
-		if (tmp_str != "SparseArray") {
+		if (tree[root].str != std::string_view("SparseArray")) {
 			std::cerr << "Error: sparse_tensor_read_wxf: ";
 			std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
 			return res;
@@ -1069,14 +1066,12 @@ namespace SparseRREF {
 
 			auto ptr = tree[last_node[2]].i_arr;
 			if constexpr (std::is_same_v<T, rat_t>) {
-				for (size_t i = 0; i < nnz; i++) {
+				for (size_t i = 0; i < nnz; i++) 
 					vals[i] = ptr[i];
-				}
 			}
 			else if constexpr (std::is_same_v<T, ulong>) {
-				for (size_t i = 0; i < nnz; i++) {
-					vals[i] = int_t(ptr[i]) % F.mod;
-				}
+				for (size_t i = 0; i < nnz; i++) 
+					vals[i] = nmod_set_si(ptr[i], F.mod);
 			}
 		}
 		else {
@@ -1094,7 +1089,7 @@ namespace SparseRREF {
 						val = token.i;
 					}
 					else if constexpr (std::is_same_v<T, ulong>) {
-						val = int_t(token.i) % F.mod;
+						val = nmod_set_si(token.i, F.mod);
 					}
 					break;
 				case WXF_PARSER::bigint:
@@ -1106,8 +1101,7 @@ namespace SparseRREF {
 					}
 					break;
 				case WXF_PARSER::symbol:
-					tmp_str = token.str;
-					if (tmp_str == "Rational") {
+					if (token.str == std::string_view("Rational")) {
 						int_t n_1 = toInteger(tree[val_node[0]]);
 						int_t d_1 = toInteger(tree[val_node[1]]);
 						if constexpr (std::is_same_v<T, rat_t>) {
@@ -1152,10 +1146,10 @@ namespace SparseRREF {
 		ExprTree tree;
 		auto& tokens = tree.tokens;
 		auto& root = tree.root;
-		tokens.push_back(TOKEN(symbol, "SparseArray"));
+		tokens.emplace_back(symbol, "SparseArray");
 		root = ExprNode(tokens.size() - 1, 4, func);
 
-		tokens.push_back(TOKEN(symbol, "Automatic"));
+		tokens.emplace_back(symbol, "Automatic");
 		root[0] = ExprNode(tokens.size() - 1, 0, symbol);
 
 		auto rank = tensor.rank();
@@ -1169,16 +1163,16 @@ namespace SparseRREF {
 		}
 		root[1] = ExprNode(tokens.size() - 1, 0, array);
 
-		tokens.push_back(TOKEN(i8, 0));
+		tokens.emplace_back(i8, 0);
 		root[2] = ExprNode(tokens.size() - 1, 0, i8);
 
-		tokens.push_back(TOKEN(symbol, "List"));
+		tokens.emplace_back(symbol, "List");
 		root[3] = ExprNode(tokens.size() - 1, 3, func);
 
-		tokens.push_back(TOKEN(i8, 1));
+		tokens.emplace_back(i8, 1);
 		root[3][0] = ExprNode(tokens.size() - 1, 0, i8);
 
-		tokens.push_back(TOKEN(symbol, "List"));
+		tokens.emplace_back(symbol, "List");
 		root[3][1] = ExprNode(tokens.size() - 1, 2, func);
 
 		auto& rowptr = tensor.data.rowptr;
@@ -1199,17 +1193,17 @@ namespace SparseRREF {
 
 		auto push_int = [&](const int_t& val) {
 			if (val.fits_si()) {
-				tokens.push_back(TOKEN(i64, val.to_si()));
+				tokens.emplace_back(i64, val.to_si());
 				return i64;
 			}
 			else {
-				tokens.push_back(TOKEN(bigint, val.get_str()));
+				tokens.emplace_back(bigint, val.get_str());
 				return bigint;
 			}
 			};
 
 		if constexpr (std::is_same_v<T, rat_t>) {
-			tokens.push_back(TOKEN(symbol, "List"));
+			tokens.emplace_back(symbol, "List");
 			root[3][2] = ExprNode(tokens.size() - 1, nnz, func);
 			for (size_t i = 0; i < nnz; i++) {
 				T& val = tensor.data.valptr[i];
@@ -1220,7 +1214,7 @@ namespace SparseRREF {
 					root[3][2][i] = ExprNode(tokens.size() - 1, 0, tt);
 				}
 				else {
-					tokens.push_back(TOKEN(symbol, "Rational"));
+					tokens.emplace_back(symbol, "Rational");
 					root[3][2][i] = ExprNode(tokens.size() - 1, 2, func);
 					auto tt = push_int(num);
 					root[3][2][i][0] = ExprNode(tokens.size() - 1, 0, tt);

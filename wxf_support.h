@@ -351,6 +351,13 @@ namespace WXF_PARSER {
 		std::memcpy(buffer.data() + old_size, &value, sizeof(T));
 	}
 
+	template <typename T>
+	void serialize_binary(std::vector<uint8_t>& buffer, const T* valptr, const size_t len) {
+		const size_t old_size = buffer.size();
+		buffer.resize(old_size + sizeof(T) * len);
+		std::memcpy(buffer.data() + old_size, valptr, sizeof(T) * len);
+	}
+
 	struct Parser {
 		const uint8_t* buffer; // the buffer to read
 		size_t pos = 0;
@@ -591,18 +598,6 @@ namespace WXF_PARSER {
 		}
 	};
 
-	//// debug only, print the small tree 
-	//void printPrettyTree(const ExprNode& node, const std::string& prefix = "", bool isLast = true) {
-	//	std::cout << prefix;
-	//	std::cout << (isLast ? "└── " : "├── ");
-	//	std::cout << node.index << std::endl;
-
-	//	for (size_t i = 0; i < node.size; ++i) {
-	//		bool lastChild = (i == node.size - 1);
-	//		printPrettyTree(node.children[i], prefix + (isLast ? "    " : "│   "), lastChild);
-	//	}
-	//}
-
 	// TODO
 	void node_to_ustr(std::vector<uint8_t>& res, const std::vector<TOKEN>& tokens, const ExprNode& node) {
 		auto& token = tokens[node.index];
@@ -705,19 +700,13 @@ namespace WXF_PARSER {
 				push_varint(token.dimensions[i + 2]);
 			}
 			if (token.dimensions[0] == 3) {
-				for (auto i = 0; i < token.dimensions[1]; i++) {
-					serialize_binary(res, token.i_arr[i]);
-				}
+				serialize_binary(res, token.i_arr, token.dimensions[1]);
 			}
 			else if (node.type == WXF_HEAD::narray && token.dimensions[0] == 19) {
-				for (auto i = 0; i < token.dimensions[1]; i++) {
-					serialize_binary(res, token.u_arr[i]);
-				}
+				serialize_binary(res, token.u_arr, token.dimensions[1]);
 			}
 			else if (token.dimensions[0] == 35) {
-				for (auto i = 0; i < token.dimensions[1]; i++) {
-					serialize_binary(res, token.d_arr[i]);
-				}
+				serialize_binary(res, token.d_arr, token.dimensions[1]);
 			}
 			else {
 				std::cerr << "Unsupported number type in packed array or numeric array. " << std::endl;
@@ -763,6 +752,8 @@ namespace WXF_PARSER {
 			return tokens[node.index];
 		}
 
+		// it is super slow...
+		// TODO: optimize this function
 		std::vector<uint8_t> to_ustr(bool include_head = true) const {
 			std::vector<uint8_t> res;
 			if (include_head) {
