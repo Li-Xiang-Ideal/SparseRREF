@@ -871,6 +871,12 @@ namespace WXF_PARSER {
 		return MakeExprTree(parser);
 	}
 
+	ExprTree MakeExprTree(const std::string_view str) {
+		Parser parser(reinterpret_cast<const uint8_t*>(str.data()), str.size());
+		parser.parseExpr();
+		return MakeExprTree(parser);
+	}
+
 	ExprTree MakeExprTree(const std::filesystem::path filename) {
 		if (!std::filesystem::exists(filename)) {
 			std::cerr << "Error: File does not exist!" << std::endl;

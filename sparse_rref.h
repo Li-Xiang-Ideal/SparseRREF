@@ -38,6 +38,17 @@
 
 #include "thread_pool.hpp"
 
+// mmap
+#if defined(_WIN32)
+#define NOMINMAX
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 #ifdef USE_MIMALLOC
 #include "mimalloc.h"
 #endif
@@ -539,6 +550,63 @@ namespace SparseRREF {
 		perm[b] = a;
 		return perm;
 	}
+
+	struct MMapFile {
+		std::string_view view;
+#if defined(_WIN32)
+		HANDLE hFile = INVALID_HANDLE_VALUE;
+		HANDLE hMap = nullptr;
+#else
+		int fd = -1;
+#endif
+		size_t size = 0;
+
+		~MMapFile() {
+#if defined(_WIN32)
+			if (!view.empty()) UnmapViewOfFile(view.data());
+			if (hMap) CloseHandle(hMap);
+			if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
+#else
+			if (!view.empty()) munmap((void*)view.data(), size);
+			if (fd >= 0) close(fd);
+#endif
+		}
+	};
+
+	bool mmap_file(const char* path, MMapFile& out) {
+#if defined(_WIN32)
+		out.hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
+			OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+		if (out.hFile == INVALID_HANDLE_VALUE) return false;
+
+		LARGE_INTEGER li;
+		if (!GetFileSizeEx(out.hFile, &li)) return false;
+		out.size = static_cast<size_t>(li.QuadPart);
+
+		out.hMap = CreateFileMappingA(out.hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
+		if (!out.hMap) return false;
+
+		LPVOID data = MapViewOfFile(out.hMap, FILE_MAP_READ, 0, 0, 0);
+		if (!data) return false;
+
+		out.view = std::string_view(static_cast<const char*>(data), out.size);
+		return true;
+#else
+		out.fd = open(path, O_RDONLY);
+		if (out.fd < 0) return false;
+
+		struct stat st;
+		if (fstat(out.fd, &st) < 0) return false;
+		out.size = static_cast<size_t>(st.st_size);
+
+		void* data = mmap(nullptr, out.size, PROT_READ, MAP_PRIVATE, out.fd, 0);
+		if (data == MAP_FAILED) return false;
+
+		out.view = std::string_view(static_cast<const char*>(data), out.size);
+		return true;
+#endif
+	}
+
 
 } // namespace SparseRREF
 

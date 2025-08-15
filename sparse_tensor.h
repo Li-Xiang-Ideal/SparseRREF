@@ -1132,6 +1132,22 @@ namespace SparseRREF {
 	
 	template <typename T, typename index_t>
 	auto sparse_tensor_read_wxf(const std::filesystem::path file, const field_t& F) {
+		auto fz = file_size(file);
+
+		// if > 1GB, use mmap
+		if (fz > 1ULL << 30) {
+			MMapFile mm;
+			auto cc = std::filesystem::canonical(file).string().c_str();
+			bool status = mmap_file(cc, mm);
+
+			if (!status) {
+				std::cerr << "Error: sparse_tensor_read_wxf: file cannot be mmaped." << std::endl;
+				return sparse_tensor<T, index_t, SPARSE_CSR>();
+			}
+
+			return sparse_tensor_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(mm.view), F);
+		}
+
 		return sparse_tensor_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(file), F);
 	}
 
