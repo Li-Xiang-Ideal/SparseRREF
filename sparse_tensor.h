@@ -1141,8 +1141,8 @@ namespace SparseRREF {
 			bool status = mmap_file(cc, mm);
 
 			if (!status) {
-				std::cerr << "Error: sparse_tensor_read_wxf: file cannot be mmaped." << std::endl;
-				return sparse_tensor<T, index_t, SPARSE_CSR>();
+				// mmap failed, use the file directly
+				return sparse_tensor_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(file), F);
 			}
 
 			return sparse_tensor_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(mm.view), F);
