@@ -1076,7 +1076,7 @@ namespace SparseRREF {
 		}
 
 		// convert a sparse matrix to a sparse tensor
-		void convert_from_sparse_mat(const sparse_mat<T, index_t>& mat) {
+		void convert_from_sparse_mat(const sparse_mat<T, index_t>& mat, thread_pool* pool = nullptr) {
 			data.dims = { mat.nrow, mat.ncol };
 			data.rank = 2;
 
@@ -1086,32 +1086,56 @@ namespace SparseRREF {
 
 			// compute the rowptr
 			data.rowptr.resize(mat.nrow + 1, 0);
-			// copy the values and column indices
 			for (size_t i = 0; i < mat.nrow; i++) {
 				data.rowptr[i + 1] = data.rowptr[i] + mat[i].nnz();
-				std::copy(mat[i].indices, mat[i].indices + mat[i].nnz(), data.colptr + data.rowptr[i]);
-				std::copy(mat[i].entries, mat[i].entries + mat[i].nnz(), data.valptr + data.rowptr[i]);
+			}
+			// copy the values and column indices
+			if (pool == nullptr) {
+				for (size_t i = 0; i < mat.nrow; i++) {
+					std::copy(mat[i].indices, mat[i].indices + mat[i].nnz(), data.colptr + data.rowptr[i]);
+					std::copy(mat[i].entries, mat[i].entries + mat[i].nnz(), data.valptr + data.rowptr[i]);
+				}
+			} 
+			else {
+				pool->detach_loop(0, mat.nrow, [&](size_t i) {
+					std::copy(mat[i].indices, mat[i].indices + mat[i].nnz(), data.colptr + data.rowptr[i]);
+					std::copy(mat[i].entries, mat[i].entries + mat[i].nnz(), data.valptr + data.rowptr[i]);
+				});
+				pool->wait();
 			}
 		}
 
-		sparse_mat<T, index_t> to_sparse_mat() const {
+		sparse_mat<T, index_t> to_sparse_mat(thread_pool* pool = nullptr) const {
 			if (rank() != 2) {
 				std::cerr << "sparse_tensor.to_sparse_mat: rank must be 2" << std::endl;
 				return sparse_mat<T, index_t>();
 			}
+
 			sparse_mat<T, index_t> mat(data.dims[0], data.dims[1]);
-			for (size_t i = 0; i < data.dims[0]; i++) {
-				auto nz = data.rowptr[i + 1] - data.rowptr[i];
-				mat[i].reserve(nz);
-				mat[i].resize(nz);
-				std::copy(data.colptr + data.rowptr[i], data.colptr + data.rowptr[i + 1], mat[i].indices);
-				std::copy(data.valptr + data.rowptr[i], data.valptr + data.rowptr[i + 1], mat[i].entries);
+			if (pool == nullptr) {
+				for (size_t i = 0; i < data.dims[0]; i++) {
+					auto nz = data.rowptr[i + 1] - data.rowptr[i];
+					mat[i].reserve(nz);
+					mat[i].resize(nz);
+					std::copy(data.colptr + data.rowptr[i], data.colptr + data.rowptr[i + 1], mat[i].indices);
+					std::copy(data.valptr + data.rowptr[i], data.valptr + data.rowptr[i + 1], mat[i].entries);
+				}
+			} 
+			else {
+				pool->detach_loop(0, data.dims[0], [&](size_t i) {
+					auto nz = data.rowptr[i + 1] - data.rowptr[i];
+					mat[i].reserve(nz);
+					mat[i].resize(nz);
+					std::copy(data.colptr + data.rowptr[i], data.colptr + data.rowptr[i + 1], mat[i].indices);
+					std::copy(data.valptr + data.rowptr[i], data.valptr + data.rowptr[i + 1], mat[i].entries);
+				});
+				pool->wait();
 			}
 			return mat;
 		}
 
-		sparse_tensor(const sparse_mat<T, index_t>& mat) {
-			convert_from_sparse_mat(mat);
+		sparse_tensor(const sparse_mat<T, index_t>& mat, thread_pool* pool = nullptr) {
+			convert_from_sparse_mat(mat, pool);
 		}
 
 		sparse_tensor& operator=(const sparse_mat<T, index_t>& mat) {
@@ -1299,7 +1323,7 @@ namespace SparseRREF {
 			return B;
 		}
 
-		sparse_mat<T, index_t> to_sparse_mat(const bool sort_ind = true) {
+		sparse_mat<T, index_t> to_sparse_mat(const bool sort_ind = true, thread_pool* pool = nullptr) {
 			if (rank() != 2) {
 				std::cerr << "sparse_tensor.to_sparse_mat: rank must be 2" << std::endl;
 				return sparse_mat<T, index_t>();
@@ -1311,15 +1335,30 @@ namespace SparseRREF {
 			auto rptr = rowptr();
 
 			sparse_mat<T, index_t> mat(r, c);
-			for (size_t i = 0; i < r; i++) {
-				auto nz = rptr[i + 1] - rptr[i];
-				mat[i].reserve(nz);
-				mat[i].resize(nz);
-				std::copy(data.valptr + rptr[i], data.valptr + rptr[i + 1], mat[i].entries);
-				// skip the first index, which is the row index
-				auto ptr = index(rptr[i]) + 1;
-				for (size_t j = 0; j < nz; j++)
-					mat[i].indices[j] = ptr[2 * j];
+			if (pool == nullptr) {
+				for (size_t i = 0; i < r; i++) {
+					auto nz = rptr[i + 1] - rptr[i];
+					mat[i].reserve(nz);
+					mat[i].resize(nz);
+					std::copy(data.valptr + rptr[i], data.valptr + rptr[i + 1], mat[i].entries);
+					// skip the first index, which is the row index
+					auto ptr = index(rptr[i]) + 1;
+					for (size_t j = 0; j < nz; j++)
+						mat[i].indices[j] = ptr[2 * j];
+				}
+			}
+			else {
+				pool->detach_loop(0, r, [&](size_t i) {
+					auto nz = rptr[i + 1] - rptr[i];
+					mat[i].reserve(nz);
+					mat[i].resize(nz);
+					std::copy(data.valptr + rptr[i], data.valptr + rptr[i + 1], mat[i].entries);
+					// skip the first index, which is the row index
+					auto ptr = index(rptr[i]) + 1;
+					for (size_t j = 0; j < nz; j++)
+						mat[i].indices[j] = ptr[2 * j];
+				});
+				pool->wait();
 			}
 			return mat;
 		}
@@ -1506,8 +1545,8 @@ namespace SparseRREF {
 			data.rank++;
 		}
 
-		sparse_tensor(const sparse_mat<T, index_t>& mat) {
-			*this = sparse_tensor<T, index_t, SPARSE_CSR>(mat);
+		sparse_tensor(const sparse_mat<T, index_t>& mat, thread_pool* pool = nullptr) {
+			*this = sparse_tensor<T, index_t, SPARSE_CSR>(mat, pool);
 		}
 
 		sparse_tensor& operator=(const sparse_mat<T, index_t>& mat) {
