@@ -48,6 +48,7 @@
 #include <functional>
 #include <vector>
 #include <string>
+#include <string_view>
 #include <cstdint>
 #include <cstring>
 #include <variant>
@@ -182,7 +183,7 @@ namespace WXF_PARSER {
 		}
 
 		// symbol/bigint/string/binary_string, length, str
-		TOKEN(WXF_HEAD t, const std::string& s) : type(t), rank(0) {
+		TOKEN(WXF_HEAD t, const std::string_view s) : type(t), rank(0) {
 			length = s.size();
 			str = (char*)malloc(length + 1);
 			std::memcpy(str, s.data(), length);
@@ -603,28 +604,25 @@ namespace WXF_PARSER {
 		auto& token = tokens[node.index];
 
 		uint8_t short_buffer[16];
-		auto toVarint = [&](uint64_t value) {
+		auto push_varint = [&](uint64_t value) {
 			uint8_t len = 0;
 			auto tmp_val = value;
 			while (tmp_val > 0) {
 				uint8_t byte = tmp_val & 127;
 				tmp_val >>= 7;
-				if (tmp_val > 0) byte |= 128; // set the continuation bit
+				if (tmp_val > 0) byte |= 128;
 				short_buffer[len] = byte;
 				len++;
 			}
-			return len; // return the length of the varint
+			res.insert(res.end(), short_buffer, short_buffer + len);
 			};
 
-		auto push_symbol = [&](const std::string& str) {
+		auto push_symbol = [&](const std::string_view str) {
 			res.push_back(WXF_PARSER::symbol); res.push_back(str.size());
 			res.insert(res.end(), str.begin(), str.end());
 			};
-		auto push_varint = [&](uint64_t size) {
-			auto len = toVarint(size);
-			res.insert(res.end(), short_buffer, short_buffer + len);
-			};
-		auto push_function = [&](const std::string& symbol, uint64_t size) {
+
+		auto push_function = [&](const std::string_view symbol, uint64_t size) {
 			res.push_back(WXF_PARSER::func);
 			push_varint(size);
 			push_symbol(symbol);
