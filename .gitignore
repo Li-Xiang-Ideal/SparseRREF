@@ -413,3 +413,6 @@ FodyWeavers.xsd
 
 # VS Code settings
 .vscode/
+
+# Mathematica Header files
+mma/
