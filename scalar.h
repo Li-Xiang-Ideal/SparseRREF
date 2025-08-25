@@ -459,6 +459,7 @@ namespace SparseRREF {
 	static inline ulong scalar_neg(const ulong b, const field_t& field) {
 		return field.mod.n - b;
 	}
+	static inline int_t scalar_neg(const int_t& b, const field_t& field) { return -b; }
 	static inline rat_t scalar_neg(const rat_t& b, const field_t& field) { return -b; }
 
 	static inline ulong scalar_inv(const ulong b, const field_t& field) {
@@ -469,18 +470,24 @@ namespace SparseRREF {
 	static inline ulong scalar_add(const ulong b, const ulong c, const field_t& field) {
 		return _nmod_add(b, c, field.mod);
 	}
+	static inline int_t scalar_add(const int_t& b, const int_t& c, const field_t& field) { return b + c; }
+	static inline int_t scalar_add(int_t&& b, const int_t& c, const field_t& field) { b += c; return b; }
 	static inline rat_t scalar_add(const rat_t& b, const rat_t& c, const field_t& field) { return b + c; }
 	static inline rat_t scalar_add(rat_t&& b, const rat_t& c, const field_t& field) { b += c; return b; }
 
 	static inline ulong scalar_sub(const ulong b, const ulong c, const field_t& field) {
 		return _nmod_sub(b, c, field.mod);
 	}
+	static inline int_t scalar_sub(const int_t& b, const int_t& c, const field_t& field) { return b - c; }
+	static inline int_t scalar_sub(int_t&& b, const int_t& c, const field_t& field) { b -= c; return b; }
 	static inline rat_t scalar_sub(const rat_t& b, const rat_t& c, const field_t& field) { return b - c; }
 	static inline rat_t scalar_sub(rat_t&& b, const rat_t& c, const field_t& field) { b -= c; return b; }
 
 	static inline ulong scalar_mul(const ulong b, const ulong c, const field_t& field) {
 		return nmod_mul(b, c, field.mod);
 	}
+	static inline int_t scalar_mul(const int_t& b, const int_t& c, const field_t& field) { return b * c; }
+	static inline int_t scalar_mul(int_t&& b, const int_t& c, const field_t& field) { b *= c; return b; }
 	static inline rat_t scalar_mul(const rat_t& b, const rat_t& c, const field_t& field) { return b * c; }
 	static inline rat_t scalar_mul(rat_t&& b, const rat_t& c, const field_t& field) { b *= c; return b; }
 
