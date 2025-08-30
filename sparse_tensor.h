@@ -1175,9 +1175,9 @@ namespace SparseRREF {
 
 		auto rank = tensor.rank();
 		auto nnz = tensor.nnz();
+		const auto& dims = tensor.dims();
 		
 		{
-			const auto& dims = tensor.dims();
 			TOKEN token(array, { rank }, 3, rank);
 			for (auto i = 0; i < rank; i++) {
 				token.i_arr[i] = dims[i];
@@ -1199,12 +1199,38 @@ namespace SparseRREF {
 			token.to_ustr(res);
 		}
 
+		//{
+		//	TOKEN token(array, { nnz, rank - 1 }, 3, (rank - 1) * nnz);
+		//	for (auto i = 0; i < (rank - 1) * nnz; i++) {
+		//		token.i_arr[i] = tensor.data.colptr[i] + 1; // mma is 1-based
+		//	}
+		//	token.to_ustr(res);
+		//}
+
 		{
-			TOKEN token(array, { nnz, rank - 1 }, 3, (rank - 1) * nnz);
-			for (auto i = 0; i < (rank - 1) * nnz; i++) {
-				token.i_arr[i] = tensor.data.colptr[i] + 1; // mma is 1-based
-			}
+			auto mz = minimal_pos_signed_bits(1 + *std::max_element(dims.begin() + 1, dims.end()));
+
+			TOKEN token(array, { nnz, rank - 1 }, mz, (rank - 1) * nnz, false);
 			token.to_ustr(res);
+
+#define APPEND_COLIND_DATA(TYPE)                                        \
+    {                                                                   \
+        std::vector<TYPE> tmp((rank - 1) * nnz);                        \
+        for (size_t i = 0; i < tmp.size(); i++)                         \
+            tmp[i] = tensor.data.colptr[i] + 1;                         \
+        res.insert(res.end(),                                           \
+                   (uint8_t*)(tmp.data()),                              \
+                   (uint8_t*)(tmp.data()) + tmp.size() * sizeof(TYPE)); \
+    }
+
+			switch (mz) {
+			case 0: APPEND_COLIND_DATA(int8_t); break;
+			case 1: APPEND_COLIND_DATA(int16_t); break;
+			case 2: APPEND_COLIND_DATA(int32_t); break;
+			case 3: APPEND_COLIND_DATA(int64_t); break;
+			case 4: std::cerr << "Error: sparse_tensor_write_wxf: too large dimension" << std::endl; break;
+			}
+#undef APPEND_COLIND_DATA
 		}
 
 		auto push_int = [&](const int_t& val) {
@@ -1216,6 +1242,8 @@ namespace SparseRREF {
 
 		if constexpr (std::is_same_v<T, rat_t>) {
 			push_func("List", nnz);
+			// func,2,symbol,8,"Rational"
+			constexpr uint8_t func_rational[] = "f\x02s\x08Rational";
 			for (size_t i = 0; i < nnz; i++) {
 				T& val = tensor.val(i);
 				int_t num = val.num();
@@ -1223,7 +1251,7 @@ namespace SparseRREF {
 				if (den == 1) 
 					push_int(num);
 				else {
-					push_func("Rational", 2);
+					res.insert(res.end(), func_rational, func_rational + sizeof(func_rational) - 1); // -1 for '\0'
 					push_int(num);
 					push_int(den);
 				}

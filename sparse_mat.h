@@ -2160,157 +2160,6 @@ namespace SparseRREF {
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	template <typename T, typename index_t>
-	std::vector<uint8_t> sparse_mat_write_wxf(const sparse_mat<T, index_t>& mat, bool include_head = true) {
-		std::vector<uint8_t> buffer;
-		std::vector<uint8_t> short_buffer;
-		short_buffer.reserve(16);
-		uint64_t mat_nnz = mat.nnz();
-		buffer.reserve(mat_nnz * 16); // reserve some space for the data
-		std::string tmp_str;
-		tmp_str.reserve(256);
-
-		using WXF_PARSER::serialize_binary;
-
-		auto toVarint = [&](uint64_t value) {
-			short_buffer.clear();
-			auto tmp_val = value;
-			while (tmp_val > 0) {
-				uint8_t byte = tmp_val & 127;
-				tmp_val >>= 7;
-				if (tmp_val > 0) byte |= 128; // set the continuation bit
-				short_buffer.push_back(byte);
-			}
-			};
-
-		auto push_symbol = [&](const std::string_view str) {
-			buffer.push_back(WXF_PARSER::symbol); buffer.push_back(str.size());
-			buffer.insert(buffer.end(), str.begin(), str.end());
-			};
-		auto push_varint = [&](uint64_t size) {
-			toVarint(size);
-			buffer.insert(buffer.end(), short_buffer.begin(), short_buffer.end());
-			};
-		auto push_function = [&](const std::string_view symbol, uint64_t size) {
-			buffer.push_back(WXF_PARSER::func); 
-			push_varint(size);
-			push_symbol(symbol);
-			};
-		auto push_integer = [&](const int_t& num) {
-			if (num.fits_si()) {
-				// int64_t int
-				buffer.push_back(WXF_PARSER::i64);
-				serialize_binary(buffer, num.to_si());
-			}
-			else {
-				// big integer
-				buffer.push_back(WXF_PARSER::bigint);
-				std::string str = num.get_str();
-				push_varint(str.size());
-				auto old_size = buffer.size();
-				buffer.resize(old_size + str.size());
-				std::memcpy(buffer.data() + old_size, str.data(), str.size());
-			}
-			};
-
-		// header
-		if (include_head) {
-			buffer.push_back(56); buffer.push_back(58);
-		}
-		// function, 4, "SparseArray"
-		push_function("SparseArray", 4);
-		// symbol, 9, "Automatic"
-		push_symbol("Automatic");
-
-		// dims
-		buffer.push_back(WXF_PARSER::array); 
-		int bit_len = std::countr_zero(sizeof(size_t) / sizeof(char));
-		buffer.push_back(bit_len); // 3 for int64_t, 2 for int32_t ...
-		buffer.push_back(1); // rank 1
-		buffer.push_back(2); // 2 for 2D array
-		serialize_binary(buffer, mat.nrow);
-		serialize_binary(buffer, mat.ncol);
-		// implicit value, 0
-		buffer.push_back(WXF_PARSER::i8); buffer.push_back(0);
-		// function, List, 3
-		push_function("List", 3);
-		// i8, 1
-		buffer.push_back(WXF_PARSER::i8); buffer.push_back(1);
-		// function, List, 2
-		push_function("List", 2);
-
-		// rowptr
-		buffer.push_back(WXF_PARSER::array);
-		bit_len = std::countr_zero(sizeof(size_t) / sizeof(char));
-		buffer.push_back(bit_len); // 3 for int64_t, 2 for int32_t ...
-		buffer.push_back(1); // rank 1
-		push_varint(mat.nrow + 1);
-		uint64_t tmp_rowptr = 0;
-		serialize_binary(buffer, tmp_rowptr);
-		for (size_t i = 0; i < mat.nrow; i++) {
-			tmp_rowptr += mat[i].nnz();
-			serialize_binary(buffer, tmp_rowptr);
-		}
-
-		// colindex
-		buffer.push_back(WXF_PARSER::array);
-		bit_len = std::countr_zero(sizeof(index_t) / sizeof(char));
-		buffer.push_back(bit_len); // 3 for int64_t, 2 for int32_t ...
-		buffer.push_back(2); // rank 2
-		// {nnz,1}
-		push_varint(mat_nnz);
-		buffer.push_back(1);
-		// data of colindex
-		for (size_t i = 0; i < mat.nrow; i++) {
-			for (size_t j = 0; j < mat[i].nnz(); j++) {
-				serialize_binary(buffer, mat[i](j) + 1); // mathematica is 1-indexed
-			}
-		}
-
-		// vals
-		if constexpr (std::is_same_v<T, ulong>) {
-			buffer.push_back(WXF_PARSER::array);
-			bit_len = std::countr_zero(sizeof(ulong) / sizeof(char));
-			buffer.push_back(bit_len); // 3 for int64_t, 2 for int32_t ...
-			// {1, nnz}
-			buffer.push_back(1); 
-			push_varint(mat_nnz);
-			// data of vals
-			for (size_t i = 0; i < mat.nrow; i++) {
-				auto old_size = buffer.size();
-				buffer.resize(old_size + mat[i].nnz() * sizeof(ulong));
-				std::memcpy(buffer.data() + old_size, mat[i].entries, mat[i].nnz() * sizeof(ulong));
-			}
-		}
-		else if constexpr (std::is_same_v<T, rat_t>) {
-			// use List to store the vals
-			// function, List, nnz
-			push_function("List", mat_nnz);
-
-			// data of vals
-			for (size_t i = 0; i < mat.nrow; i++) {
-				for (size_t j = 0; j < mat[i].nnz(); j++) {
-					rat_t rat_val = mat[i][j];
-					int_t num = rat_val.num();
-					int_t den = rat_val.den();
-					if (den == 1) {
-						push_integer(num);
-					}
-					else {
-						// function, Rational, 2
-						push_function("Rational", 2);
-						push_integer(num);
-						push_integer(den);
-					}
-				}
-			}
-		}
-
-		buffer.shrink_to_fit();
-		return buffer;
-	}
-
-	// new version, using to_ustr for TOKEN
-	template <typename T, typename index_t>
 	std::vector<uint8_t> sparse_mat_write_wxf_n(const sparse_mat<T, index_t>& mat, bool include_head = true) {
 		using namespace WXF_PARSER;
 
@@ -2355,15 +2204,34 @@ namespace SparseRREF {
 		}
 
 		{
-			TOKEN token(array, { nnz, rank - 1 }, 3, (rank - 1) * nnz);
-			size_t idx = 0;
-			for (size_t i = 0; i < mat.nrow; i++) {
-				for (size_t j = 0; j < mat[i].nnz(); j++) {
-					token.i_arr[idx] = mat[i](j) + 1; // mathematica is 1-indexed
-					idx++;
-				}
-			}
+			auto mz = minimal_pos_signed_bits(mat.ncol);
+
+			TOKEN token(array, { nnz, rank - 1 }, mz, (rank - 1) * nnz, false);
 			token.to_ustr(res);
+
+#define APPEND_COLIND_DATA(TYPE)                                        \
+    {                                                                   \
+        std::vector<TYPE> tmp((rank - 1) * nnz);                        \
+        size_t idx = 0;                                                 \
+		for (size_t i = 0; i < mat.nrow; i++) {                         \
+			for (size_t j = 0; j < mat[i].nnz(); j++) {                 \
+				tmp[idx] = mat[i](j) + 1;                               \
+				idx++;                                                  \
+			}                                                           \
+		}                                                               \
+        res.insert(res.end(),                                           \
+                   (uint8_t*)(tmp.data()),                              \
+                   (uint8_t*)(tmp.data()) + tmp.size() * sizeof(TYPE)); \
+    }
+
+			switch (mz) {
+			case 0: APPEND_COLIND_DATA(int8_t); break;
+			case 1: APPEND_COLIND_DATA(int16_t); break;
+			case 2: APPEND_COLIND_DATA(int32_t); break;
+			case 3: APPEND_COLIND_DATA(int64_t); break;
+			case 4: std::cerr << "Error: sparse_tensor_write_wxf: too large dimension" << std::endl; break;
+			}
+#undef APPEND_COLIND_DATA
 		}
 
 		auto push_int = [&](const int_t& val) {
@@ -2375,6 +2243,8 @@ namespace SparseRREF {
 
 		if constexpr (std::is_same_v<T, rat_t>) {
 			push_func("List", nnz);
+			// func,2,symbol,8,"Rational"
+			constexpr uint8_t func_rational[] = "f\x02s\x08Rational";
 			for (size_t i = 0; i < mat.nrow; i++) {
 				for (size_t j = 0; j < mat[i].nnz(); j++) {
 					rat_t rat_val = mat[i][j];
@@ -2384,7 +2254,7 @@ namespace SparseRREF {
 						push_int(num);
 					}
 					else {
-						push_func("Rational", 2);
+						res.insert(res.end(), func_rational, func_rational + sizeof(func_rational) - 1); // -1 for '\0'
 						push_int(num);
 						push_int(den);
 					}
