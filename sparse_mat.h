@@ -2160,7 +2160,7 @@ namespace SparseRREF {
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	template <typename T, typename index_t>
-	std::vector<uint8_t> sparse_mat_write_wxf_n(const sparse_mat<T, index_t>& mat, bool include_head = true) {
+	std::vector<uint8_t> sparse_mat_write_wxf(const sparse_mat<T, index_t>& mat, bool include_head = true) {
 		using namespace WXF_PARSER;
 
 		std::vector<uint8_t> res;
