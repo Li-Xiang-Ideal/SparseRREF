@@ -2159,7 +2159,6 @@ namespace SparseRREF {
 	}
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
-	// TODO: more check!!!
 	template <typename T, typename index_t>
 	std::vector<uint8_t> sparse_mat_write_wxf(const sparse_mat<T, index_t>& mat, bool include_head = true) {
 		std::vector<uint8_t> buffer;
@@ -2308,6 +2307,109 @@ namespace SparseRREF {
 
 		buffer.shrink_to_fit();
 		return buffer;
+	}
+
+	// new version, using to_ustr for TOKEN
+	template <typename T, typename index_t>
+	std::vector<uint8_t> sparse_mat_write_wxf_n(const sparse_mat<T, index_t>& mat, bool include_head = true) {
+		using namespace WXF_PARSER;
+
+		std::vector<uint8_t> res;
+		res.reserve(mat.nnz() * 8);
+
+		if (include_head) {
+			res.push_back(56); // WXF head
+			res.push_back(58); // WXF head
+		}
+
+		auto push_func = [&res](const std::string_view str, size_t size) {
+			TOKEN(func, size).to_ustr(res);
+			TOKEN(symbol, str).to_ustr(res);
+			};
+
+		push_func("SparseArray", 4);
+		TOKEN(symbol, "Automatic").to_ustr(res);
+
+		size_t rank = 2;
+		size_t nnz = mat.nnz();
+
+		{
+			TOKEN token(array, { 2 }, 3, 2);
+			token.i_arr[0] = mat.nrow;
+			token.i_arr[1] = mat.ncol;
+			token.to_ustr(res);
+		}
+
+		TOKEN(i8, 0).to_ustr(res);
+		push_func("List", 3);
+		TOKEN(i8, 1).to_ustr(res);
+		push_func("List", 2);
+
+		{
+			TOKEN token(array, { mat.nrow + 1 }, 3, mat.nrow + 1);
+			token.i_arr[0] = 0;
+			for (size_t i = 0; i < mat.nrow; i++) {
+				token.i_arr[i + 1] = token.i_arr[i] + mat[i].nnz();
+			}
+			token.to_ustr(res);
+		}
+
+		{
+			TOKEN token(array, { nnz, rank - 1 }, 3, (rank - 1) * nnz);
+			size_t idx = 0;
+			for (size_t i = 0; i < mat.nrow; i++) {
+				for (size_t j = 0; j < mat[i].nnz(); j++) {
+					token.i_arr[idx] = mat[i](j) + 1; // mathematica is 1-indexed
+					idx++;
+				}
+			}
+			token.to_ustr(res);
+		}
+
+		auto push_int = [&](const int_t& val) {
+			if (val.fits_si())
+				TOKEN(i64, val.to_si()).to_ustr(res);
+			else
+				TOKEN(bigint, val.get_str()).to_ustr(res);
+			};
+
+		if constexpr (std::is_same_v<T, rat_t>) {
+			push_func("List", nnz);
+			for (size_t i = 0; i < mat.nrow; i++) {
+				for (size_t j = 0; j < mat[i].nnz(); j++) {
+					rat_t rat_val = mat[i][j];
+					int_t num = rat_val.num();
+					int_t den = rat_val.den();
+					if (den == 1) {
+						push_int(num);
+					}
+					else {
+						push_func("Rational", 2);
+						push_int(num);
+						push_int(den);
+					}
+				}
+			}
+		}
+		else if constexpr (std::is_same_v<T, int_t>) {
+			push_func("List", nnz);
+			for (size_t i = 0; i < mat.nrow; i++) {
+				for (size_t j = 0; j < mat[i].nnz(); j++) 
+					push_int(mat[i][j]);
+			}
+		}
+		else if constexpr (std::is_same_v<T, ulong>) {
+			// TODO: there's no need to copy to a token first
+			TOKEN token(narray, { nnz }, 19, nnz);
+			size_t idx = 0;
+			for (size_t i = 0; i < mat.nrow; i++) {
+				std::memcpy(token.u_arr + idx, mat[i].entries, mat[i].nnz() * sizeof(ulong));
+				idx += mat[i].nnz();
+			}
+			token.to_ustr(res);
+		}
+
+		return res;
 	}
 
 	template <typename T, typename S, typename index_t>

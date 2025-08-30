@@ -1154,101 +1154,95 @@ namespace SparseRREF {
 	// TODO...
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	template <typename T, typename index_t>
-	std::vector<uint8_t> sparse_tensor_write_wxf(const sparse_tensor<T, index_t, SPARSE_CSR>& tensor) {
-		// build a tree
-
+	std::vector<uint8_t> sparse_tensor_write_wxf(const sparse_tensor<T, index_t, SPARSE_CSR>& tensor, bool include_head = true) {
 		using namespace WXF_PARSER;
 
-		ExprTree tree;
-		auto& tokens = tree.tokens;
-		auto& root = tree.root;
-		tokens.emplace_back(symbol, "SparseArray");
-		root = ExprNode(tokens.size() - 1, 4, func);
+		std::vector<uint8_t> res;
+		res.reserve(tensor.nnz() * 8);
 
-		tokens.emplace_back(symbol, "Automatic");
-		root[0] = ExprNode(tokens.size() - 1, 0, symbol);
+		if (include_head) {
+			res.push_back(56); // WXF head
+			res.push_back(58); // WXF head
+		}
+		
+		auto push_func = [&res](const std::string_view str, size_t size) {
+			TOKEN(func, size).to_ustr(res);
+			TOKEN(symbol, str).to_ustr(res);
+			};
+
+		push_func("SparseArray", 4);
+		TOKEN(symbol, "Automatic").to_ustr(res);
 
 		auto rank = tensor.rank();
 		auto nnz = tensor.nnz();
-		auto tensor_dims = tensor.dims();
-
-		tokens.push_back(TOKEN(array, { tensor.rank() }, 3, tensor.rank()));
-		auto ptr = tokens.back().i_arr;
-		for (auto i = 0; i < tensor.rank(); i++) {
-			ptr[i] = tensor_dims[i];
+		
+		{
+			const auto& dims = tensor.dims();
+			TOKEN token(array, { rank }, 3, rank);
+			for (auto i = 0; i < rank; i++) {
+				token.i_arr[i] = dims[i];
+			}
+			token.to_ustr(res);
 		}
-		root[1] = ExprNode(tokens.size() - 1, 0, array);
 
-		tokens.emplace_back(i8, 0);
-		root[2] = ExprNode(tokens.size() - 1, 0, i8);
+		TOKEN(i8, 0).to_ustr(res);
+		push_func("List", 3);
+		TOKEN(i8, 1).to_ustr(res);
+		push_func("List", 2);
 
-		tokens.emplace_back(symbol, "List");
-		root[3] = ExprNode(tokens.size() - 1, 3, func);
-
-		tokens.emplace_back(i8, 1);
-		root[3][0] = ExprNode(tokens.size() - 1, 0, i8);
-
-		tokens.emplace_back(symbol, "List");
-		root[3][1] = ExprNode(tokens.size() - 1, 2, func);
-
-		auto& rowptr = tensor.data.rowptr;
-		tokens.push_back(TOKEN(array, { rowptr.size() }, 3, rowptr.size()));
-		ptr = tokens.back().i_arr;
-		for (size_t i = 0; i < rowptr.size(); i++) {
-			ptr[i] = rowptr[i];
+		const auto& rowptr = tensor.data.rowptr;
+		{
+			TOKEN token(array, { rowptr.size() }, 3, rowptr.size());
+			for (size_t i = 0; i < rowptr.size(); i++) {
+				token.i_arr[i] = rowptr[i];
+			}
+			token.to_ustr(res);
 		}
-		root[3][1][0] = ExprNode(tokens.size() - 1, 0, array);
 
-		auto colptr_size = (tensor.rank() - 1) * nnz;
-		tokens.push_back(TOKEN(array, { nnz, rank - 1 }, 3, colptr_size));
-		ptr = tokens.back().i_arr;
-		for (size_t i = 0; i < colptr_size; i++) {
-			ptr[i] = tensor.data.colptr[i] + 1; // mma is 1-base
+		{
+			TOKEN token(array, { nnz, rank - 1 }, 3, (rank - 1) * nnz);
+			for (auto i = 0; i < (rank - 1) * nnz; i++) {
+				token.i_arr[i] = tensor.data.colptr[i] + 1; // mma is 1-based
+			}
+			token.to_ustr(res);
 		}
-		root[3][1][1] = ExprNode(tokens.size() - 1, 0, array);
 
 		auto push_int = [&](const int_t& val) {
-			if (val.fits_si()) {
-				tokens.emplace_back(i64, val.to_si());
-				return i64;
-			}
-			else {
-				tokens.emplace_back(bigint, val.get_str());
-				return bigint;
-			}
+			if (val.fits_si()) 
+				TOKEN(i64, val.to_si()).to_ustr(res);
+			else 
+				TOKEN(bigint, val.get_str()).to_ustr(res);
 			};
 
 		if constexpr (std::is_same_v<T, rat_t>) {
-			tokens.emplace_back(symbol, "List");
-			root[3][2] = ExprNode(tokens.size() - 1, nnz, func);
+			push_func("List", nnz);
 			for (size_t i = 0; i < nnz; i++) {
-				T& val = tensor.data.valptr[i];
+				T& val = tensor.val(i);
 				int_t num = val.num();
 				int_t den = val.den();
-				if (den == 1) {
-					auto tt = push_int(num);
-					root[3][2][i] = ExprNode(tokens.size() - 1, 0, tt);
-				}
+				if (den == 1) 
+					push_int(num);
 				else {
-					tokens.emplace_back(symbol, "Rational");
-					root[3][2][i] = ExprNode(tokens.size() - 1, 2, func);
-					auto tt = push_int(num);
-					root[3][2][i][0] = ExprNode(tokens.size() - 1, 0, tt);
-					tt = push_int(den);
-					root[3][2][i][1] = ExprNode(tokens.size() - 1, 0, tt);
+					push_func("Rational", 2);
+					push_int(num);
+					push_int(den);
 				}
+			}
+		}
+		else if constexpr (std::is_same_v<T, int_t>) {
+			push_func("List", nnz);
+			for (size_t i = 0; i < nnz; i++) {
+				push_int(tensor.val(i));
 			}
 		}
 		else if constexpr (std::is_same_v<T, ulong>) {
-			tokens.push_back(TOKEN(narray, { nnz }, 19, nnz));
-			auto ptr = tokens.back().u_arr;
-			for (size_t i = 0; i < nnz; i++) {
-				ptr[i] = tensor.data.valptr[i];
-			}
-			root[3][2] = ExprNode(tokens.size() - 1, 0, narray);
+			// TODO: there's no need to copy to a token first
+			TOKEN token(narray, { nnz }, 19, nnz);
+			std::memcpy(token.u_arr, tensor.data.valptr, nnz * sizeof(ulong));
+			token.to_ustr(res);
 		}
 
-		return tree.to_ustr();
+		return res;
 	}
 
 } // namespace SparseRREF

@@ -196,7 +196,7 @@ namespace SparseRREF {
 		return result;
 	}
 
-	void u8str_write(const std::filesystem::path file, const std::vector<uint8_t>& str) {
+	void ustr_write(const std::filesystem::path file, const std::vector<uint8_t>& str) {
 		std::ofstream ofs(file, std::ios::binary);
 		if (!ofs.is_open()) {
 			std::cerr << "Error: u8str_write: file not open." << std::endl;
