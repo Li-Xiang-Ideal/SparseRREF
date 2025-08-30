@@ -101,6 +101,7 @@ namespace WXF_PARSER {
 	}
 
 	template <typename T>
+	requires std::is_integral_v<T>&& std::is_signed_v<T>
 	inline uint8_t minimal_signed_bits(T x) noexcept {
 		if (x >= INT8_MIN && x <= INT8_MAX) return 0;
 		if (x >= INT16_MIN && x <= INT16_MAX) return 1;
@@ -108,7 +109,18 @@ namespace WXF_PARSER {
 		return 3; // for int64_t
 	}
 
+	// for positive signed/unsigned integer
 	template <typename T>
+	inline uint8_t minimal_pos_signed_bits(T x) noexcept {
+		if (x <= INT8_MAX) return 0;
+		if (x <= INT16_MAX) return 1;
+		if (x <= INT32_MAX) return 2;
+		if (x <= INT64_MAX) return 3;
+		return 4; // for uint64_t
+	}
+
+	template <typename T>
+	requires std::is_integral_v<T>&& std::is_unsigned_v<T>
 	inline uint8_t minimal_unsigned_bits(T x) noexcept {
 		if (x <= UINT8_MAX) return 0;
 		if (x <= UINT16_MAX) return 1;
@@ -232,7 +244,10 @@ namespace WXF_PARSER {
 		TOKEN(WXF_HEAD t, uint64_t len) : type(t), rank(0), i(0), length(len) {}
 
 		// array/narray
-		TOKEN(WXF_HEAD t, const std::vector<size_t>& dims, int num_type, size_t len) : type(t) {
+		// with_arr: whether to allocate the i_arr/u_arr, default true
+		//	         otherwise, the user may want to use the existing data pointer, 
+		//           or only use it for dimensions
+		TOKEN(WXF_HEAD t, const std::vector<size_t>& dims, int num_type, size_t len, bool with_arr = true) : type(t) {
 			int r = dims.size();
 			rank = r;
 			dimensions = (uint64_t*)malloc((r + 2) * sizeof(uint64_t));
@@ -241,7 +256,10 @@ namespace WXF_PARSER {
 			for (auto i = 0; i < r; i++) {
 				dimensions[i + 2] = dims[i];
 			}
-			i_arr = (int64_t*)malloc(len * sizeof(int64_t));
+			if (with_arr)
+				i_arr = (int64_t*)malloc(len * sizeof(int64_t));
+			else
+				i_arr = nullptr;
 		}
 
 		void to_ustr(std::vector<uint8_t>& res) const {
@@ -306,6 +324,8 @@ namespace WXF_PARSER {
 				for (auto i = 0; i < token.rank; i++) {
 					serialize_varint(res, token.dimensions[i + 2]);
 				}
+				if (token.i_arr == nullptr)
+					break;
 				if (token.dimensions[0] == 3) {
 					serialize_binary(res, token.i_arr, token.dimensions[1]);
 				}
@@ -386,6 +406,8 @@ namespace WXF_PARSER {
 
 				auto num_type = token.dimensions[0];
 				ss << "data: ";
+				if (token.i_arr == nullptr)
+					break;
 				if (num_type < 4) {
 					for (size_t i = 0; i < all_len; i++) {
 						ss << token.i_arr[i] << " ";
@@ -413,6 +435,8 @@ namespace WXF_PARSER {
 				size_t all_len = token.dimensions[1];
 
 				ss << "data: ";
+				if (token.i_arr == nullptr) 
+					break;
 				if (num_type >= 16 && num_type < 20) {
 					for (size_t i = 0; i < all_len; i++)
 						ss << token.u_arr[i] << " ";
