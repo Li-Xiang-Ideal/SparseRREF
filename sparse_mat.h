@@ -2269,14 +2269,12 @@ namespace SparseRREF {
 			}
 		}
 		else if constexpr (std::is_same_v<T, ulong>) {
-			// TODO: there's no need to copy to a token first
-			TOKEN token(narray, { nnz }, 19, nnz);
-			size_t idx = 0;
-			for (size_t i = 0; i < mat.nrow; i++) {
-				std::memcpy(token.u_arr + idx, mat[i].entries, mat[i].nnz() * sizeof(ulong));
-				idx += mat[i].nnz();
-			}
+			TOKEN token(narray, { nnz }, 19, nnz, false);
 			token.to_ustr(res);
+			for (size_t i = 0; i < mat.nrow; i++) {
+				res.insert(res.end(), (uint8_t*)(mat[i].entries),
+					(uint8_t*)(mat[i].entries + mat[i].nnz()));
+			}
 		}
 
 		return res;

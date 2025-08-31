@@ -1199,14 +1199,6 @@ namespace SparseRREF {
 			token.to_ustr(res);
 		}
 
-		//{
-		//	TOKEN token(array, { nnz, rank - 1 }, 3, (rank - 1) * nnz);
-		//	for (auto i = 0; i < (rank - 1) * nnz; i++) {
-		//		token.i_arr[i] = tensor.data.colptr[i] + 1; // mma is 1-based
-		//	}
-		//	token.to_ustr(res);
-		//}
-
 		{
 			auto mz = minimal_pos_signed_bits(1 + *std::max_element(dims.begin() + 1, dims.end()));
 
@@ -1264,10 +1256,9 @@ namespace SparseRREF {
 			}
 		}
 		else if constexpr (std::is_same_v<T, ulong>) {
-			// TODO: there's no need to copy to a token first
-			TOKEN token(narray, { nnz }, 19, nnz);
-			std::memcpy(token.u_arr, tensor.data.valptr, nnz * sizeof(ulong));
+			TOKEN token(narray, { nnz }, 19, nnz, false);
 			token.to_ustr(res);
+			res.insert(res.end(), (uint8_t*)(tensor.data.valptr), (uint8_t*)(tensor.data.valptr + nnz));
 		}
 
 		return res;
