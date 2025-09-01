@@ -55,7 +55,7 @@
 
 namespace WXF_PARSER {
 
-	enum WXF_HEAD {
+	enum class WXF_HEAD {
 		// function type
 		func = 102,
 		association = 65,
@@ -273,19 +273,19 @@ namespace WXF_PARSER {
 				auto num_type = minimal_signed_bits(token.i);
 				switch (num_type) {
 				case 0:
-					res.push_back(WXF_HEAD::i8);
+					res.push_back((uint8_t)WXF_HEAD::i8);
 					serialize_binary(res, (int8_t)token.i);
 					break;
 				case 1:
-					res.push_back(WXF_HEAD::i16);
+					res.push_back((uint8_t)WXF_HEAD::i16);
 					serialize_binary(res, (int16_t)token.i);
 					break;
 				case 2:
-					res.push_back(WXF_HEAD::i32);
+					res.push_back((uint8_t)WXF_HEAD::i32);
 					serialize_binary(res, (int32_t)token.i);
 					break;
 				case 3:
-					res.push_back(WXF_HEAD::i64);
+					res.push_back((uint8_t)WXF_HEAD::i64);
 					serialize_binary(res, token.i);
 					break;
 				default:
@@ -294,31 +294,31 @@ namespace WXF_PARSER {
 				break;
 			}
 			case WXF_HEAD::f64:
-				res.push_back(WXF_HEAD::f64);
+				res.push_back((uint8_t)WXF_HEAD::f64);
 				serialize_binary(res, token.d);
 				break;
 			case WXF_HEAD::func:
 			case WXF_HEAD::association: {
-				res.push_back(token.type);
+				res.push_back((uint8_t)token.type);
 				serialize_varint(res, token.length);
 				break;
 			}
 			case WXF_HEAD::rule:
 			case WXF_HEAD::delay_rule:
-				res.push_back(token.type);
+				res.push_back((uint8_t)token.type);
 				break;
 			case WXF_HEAD::symbol:
 			case WXF_HEAD::bigint:
 			case WXF_HEAD::bigreal:
 			case WXF_HEAD::string:
 			case WXF_HEAD::binary_string:
-				res.push_back(token.type);
+				res.push_back((uint8_t)token.type);
 				serialize_varint(res, token.length);
 				res.insert(res.end(), token.str, token.str + token.length);
 				break;
 			case WXF_HEAD::array:
 			case WXF_HEAD::narray:
-				res.push_back(token.type);
+				res.push_back((uint8_t)token.type);
 				res.push_back(token.dimensions[0]);
 				serialize_varint(res, token.rank);
 				for (auto i = 0; i < token.rank; i++) {
@@ -563,12 +563,12 @@ namespace WXF_PARSER {
 					break;
 				case WXF_HEAD::array:
 				case WXF_HEAD::narray: {
-					int num_type = ReadVarint();
+					auto num_type = ReadVarint();
 					if (num_type > 50) {
 						std::cerr << "Unsupported type: " << num_type << std::endl;
 						break;
 					}
-					int r = ReadVarint();
+					auto r = ReadVarint();
 					std::vector<size_t> dims(r);
 					size_t all_len = 1;
 					for (int i = 0; i < r; i++) {
@@ -640,7 +640,7 @@ namespace WXF_PARSER {
 		std::unique_ptr<ExprNode[]> children; // the children of the node
 		WXF_HEAD type;
 
-		ExprNode() : index(0), size(0), children(nullptr), type(i8) {} // default constructor
+		ExprNode() : index(0), size(0), children(nullptr), type(WXF_HEAD::i8) {} // default constructor
 
 		ExprNode(size_t idx, size_t sz, WXF_HEAD t) : index(idx), size(sz), type(t) {
 			constexpr size_t MAX_ALLOC = std::numeric_limits<int64_t>::max();
@@ -659,7 +659,7 @@ namespace WXF_PARSER {
 			other.index = 0;
 			other.size = 0;
 			other.children = nullptr;
-			other.type = i8;
+			other.type = WXF_HEAD::i8;
 		}
 
 
@@ -673,7 +673,7 @@ namespace WXF_PARSER {
 				other.size = 0;
 				other.index = 0;
 				other.children = nullptr;
-				other.type = i8;
+				other.type = WXF_HEAD::i8;
 			}
 			return *this;
 		}
@@ -682,7 +682,7 @@ namespace WXF_PARSER {
 		void clear() {
 			index = 0;
 			size = 0;
-			type = i8;
+			type = WXF_HEAD::i8;
 			if (children) {
 				children.reset();
 			}
@@ -711,9 +711,9 @@ namespace WXF_PARSER {
 		switch (node.type) {
 		case WXF_HEAD::func:
 		case WXF_HEAD::association: 
-			res.push_back(node.type);
+			res.push_back((uint8_t)node.type);
 			serialize_varint(res, node.size);
-			res.push_back(token.type);
+			res.push_back((uint8_t)token.type);
 			serialize_varint(res, token.length);
 			res.insert(res.end(), token.str, token.str + token.length);
 			for (size_t i = 0; i < node.size; i++) {
@@ -722,7 +722,7 @@ namespace WXF_PARSER {
 			break;
 		case WXF_HEAD::rule:
 		case WXF_HEAD::delay_rule:
-			res.push_back(node.type);
+			res.push_back((uint8_t)node.type);
 			for (size_t i = 0; i < node.size; i++) {
 				node_to_ustr(res, tokens, node.children[i]);
 			}

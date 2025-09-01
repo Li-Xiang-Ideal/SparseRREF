@@ -229,21 +229,15 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 				res_str.insert(res_str.end(), m_str.begin(), m_str.end());
 				};
 			auto push_null = [&]() {
-				res_str.push_back(WXF_PARSER::WXF_HEAD::symbol);
+				res_str.push_back((uint8_t)WXF_PARSER::WXF_HEAD::symbol);
 				res_str.push_back(4); // length of Null
 				std::string null_str = "Null";
 				res_str.insert(res_str.end(), null_str.begin(), null_str.end());
 				};
 			auto push_pivots = [&]() {
 				// rank 2, dimensions {pivots_vec.size(), 2}
-				res_str.push_back(WXF_PARSER::WXF_HEAD::array);
-				res_str.push_back(3); // type, int64_t
-				auto vint = WXF_PARSER::toVarint(2);
-				res_str.insert(res_str.end(), vint.begin(), vint.end());
-				vint = WXF_PARSER::toVarint(pivots_vec.size());
-				res_str.insert(res_str.end(), vint.begin(), vint.end());
-				vint = WXF_PARSER::toVarint(2);
-				res_str.insert(res_str.end(), vint.begin(), vint.end());
+				WXF_PARSER::TOKEN token(WXF_PARSER::WXF_HEAD::array, { pivots_vec.size(), 2 }, 3, 2 * pivots_vec.size(), false);
+				token.to_ustr(res_str);
 				uint8_t int64_buf[16];
 				for (auto& p : pivots_vec) {
 					// output the pivot position
@@ -257,12 +251,8 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 			auto push_list = [&](int n) {
 				res_str.push_back(56); res_str.push_back(58);
 				// function, List, n
-				res_str.push_back(WXF_PARSER::WXF_HEAD::func);
-				res_str.push_back(n);
-				res_str.push_back(WXF_PARSER::WXF_HEAD::symbol);
-				res_str.push_back(4); // length of List
-				std::string name = "List";
-				res_str.insert(res_str.end(), name.begin(), name.end());
+				WXF_PARSER::TOKEN(WXF_PARSER::WXF_HEAD::func, n).to_ustr(res_str);
+				WXF_PARSER::TOKEN(WXF_PARSER::WXF_HEAD::symbol, "List").to_ustr(res_str);
 				};
 			
 			switch (output_mode) {

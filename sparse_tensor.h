@@ -1008,6 +1008,7 @@ namespace SparseRREF {
 	// TODO: more check!!!
 	template <typename T, typename index_t>
 	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t& F) {
+		using namespace WXF_PARSER;
 		auto& root = tree.root;
 
 		sparse_tensor<T, index_t, SPARSE_CSR> res;
@@ -1046,12 +1047,12 @@ namespace SparseRREF {
 
 		auto toInteger = [](const WXF_PARSER::TOKEN& node) {
 			switch (node.type) {
-			case WXF_PARSER::i8:
-			case WXF_PARSER::i16:
-			case WXF_PARSER::i32:
-			case WXF_PARSER::i64:
+			case WXF_HEAD::i8:
+			case WXF_HEAD::i16:
+			case WXF_HEAD::i32:
+			case WXF_HEAD::i64:
 				return Flint::int_t(node.i);
-			case WXF_PARSER::bigint:
+			case WXF_HEAD::bigint:
 				return Flint::int_t(node.str);
 			default:
 				std::cerr << "not a integer" << std::endl;
@@ -1061,8 +1062,8 @@ namespace SparseRREF {
 
 		// last_node[2] is vals
 		T* vals = res.data.valptr;
-		if (tree[last_node[2]].type == WXF_PARSER::array ||
-			tree[last_node[2]].type == WXF_PARSER::narray) {
+		if (tree[last_node[2]].type == WXF_HEAD::array ||
+			tree[last_node[2]].type == WXF_HEAD::narray) {
 
 			auto ptr = tree[last_node[2]].i_arr;
 			if constexpr (std::is_same_v<T, rat_t>) {
@@ -1081,10 +1082,10 @@ namespace SparseRREF {
 				auto& token = tree[val_node];
 
 				switch (tree[val_node].type) {
-				case WXF_PARSER::i8:
-				case WXF_PARSER::i16:
-				case WXF_PARSER::i32:
-				case WXF_PARSER::i64:
+				case WXF_HEAD::i8:
+				case WXF_HEAD::i16:
+				case WXF_HEAD::i32:
+				case WXF_HEAD::i64:
 					if constexpr (std::is_same_v<T, rat_t>) {
 						val = token.i;
 					}
@@ -1092,7 +1093,7 @@ namespace SparseRREF {
 						val = nmod_set_si(token.i, F.mod);
 					}
 					break;
-				case WXF_PARSER::bigint:
+				case WXF_HEAD::bigint:
 					if constexpr (std::is_same_v<T, rat_t>) {
 						val = toInteger(token);
 					}
@@ -1100,7 +1101,7 @@ namespace SparseRREF {
 						val = int_t(token.str) % F.mod;
 					}
 					break;
-				case WXF_PARSER::symbol:
+				case WXF_HEAD::symbol:
 					if (token.str == std::string_view("Rational")) {
 						int_t n_1 = toInteger(tree[val_node[0]]);
 						int_t d_1 = toInteger(tree[val_node[1]]);
@@ -1166,33 +1167,33 @@ namespace SparseRREF {
 		}
 		
 		auto push_func = [&res](const std::string_view str, size_t size) {
-			TOKEN(func, size).to_ustr(res);
-			TOKEN(symbol, str).to_ustr(res);
+			TOKEN(WXF_HEAD::func, size).to_ustr(res);
+			TOKEN(WXF_HEAD::symbol, str).to_ustr(res);
 			};
 
 		push_func("SparseArray", 4);
-		TOKEN(symbol, "Automatic").to_ustr(res);
+		TOKEN(WXF_HEAD::symbol, "Automatic").to_ustr(res);
 
 		auto rank = tensor.rank();
 		auto nnz = tensor.nnz();
 		const auto& dims = tensor.dims();
 		
 		{
-			TOKEN token(array, { rank }, 3, rank);
+			TOKEN token(WXF_HEAD::array, { rank }, 3, rank);
 			for (auto i = 0; i < rank; i++) {
 				token.i_arr[i] = dims[i];
 			}
 			token.to_ustr(res);
 		}
 
-		TOKEN(i8, 0).to_ustr(res);
+		TOKEN(WXF_HEAD::i8, 0).to_ustr(res);
 		push_func("List", 3);
-		TOKEN(i8, 1).to_ustr(res);
+		TOKEN(WXF_HEAD::i8, 1).to_ustr(res);
 		push_func("List", 2);
 
 		const auto& rowptr = tensor.data.rowptr;
 		{
-			TOKEN token(array, { rowptr.size() }, 3, rowptr.size());
+			TOKEN token(WXF_HEAD::array, { rowptr.size() }, 3, rowptr.size());
 			for (size_t i = 0; i < rowptr.size(); i++) {
 				token.i_arr[i] = rowptr[i];
 			}
@@ -1202,7 +1203,7 @@ namespace SparseRREF {
 		{
 			auto mz = minimal_pos_signed_bits(1 + *std::max_element(dims.begin() + 1, dims.end()));
 
-			TOKEN token(array, { nnz, rank - 1 }, mz, (rank - 1) * nnz, false);
+			TOKEN token(WXF_HEAD::array, { nnz, rank - 1 }, mz, (rank - 1) * nnz, false);
 			token.to_ustr(res);
 
 #define APPEND_COLIND_DATA(TYPE)                                        \
@@ -1227,9 +1228,9 @@ namespace SparseRREF {
 
 		auto push_int = [&](const int_t& val) {
 			if (val.fits_si()) 
-				TOKEN(i64, val.to_si()).to_ustr(res);
+				TOKEN(WXF_HEAD::i64, val.to_si()).to_ustr(res);
 			else 
-				TOKEN(bigint, val.get_str()).to_ustr(res);
+				TOKEN(WXF_HEAD::bigint, val.get_str()).to_ustr(res);
 			};
 
 		if constexpr (std::is_same_v<T, rat_t>) {
@@ -1256,7 +1257,7 @@ namespace SparseRREF {
 			}
 		}
 		else if constexpr (std::is_same_v<T, ulong>) {
-			TOKEN token(narray, { nnz }, 19, nnz, false);
+			TOKEN token(WXF_HEAD::narray, { nnz }, 19, nnz, false);
 			token.to_ustr(res);
 			res.insert(res.end(), (uint8_t*)(tensor.data.valptr), (uint8_t*)(tensor.data.valptr + nnz));
 		}
