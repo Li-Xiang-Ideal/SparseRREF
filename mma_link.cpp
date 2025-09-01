@@ -223,8 +223,10 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 		}
 
 		{
+			using namespace WXF_PARSER;
+
 			std::vector<uint8_t> m_str;
-			auto push_mat = [&](auto& M) {
+			auto push_mat = [&](const auto& M) {
 				m_str = sparse_mat_write_wxf(M, false);
 				res_str.insert(res_str.end(), m_str.begin(), m_str.end());
 				};
@@ -236,7 +238,7 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 				};
 			auto push_pivots = [&]() {
 				// rank 2, dimensions {pivots_vec.size(), 2}
-				WXF_PARSER::TOKEN token(WXF_PARSER::WXF_HEAD::array, { pivots_vec.size(), 2 }, 3, 2 * pivots_vec.size(), false);
+				TOKEN token(WXF_HEAD::array, { pivots_vec.size(), 2 }, 3, 2 * pivots_vec.size(), false);
 				token.to_ustr(res_str);
 				uint8_t int64_buf[16];
 				for (auto& p : pivots_vec) {
@@ -248,11 +250,11 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 					res_str.insert(res_str.end(), int64_buf, int64_buf + sizeof(row) + sizeof(col));
 				}
 				};
-			auto push_list = [&](int n) {
+			auto push_list = [&](size_t n) {
 				res_str.push_back(56); res_str.push_back(58);
 				// function, List, n
-				WXF_PARSER::TOKEN(WXF_PARSER::WXF_HEAD::func, n).to_ustr(res_str);
-				WXF_PARSER::TOKEN(WXF_PARSER::WXF_HEAD::symbol, "List").to_ustr(res_str);
+				TOKEN(WXF_HEAD::func, n).to_ustr(res_str);
+				TOKEN(WXF_HEAD::symbol, "List").to_ustr(res_str);
 				};
 			
 			switch (output_mode) {
