@@ -1562,6 +1562,105 @@ namespace SparseRREF {
 			}
 		}
 	};
+
+	// some other functions
+
+	template <typename T, typename index_t>
+	inline T* sparse_vec_entry(const sparse_vec<T, index_t>& vec, const index_t index, const bool isbinary = true) {
+		if (vec.nnz() == 0)
+			return nullptr;
+		index_t* ptr;
+		if (isbinary)
+			ptr = SparseRREF::binary_search(vec.indices, vec.indices + vec.nnz(), index);
+		else
+			ptr = std::find(vec.indices, vec.indices + vec.nnz(), index);
+		if (ptr == vec.indices + vec.nnz())
+			return nullptr;
+		return vec.entries + (ptr - vec.indices);
+	}
+
+	// join two sparse matrices
+	template <typename T, typename index_t>
+	sparse_mat<T, index_t> sparse_mat_join(const sparse_mat<T, index_t>& A, const sparse_mat<T, index_t>& B, thread_pool* pool = nullptr) {
+		if (A.ncol != B.ncol)
+			throw std::invalid_argument("sparse_mat_join: column number mismatch");
+
+		sparse_mat<T, index_t> res(A.nrow + B.nrow, A.ncol);
+
+		if (pool == nullptr) {
+			std::copy(A.rows.begin(), A.rows.end(), res.rows.begin());
+			std::copy(B.rows.begin(), B.rows.end(), res.rows.begin() + A.nrow);
+		}
+		else {
+			pool->detach_loop(0, A.nrow, [&](size_t i) {
+				res[i] = A[i];
+				});
+			pool->wait();
+			pool->detach_loop(0, B.nrow, [&](size_t i) {
+				res[i + A.nrow] = B[i];
+				});
+			pool->wait();
+		}
+
+		return res;
+	}
+
+	template <typename T, typename index_t>
+	sparse_mat<T, index_t> sparse_mat_join(sparse_mat<T, index_t>&& A, sparse_mat<T, index_t>&& B) {
+		if (A.ncol != B.ncol)
+			throw std::invalid_argument("sparse_mat_join: column number mismatch");
+
+		sparse_mat<T, index_t> res = std::move(A);
+		res.append(std::move(B));
+		return res;
+	}
+
+	// split a sparse matrix into two parts
+	template <typename T, typename index_t>
+	std::pair<sparse_mat<T, index_t>, sparse_mat<T, index_t>> sparse_mat_split(const sparse_mat<T, index_t>& mat, const size_t split_row, thread_pool* pool = nullptr) {
+		if (split_row > mat.nrow)
+			throw std::out_of_range("sparse_mat_split: split_row out of range");
+
+		sparse_mat<T, index_t> A(split_row, mat.ncol);
+		sparse_mat<T, index_t> B(mat.nrow - split_row, mat.ncol);
+
+		if (pool == nullptr) {
+			std::copy(mat.rows.begin(), mat.rows.begin() + split_row, A.rows.begin());
+			std::copy(mat.rows.begin() + split_row, mat.rows.end(), B.rows.begin());
+		}
+		else {
+			pool->detach_loop(0, split_row, [&](size_t i) {
+				A[i] = mat[i];
+				});
+			pool->wait();
+			pool->detach_loop(split_row, mat.nrow, [&](size_t i) {
+				B[i - split_row] = mat[i];
+				});
+			pool->wait();
+		}
+
+		return { A, B };
+	}
+
+	template <typename T, typename index_t>
+	std::pair<sparse_mat<T, index_t>, sparse_mat<T, index_t>> sparse_mat_split(sparse_mat<T, index_t>&& mat, const size_t split_row) {
+		if (split_row > mat.nrow)
+			throw std::out_of_range("sparse_mat_split: split_row out of range");
+
+		sparse_mat<T, index_t> A(split_row, mat.ncol);
+		sparse_mat<T, index_t> B(mat.nrow - split_row, mat.ncol);
+
+		A.rows = std::vector<sparse_vec<T, index_t>>(std::make_move_iterator(mat.rows.begin()),
+			std::make_move_iterator(mat.rows.begin() + split_row));
+		B.rows = std::vector<sparse_vec<T, index_t>>(std::make_move_iterator(mat.rows.begin() + split_row),
+			std::make_move_iterator(mat.rows.end()));
+
+		mat.clear();
+
+		return { A, B };
+	}
+
+
 }
 
 #endif

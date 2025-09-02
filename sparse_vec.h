@@ -20,20 +20,6 @@ namespace SparseRREF {
 	template <typename index_t> using sfmpq_vec = sparse_vec<rat_t, index_t>;
 
 	template <typename index_t, typename T>
-	inline T* sparse_vec_entry(const sparse_vec<T, index_t>& vec, const index_t index, const bool isbinary = true) {
-		if (vec.nnz() == 0)
-			return nullptr;
-		index_t* ptr;
-		if (isbinary)
-			ptr = SparseRREF::binary_search(vec.indices, vec.indices + vec.nnz(), index);
-		else
-			ptr = std::find(vec.indices, vec.indices + vec.nnz(), index);
-		if (ptr == vec.indices + vec.nnz())
-			return nullptr;
-		return vec.entries + (ptr - vec.indices);
-	}
-
-	template <typename index_t, typename T>
 	inline void sparse_vec_rescale(sparse_vec<T, index_t>& vec, const T& scalar, const field_t& F) {
 		if (scalar == 1)
 			return;
