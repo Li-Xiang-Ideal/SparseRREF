@@ -1926,7 +1926,7 @@ namespace SparseRREF {
 		}
 
 		// dims
-		std::vector<index_t> dims(tree[root[1]].i_arr, tree[root[1]].i_arr + tree[root[1]].dim(0));
+		std::vector<size_t> dims(tree[root[1]].i_arr, tree[root[1]].i_arr + tree[root[1]].dim(0));
 
 		if (tree[root[2]].i != 0) {
 			std::cerr << "Error: sparse_mat_read: the implicit value is not 0" << std::endl;
@@ -1940,7 +1940,7 @@ namespace SparseRREF {
 
 		// last_node[1] is {rowptr,colindex}
 		// last_node[1][0] is rowptr, last_node[1][1] is colindex
-		std::vector<index_t> rowptr(tree[last_node[1][0]].i_arr, tree[last_node[1][0]].i_arr
+		std::vector<size_t> rowptr(tree[last_node[1][0]].i_arr, tree[last_node[1][0]].i_arr
 			+ tree[last_node[1][0]].dim(0));
 		std::vector<index_t> colindex(tree[last_node[1][1]].i_arr, tree[last_node[1][1]].i_arr
 			+ tree[last_node[1][1]].dim(0));
