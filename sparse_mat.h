@@ -697,7 +697,7 @@ namespace SparseRREF {
 		for (size_t i = 0; i < pivots.size(); i++) {
 			auto row = pivots[i].r;
 			auto indices = mat[row].indices;
-			for (auto j = 0; j < mat[row].nnz(); j++) {
+			for (size_t j = 0; j < mat[row].nnz(); j++) {
 				tranmat[indices[j]].push_back(row);
 			}
 		}
@@ -776,7 +776,7 @@ namespace SparseRREF {
 
 		size_t rank = pivots[0].size();
 
-		for (auto i = 1; i < pivots.size(); i++) {
+		for (size_t i = 1; i < pivots.size(); i++) {
 			if (pivots[i].size() == 0)
 				continue;
 
@@ -1092,7 +1092,7 @@ namespace SparseRREF {
 					// if the pool is free and too many rows left, use pool
 					if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0) {
 						std::vector<index_t> newleftrows;
-						for (auto i = 0; i < leftrows.size(); i++) {
+						for (size_t i = 0; i < leftrows.size(); i++) {
 							if (flags[i])
 								newleftrows.push_back(leftrows[i]);
 						}
@@ -1433,7 +1433,7 @@ namespace SparseRREF {
 					// if the pool is free and too many rows left, use pool
 					if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0) {
 						std::vector<index_t> newleftrows;
-						for (auto i = 0; i < leftrows.size(); i++) {
+						for (size_t i = 0; i < leftrows.size(); i++) {
 							if (flags[i])
 								newleftrows.push_back(leftrows[i]);
 						}
@@ -1588,7 +1588,7 @@ namespace SparseRREF {
 
 		std::vector<index_t> leftrows;
 
-		for (auto i = 0; i < mat.nrow; i++) {
+		for (size_t i = 0; i < mat.nrow; i++) {
 			size_t nnz = matul[i].nnz();
 			if (nnz == 0)
 				continue;
@@ -1605,7 +1605,7 @@ namespace SparseRREF {
 
 		sparse_mat<int_t, index_t> matz(mat.nrow, mat.ncol);
 		if (!isok || mod.bits() < mat_height_bits) {
-			for (auto i = 0; i < mat.nrow; i++)
+			for (size_t i = 0; i < mat.nrow; i++)
 				matz[i] = matul[i];
 		}
 
@@ -1714,7 +1714,7 @@ namespace SparseRREF {
 		for (size_t i = 0; i < rank; i++)
 			colpivs[pivots[i].c] = pivots[i].r;
 
-		for (auto i = 0; i < M.ncol; i++)
+		for (size_t i = 0; i < M.ncol; i++)
 			if (colpivs[i] == -1)
 				nonpivs.push_back(i);
 
@@ -2040,7 +2040,7 @@ namespace SparseRREF {
 		sparse_mat<T, index_t> mat(dims[0], dims[1]);
 		for (size_t i = 0; i < rowptr.size() - 1; i++) {
 			mat[i].reserve(rowptr[i + 1] - rowptr[i]);
-			for (size_t j = rowptr[i]; j < rowptr[i + 1]; j++) {
+			for (auto j = rowptr[i]; j < rowptr[i + 1]; j++) {
 				// mathematica is 1-indexed
 				mat[i].push_back(colindex[j] - 1, vals[j]);
 			}

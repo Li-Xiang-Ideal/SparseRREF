@@ -128,8 +128,8 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 
 	auto nownnz = 0;
 	// output A
-	for (auto i = 0; i < A.nrow; i++){
-		for (auto j = 0; j < A[i].nnz(); j++){
+	for (size_t i = 0; i < A.nrow; i++){
+		for (size_t j = 0; j < A[i].nnz(); j++){
 			posdata[2 * nownnz] = i + 1;
 			posdata[2 * nownnz + 1] = A[i](j) + 1;
 			valdata[nownnz] = A[i][j];
@@ -138,8 +138,8 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 	}
 	if (len > 0) {
 		// output K
-		for (auto i = 0; i < K.nrow; i++) {
-			for (auto j = 0; j < K[i].nnz(); j++) {
+		for (size_t i = 0; i < K.nrow; i++) {
+			for (size_t j = 0; j < K[i].nnz(); j++) {
 				posdata[2 * nownnz] = A.nrow + i + 1;
 				posdata[2 * nownnz + 1] = K[i](j) + 1;
 				valdata[nownnz] = K[i][j];
