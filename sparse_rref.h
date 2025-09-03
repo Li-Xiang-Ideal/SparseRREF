@@ -461,7 +461,8 @@ namespace SparseRREF {
 	template <typename T>
 	std::vector<T> perm_init(T n) {
 		std::vector<T> perm(n);
-		std::iota(perm.begin(), perm.end(), 0);
+		for (T i = 0; i < n; i++)
+			perm[i] = i;
 		return perm;
 	}
 
