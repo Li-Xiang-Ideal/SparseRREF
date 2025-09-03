@@ -447,7 +447,6 @@ namespace SparseRREF {
 		void compress() { sort_indices(); }
 	};
 
-	// new sparse matrix
 	template <typename T, Flint::signed_builtin_integral index_t = int> struct sparse_mat {
 		size_t nrow = 0;
 		size_t ncol = 0;
@@ -575,9 +574,7 @@ namespace SparseRREF {
 
 		// append other sparse_mat to this one
 		void append(const sparse_mat<T, index_t>& other, thread_pool* pool = nullptr) {
-			if (other.ncol != ncol) {
-				throw std::invalid_argument("sparse_mat.append: column number mismatch");
-			}
+			ncol = std::max(ncol, other.ncol);
 
 			if (pool == nullptr) {
 				rows.insert(rows.end(), other.rows.begin(), other.rows.end());
@@ -594,9 +591,7 @@ namespace SparseRREF {
 		}
 
 		void append(sparse_mat<T, index_t>&& other) {
-			if (other.ncol != ncol) {
-				throw std::invalid_argument("sparse_mat.append: column number mismatch");
-			}
+			ncol = std::max(ncol, other.ncol);
 
 			rows.insert(rows.end(), std::make_move_iterator(other.rows.begin()), std::make_move_iterator(other.rows.end()));
 			nrow += other.nrow;
@@ -1582,10 +1577,7 @@ namespace SparseRREF {
 	// join two sparse matrices
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_join(const sparse_mat<T, index_t>& A, const sparse_mat<T, index_t>& B, thread_pool* pool = nullptr) {
-		if (A.ncol != B.ncol)
-			throw std::invalid_argument("sparse_mat_join: column number mismatch");
-
-		sparse_mat<T, index_t> res(A.nrow + B.nrow, A.ncol);
+		sparse_mat<T, index_t> res(A.nrow + B.nrow, std::max(A.ncol, B.ncol));
 
 		if (pool == nullptr) {
 			std::copy(A.rows.begin(), A.rows.end(), res.rows.begin());
@@ -1607,11 +1599,9 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_join(sparse_mat<T, index_t>&& A, sparse_mat<T, index_t>&& B) {
-		if (A.ncol != B.ncol)
-			throw std::invalid_argument("sparse_mat_join: column number mismatch");
-
 		sparse_mat<T, index_t> res = std::move(A);
 		res.append(std::move(B));
+		res.ncol = std::max(A.ncol, B.ncol);
 		return res;
 	}
 

@@ -652,8 +652,6 @@ namespace SparseRREF {
 		if (verbose) {
 			size_t old_cc = cc;
 			while (cc < leftrows.size() && (print_once || cc - old_cc > printstep)) {
-				// stop for a while
-				std::this_thread::sleep_for(std::chrono::microseconds(1000));
 				now_nnz = mat.nnz();
 				size_t status = (size_t)std::floor(1.0 * sub_pivots.size() * cc / leftrows.size());
 				std::cout << "-- Row: " << std::setw(bitlen_nrow)
