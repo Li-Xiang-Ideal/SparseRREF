@@ -564,7 +564,7 @@ namespace SparseRREF {
 
 		ulong e_pr;
 		for (auto [r, c] : pivots) {
-			if (!nonzero_c.test(c))
+			if (!nonzero_c.test(c)) [[likely]] 
 				continue;
 			T entry = tmpvec[c];
 			if constexpr (std::is_same_v<T, ulong>) {
@@ -987,15 +987,6 @@ namespace SparseRREF {
 			leftrows.resize(n_leftrows);
 			pool.wait();
 
-			if (opt->shrink_memory) {
-				pool.detach_loop(0, leftrows.size(), [&](size_t i) {
-					auto row = leftrows[i];
-					if (mat[row].alloc() > 8 * mat[row].nnz()) {
-						mat[row].reserve(4 * mat[row].nnz());
-					}});
-				pool.wait();
-			}
-
 			if (opt->abort)
 				return pivots;
 
@@ -1327,15 +1318,6 @@ namespace SparseRREF {
 			}
 			leftrows.resize(n_leftrows);
 			pool.wait();
-
-			if (opt->shrink_memory) {
-				pool.detach_loop(0, leftrows.size(), [&](size_t i) {
-					auto row = leftrows[i];
-					if (mat[row].alloc() > 8 * mat[row].nnz()) {
-						mat[row].reserve(4 * mat[row].nnz());
-					}});
-					pool.wait();
-			}
 
 			if (opt->abort)
 				return pivots;
