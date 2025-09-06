@@ -536,7 +536,7 @@ namespace SparseRREF {
 		if (pool) {
 			pool->detach_loop(0, B.nrow, [&](size_t i) {
 				method(SparseRREF::thread_id(), i);
-				});
+				}, ((B.nrow < 20 * nthreads) ? 0 : B.nrow / 10));
 			pool->wait();
 		}
 		else {
