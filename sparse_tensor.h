@@ -1138,8 +1138,8 @@ namespace SparseRREF {
 		// if > 1GB, use mmap
 		if (fz > 1ULL << 30) {
 			MMapFile mm;
-			auto cc = std::filesystem::canonical(file).string().c_str();
-			bool status = mmap_file(cc, mm);
+			std::string cc_str = std::filesystem::canonical(file).string();
+			bool status = mmap_file(cc_str.c_str(), mm);
 
 			if (!status) {
 				// mmap failed, use the file directly

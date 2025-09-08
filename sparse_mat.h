@@ -650,20 +650,21 @@ namespace SparseRREF {
 		bool print_once = true;
 
 		if (verbose) {
-			size_t old_cc = cc;
-			while (cc < leftrows.size() && (print_once || cc - old_cc > printstep)) {
+			double status = 1.0 * sub_pivots.size() * cc / leftrows.size();
+			double old_status = status;
+			while (cc < leftrows.size() && (print_once || status - old_status > printstep)) {
 				now_nnz = mat.nnz();
-				size_t status = (size_t)std::floor(1.0 * sub_pivots.size() * cc / leftrows.size());
+				status = 1.0 * sub_pivots.size() * cc / leftrows.size();
 				std::cout << "-- Row: " << std::setw(bitlen_nrow)
-					<< process + status << "/" << rank
+					<< process + (size_t)status << "/" << rank
 					<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
 					<< "  density: " << std::setprecision(6) << std::setw(8)
-					<< 100 * (double)now_nnz / (rank * mat.ncol) << "%"
+					<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
 					<< "  speed: " << std::setprecision(6) << std::setw(6)
-					<< 1.0 * sub_pivots.size() * (cc - old_cc) / leftrows.size() / SparseRREF::usedtime(clock_begin, SparseRREF::clocknow())
+					<< status - old_status / SparseRREF::usedtime(clock_begin, SparseRREF::clocknow())
 					<< " row/s    \r" << std::flush;
 				clock_begin = SparseRREF::clocknow();
-				old_cc = cc;
+				old_status = status;
 				print_once = false;
 			}
 		}
@@ -988,6 +989,28 @@ namespace SparseRREF {
 			if (opt->abort)
 				return pivots;
 
+			auto print_info = [&](size_t kk, size_t x, bool& print_once, double& oldpr) {
+				double pr = kk + (1.0 * ps.size() * x) / leftrows.size();
+				if (verbose && (print_once || pr - oldpr > printstep)) {
+					auto end = SparseRREF::clocknow();
+					now_nnz = mat.nnz();
+					auto now_alloc = mat.alloc();
+					std::cout << "-- Col: " << std::setw(bitlen_ncol)
+						<< (int)pr << "/" << mat.ncol
+						<< "  rank: " << std::setw(bitlen_ncol) << rank
+						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
+						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
+						<< "  density: " << std::setprecision(6) << std::setw(8)
+						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
+						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
+						((pr - oldpr) / SparseRREF::usedtime(start, end))
+						<< " col/s    \r" << std::flush;
+					oldpr = pr;
+					start = end;
+					print_once = false;
+				}
+				};
+
 			if (only_right_search) {
 				std::atomic<size_t> done_count = 0;
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
@@ -1022,26 +1045,7 @@ namespace SparseRREF {
 						return pivots;
 					}
 
-					double pr = kk + (1.0 * ps.size() * done_count) / leftrows.size();
-					if (verbose && (print_once || pr - oldpr > printstep)) {
-						auto end = SparseRREF::clocknow();
-						now_nnz = mat.nnz();
-						auto now_alloc = mat.alloc();
-						std::cout << "-- Col: " << std::setw(bitlen_ncol)
-							<< (int)pr << "/" << mat.ncol
-							<< "  rank: " << std::setw(bitlen_ncol) << rank
-							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-							<< "  density: " << std::setprecision(6) << std::setw(8)
-							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-							((pr - oldpr) / SparseRREF::usedtime(start, end))
-							<< " col/s    \r" << std::flush;
-						oldpr = pr;
-						start = end;
-						print_once = false;
-					}
-
+					print_info(kk, done_count, print_once, oldpr);
 					std::this_thread::sleep_for(std::chrono::microseconds(10));
 				}
 				pool.wait();
@@ -1117,25 +1121,7 @@ namespace SparseRREF {
 						return pivots;
 					}
 
-					double pr = kk + (1.0 * ps.size() * localcount) / leftrows.size();
-					if (verbose && (print_once || pr - oldpr > printstep)) {
-						auto end = SparseRREF::clocknow();
-						now_nnz = mat.nnz();
-						auto now_alloc = mat.alloc();
-						std::cout << "-- Col: " << std::setw(bitlen_ncol)
-							<< (int)pr << "/" << mat.ncol
-							<< "  rank: " << std::setw(bitlen_ncol) << rank
-							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-							<< "  density: " << std::setprecision(6) << std::setw(8)
-							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-							((pr - oldpr) / SparseRREF::usedtime(start, end))
-							<< " col/s    \r" << std::flush;
-						oldpr = pr;
-						start = end;
-						print_once = false;
-					}
+					print_info(kk, localcount, print_once, oldpr);
 				}
 				pool.wait();
 			}
@@ -1320,6 +1306,28 @@ namespace SparseRREF {
 			if (opt->abort)
 				return pivots;
 
+			auto print_info = [&](size_t kk, size_t x, bool& print_once, double& oldpr) {
+				double pr = kk + (1.0 * ps.size() * x) / leftrows.size();
+				if (verbose && (print_once || pr - oldpr > printstep)) {
+					auto end = SparseRREF::clocknow();
+					now_nnz = mat.nnz();
+					auto now_alloc = mat.alloc();
+					std::cout << "-- Col: " << std::setw(bitlen_ncol)
+						<< (int)pr << "/" << mat.ncol
+						<< "  rank: " << std::setw(bitlen_ncol) << rank
+						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
+						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
+						<< "  density: " << std::setprecision(6) << std::setw(8)
+						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
+						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
+						((pr - oldpr) / SparseRREF::usedtime(start, end))
+						<< " col/s    \r" << std::flush;
+					oldpr = pr;
+					start = end;
+					print_once = false;
+				}
+				};
+
 			if (only_right_search) {
 				std::atomic<size_t> done_count = 0;
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
@@ -1354,26 +1362,7 @@ namespace SparseRREF {
 						return pivots;
 					}
 
-					double pr = kk + (1.0 * ps.size() * done_count) / leftrows.size();
-					if (verbose && (print_once || pr - oldpr > printstep)) {
-						auto end = SparseRREF::clocknow();
-						now_nnz = mat.nnz();
-						auto now_alloc = mat.alloc();
-						std::cout << "-- Col: " << std::setw(bitlen_ncol)
-							<< (int)pr << "/" << mat.ncol
-							<< "  rank: " << std::setw(bitlen_ncol) << rank
-							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-							<< "  density: " << std::setprecision(6) << std::setw(8)
-							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-							((pr - oldpr) / SparseRREF::usedtime(start, end))
-							<< " col/s    \r" << std::flush;
-						oldpr = pr;
-						start = end;
-						print_once = false;
-					}
-
+					print_info(kk, done_count, print_once, oldpr);
 					std::this_thread::sleep_for(std::chrono::microseconds(10));
 				}
 				pool.wait();
@@ -1449,25 +1438,7 @@ namespace SparseRREF {
 						return pivots;
 					}
 
-					double pr = kk + (1.0 * ps.size() * localcount) / leftrows.size();
-					if (verbose && (print_once || pr - oldpr > printstep)) {
-						auto end = SparseRREF::clocknow();
-						now_nnz = mat.nnz();
-						auto now_alloc = mat.alloc();
-						std::cout << "-- Col: " << std::setw(bitlen_ncol)
-							<< (int)pr << "/" << mat.ncol
-							<< "  rank: " << std::setw(bitlen_ncol) << rank
-							<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
-							<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
-							<< "  density: " << std::setprecision(6) << std::setw(8)
-							<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
-							<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-							((pr - oldpr) / SparseRREF::usedtime(start, end))
-							<< " col/s    \r" << std::flush;
-						oldpr = pr;
-						start = end;
-						print_once = false;
-					}
+					print_info(kk, localcount, print_once, oldpr);
 				}
 				pool.wait();
 			}
@@ -2036,8 +2007,8 @@ namespace SparseRREF {
 		// if > 1GB, use mmap
 		if (fz > 1ULL << 30) {
 			MMapFile mm;
-			auto cc = std::filesystem::canonical(file).string().c_str();
-			bool status = mmap_file(cc, mm);
+			std::string cc_str = std::filesystem::canonical(file).string();
+			bool status = mmap_file(cc_str.c_str(), mm);
 
 			if (!status) {
 				// if mmap failed, read the file directly

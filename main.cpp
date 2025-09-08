@@ -249,10 +249,10 @@ int main(int argc, char** argv) {
 	start = SparseRREF::clocknow();
 	std::vector<std::vector<pivot_t<index_t>>> pivots;
 	if (prime == 0) {
-		pivots = sparse_mat_rref_reconstruct(std::get<sparse_mat<rat_t, index_t>>(mat), opt);
+		pivots = sparse_mat_rref_reconstruct(std::get<0>(mat), opt);
 	}
 	else {
-		pivots = sparse_mat_rref(std::get<sparse_mat<ulong, index_t>>(mat), F, opt);
+		pivots = sparse_mat_rref(std::get<1>(mat), F, opt);
 	}
 
 	end = SparseRREF::clocknow();
@@ -294,19 +294,32 @@ int main(int argc, char** argv) {
 	else
 		outname_add = "";
 
-	file2.open(outname + outname_add);
-	if (prime == 0) {
-		sparse_mat_write(std::get<0>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
+	if (file_ext == ".wxf" || file_ext == ".WXF") {
+		std::vector<uint8_t> wxfdata;
+		if (prime == 0)
+			wxfdata = sparse_mat_write_wxf(std::get<0>(mat));
+		else
+			wxfdata = sparse_mat_write_wxf(std::get<1>(mat));
+
+		auto parent_path = filePath.parent_path();
+		auto outname_path = parent_path / (outname + outname_add);
+		ustr_write(outname_path, wxfdata);
 	}
 	else {
-		if (prime > (1ULL << 32)) {
-			std::cout << "Warning: the prime is too large, use plain format." << std::endl;
-			sparse_mat_write(std::get<1>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
+		file2.open(outname + outname_add);
+		if (prime == 0) {
+			sparse_mat_write(std::get<0>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
 		}
-		else
-			sparse_mat_write(std::get<1>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_MTX);
+		else {
+			if (prime > (1ULL << 32)) {
+				std::cout << "Warning: the prime is too large, use plain format." << std::endl;
+				sparse_mat_write(std::get<1>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
+			}
+			else
+				sparse_mat_write(std::get<1>(mat), file2, SparseRREF::SPARSE_FILE_TYPE_MTX);
+		}
+		file2.close();
 	}
-	file2.close();
 
 	if (program["--kernel"] == true) {
 		outname_add = ".kernel";
