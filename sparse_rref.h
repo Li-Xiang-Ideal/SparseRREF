@@ -432,7 +432,7 @@ namespace SparseRREF {
 			return end;
 	}
 
-	template <typename T> inline T* lower_bound(T* begin, T* end, T* val, size_t rank) {
+	template <typename T> inline T* lower_bound(T* begin, T* end, const T* val, size_t rank) {
 		if (rank == 1)
 			return std::lower_bound(begin, end, *val);
 

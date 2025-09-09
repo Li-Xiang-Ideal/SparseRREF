@@ -659,6 +659,7 @@ namespace SparseRREF {
 
 		using index_v = std::vector<index_t>;
 		using index_p = index_t*;
+		using const_index_p = const index_t*;
 
 		//empty constructor
 		sparse_tensor_struct() {
@@ -831,7 +832,7 @@ namespace SparseRREF {
 			return std::make_pair(colptr + rowptr[i] * (rank - 1), valptr + rowptr[i]);
 		}
 
-		index_p entry_lower_bound(const index_p l) {
+		index_p entry_lower_bound(const_index_p l) {
 			auto begin = row(l[0]).first;
 			auto end = row(l[0] + 1).first;
 			if (begin == end)
@@ -1161,8 +1162,9 @@ namespace SparseRREF {
 
 		using index_v = std::vector<index_t>;
 		using index_p = index_t*;
+		using const_index_p = const index_t*;
 
-		template <typename S, typename U> requires std::convertible_to<U, S>
+		template <typename S, typename U = S> requires std::convertible_to<U, S>
 		std::vector<S> prepend_num(const std::vector<S>& l, U num = 0) {
 			std::vector<S> lp;
 			lp.reserve(l.size() + 1);
@@ -1295,7 +1297,7 @@ namespace SparseRREF {
 
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(prepend_num(l), val, mode); }
 		inline void insert_add(const index_v& l, const T& val) { data.insert_add(prepend_num(l), val); }
-		void push_back(const index_p l, const T& new_val) {
+		void push_back(const_index_p l, const T& new_val) {
 			auto n_nnz = nnz();
 			if (n_nnz + 1 > data.alloc)
 				reserve((data.alloc + 1) * 2);
