@@ -233,15 +233,15 @@ namespace WXF_PARSER {
 		}
 
 		// machine number, val (length is given by the sizeof(val))
-		TOKEN(WXF_HEAD t, int8_t v) : type(t), rank(0), i(v), length(1) {}
-		TOKEN(WXF_HEAD t, int16_t v) : type(t), rank(0), i(v), length(2) {}
-		TOKEN(WXF_HEAD t, int32_t v) : type(t), rank(0), i(v), length(3) {}
-		TOKEN(WXF_HEAD t, int64_t v) : type(t), rank(0), i(v), length(4) {}
-		TOKEN(WXF_HEAD t, float v) : type(t), rank(0), d(v), length(2) {}
-		TOKEN(WXF_HEAD t, double v) : type(t), rank(0), d(v), length(4) {}
+		TOKEN(WXF_HEAD t, int8_t v) : type(t), rank(0), length(1), i(v) {}
+		TOKEN(WXF_HEAD t, int16_t v) : type(t), rank(0), length(2), i(v) {}
+		TOKEN(WXF_HEAD t, int32_t v) : type(t), rank(0), length(3), i(v) {}
+		TOKEN(WXF_HEAD t, int64_t v) : type(t), rank(0), length(4), i(v) {}
+		TOKEN(WXF_HEAD t, float v) : type(t), rank(0), length(2), d(v) {}
+		TOKEN(WXF_HEAD t, double v) : type(t), rank(0), length(4), d(v) {}
 
 		// function, association, delay_rule, rule
-		TOKEN(WXF_HEAD t, uint64_t len) : type(t), rank(0), i(0), length(len) {}
+		TOKEN(WXF_HEAD t, uint64_t len) : type(t), rank(0), length(len), i(0) {}
 
 		// array/narray
 		// with_arr: whether to allocate the i_arr/u_arr, default true
@@ -571,7 +571,7 @@ namespace WXF_PARSER {
 					auto r = ReadVarint();
 					std::vector<size_t> dims(r);
 					size_t all_len = 1;
-					for (int i = 0; i < r; i++) {
+					for (size_t i = 0; i < r; i++) {
 						dims[i] = ReadVarint();
 						all_len *= dims[i];
 					}
