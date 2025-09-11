@@ -19,14 +19,14 @@ namespace SparseRREF {
 		SPARSE_LR  // List of rows
 	};
 
-	template <Flint::signed_builtin_integral index_t = int>
+	template <Flint::builtin_integral index_t = int>
 	struct pivot_t {
 		index_t r;
 		index_t c;
 	};
 
 	// sparse vector
-	template <typename T, Flint::signed_builtin_integral index_t = int> struct sparse_vec {
+	template <typename T, Flint::builtin_integral index_t = int> struct sparse_vec {
 		index_t* indices = nullptr;
 		T* entries = nullptr;
 		size_t _nnz = 0;
@@ -344,7 +344,7 @@ namespace SparseRREF {
 		}
 	};
 
-	template <Flint::signed_builtin_integral index_t> struct sparse_vec<bool, index_t> {
+	template <Flint::builtin_integral index_t> struct sparse_vec<bool, index_t> {
 		index_t* indices = nullptr;
 		size_t _nnz = 0;
 		size_t _alloc = 0;
@@ -447,7 +447,7 @@ namespace SparseRREF {
 		void compress() { sort_indices(); }
 	};
 
-	template <typename T, Flint::signed_builtin_integral index_t = int> struct sparse_mat {
+	template <typename T, Flint::builtin_integral index_t = int> struct sparse_mat {
 		size_t nrow = 0;
 		size_t ncol = 0;
 		std::vector<sparse_vec<T, index_t>> rows;
@@ -1574,6 +1574,11 @@ namespace SparseRREF {
 		if (ptr == vec.indices + vec.nnz())
 			return nullptr;
 		return vec.entries + (ptr - vec.indices);
+	}
+
+	template <typename T, typename index_t>
+	inline T* sparse_mat_entry(sparse_mat<T, index_t>& mat, size_t r, index_t c, bool isbinary = true) {
+		return sparse_vec_entry(mat[r], c, isbinary);
 	}
 
 	// join two sparse matrices

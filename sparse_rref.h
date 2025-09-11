@@ -167,6 +167,15 @@ namespace SparseRREF {
 		return 3; // for uint64_t
 	}
 
+	template <typename T> requires (std::is_integral_v<T>)
+	constexpr T index_sval() { 
+		if constexpr (std::is_signed_v<T>) {
+			return (T)(-1);
+		} else {
+			return std::numeric_limits<T>::max();
+		}
+	}
+
 	// string
 	inline void DeleteSpaces(std::string& str) {
 		str.erase(std::remove_if(str.begin(), str.end(),

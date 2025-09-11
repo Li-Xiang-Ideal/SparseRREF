@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 	
-	using index_t = int;
+	using index_t = uint32_t;
 	std::variant<sparse_mat<rat_t, index_t>, sparse_mat<ulong, index_t>> mat;
 
 	auto file_ext = filePath.extension().string();
