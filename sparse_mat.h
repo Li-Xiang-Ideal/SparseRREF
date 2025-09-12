@@ -124,10 +124,8 @@ namespace SparseRREF {
 		size_t localcounter = 0;
 		size_t count = 0;
 		bool verbose = opt->verbose;
-		bool dir = true;
 
-		std::string dirstr = (dir) ? "Col" : "Row";
-		size_t ndir = (dir) ? mat.ncol : mat.nrow;
+		size_t ndir = mat.ncol;
 
 		size_t oldnnz = mat.nnz();
 		int bitlen_nnz = (int)std::floor(std::log(oldnnz) / std::log(10)) + 2;
@@ -140,7 +138,7 @@ namespace SparseRREF {
 			count += localcounter;
 			if (verbose) {
 				oldnnz = mat.nnz();
-				std::cout << "-- " << dirstr << ": " << std::setw(bitlen_ndir)
+				std::cout << "-- " << "Col" << ": " << std::setw(bitlen_ndir)
 					<< count << "/" << ndir
 					<< "  rank: " << std::setw(bitlen_ndir) << count
 					<< "  nnz: " << std::setw(bitlen_nnz) << oldnnz
@@ -161,8 +159,7 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	std::vector<pivot_t<index_t>> pivots_search(
 		const sparse_mat<T, index_t>& mat, const sparse_mat<bool, index_t>& tranmat,
-		const std::vector<index_t>& rowpivs, const std::vector<index_t>& leftrows,
-		const std::vector<index_t>& leftcols,
+		const std::vector<index_t>& leftrows, const std::vector<index_t>& leftcols,
 		const std::function<int64_t(int64_t)>& col_weight = [](int64_t i) { return i; }) {
 
 		std::list<pivot_t<index_t>> pivots;
@@ -185,8 +182,6 @@ namespace SparseRREF {
 				flag = (dict.count(r) == 0);
 				if (!flag)
 					break;
-				if (rowpivs[r] != index_sval<index_t>())
-					continue;
 				size_t newnnz = mat[r].nnz();
 				if (newnnz < mnnz) {
 					row = r;
@@ -654,7 +649,7 @@ namespace SparseRREF {
 					<< "  density: " << std::setprecision(6) << std::setw(8)
 					<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
 					<< "  speed: " << std::setprecision(6) << std::setw(6)
-					<< status - old_status / SparseRREF::usedtime(clock_begin, SparseRREF::clocknow())
+					<< (status - old_status) / SparseRREF::usedtime(clock_begin, SparseRREF::clocknow())
 					<< " row/s    \r" << std::flush;
 				clock_begin = SparseRREF::clocknow();
 				old_status = status;
@@ -949,7 +944,7 @@ namespace SparseRREF {
 				ps = pivots_search_right(mat, leftrows, leftcols, opt->col_weight);
 			}
 			else {
-				ps = pivots_search(mat, tranmat, rowpivs, leftrows, leftcols, opt->col_weight);
+				ps = pivots_search(mat, tranmat, leftrows, leftcols, opt->col_weight);
 			}
 			if (ps.size() == 0)
 				break;
@@ -1262,7 +1257,7 @@ namespace SparseRREF {
 				ps = pivots_search_right(mat, leftrows, leftcols, col_weight);
 			}
 			else {
-				ps = pivots_search(mat, tranmat, rowpivs, leftrows, leftcols, col_weight);
+				ps = pivots_search(mat, tranmat, leftrows, leftcols, col_weight);
 			}
 			if (ps.size() == 0) {
 				if (rank >= fullrank)
