@@ -1635,57 +1635,44 @@ namespace SparseRREF {
 	sparse_mat<T, index_t> sparse_mat_rref_kernel(const sparse_mat<T, index_t>& M,
 		const std::vector<pivot_t<index_t>>& pivots, const field_t& F, rref_option_t opt) {
 
-		constexpr index_t sv = index_sval<index_t>();
-
-		auto& pool = opt->pool;
-
-		sparse_mat<T, index_t> K;
 		auto rank = pivots.size();
-		if (rank == M.ncol)
-			return K;
 
-		if (rank == 0) {
-			K.init(M.ncol, M.ncol);
-			for (size_t i = 0; i < M.ncol; i++)
-				K[i].push_back(i, (T)1);
-			return K;
-		}
+		if (rank == M.ncol)
+			return sparse_mat<T, index_t>();
+
+		constexpr index_t sv = index_sval<index_t>();
 		T m1 = scalar_neg((T)1, F);
 
-		sparse_mat<T, index_t> rows(rank, M.ncol);
-		sparse_mat<T, index_t> trows(M.ncol, rank);
-		for (size_t i = 0; i < rank; i++) {
-			rows[i] = M[pivots[i].r];
+		sparse_mat<T, index_t> K(M.ncol, M.ncol - rank);
+
+		auto nonpivs = perm_init((index_t)M.ncol);
+
+		for (auto [r, c] : pivots) {
+			K[c] = M[r];
+			*sparse_vec_entry(K[c], c) = (T)0;
+			K[c].canonicalize();
+			nonpivs[c] = sv;
 		}
-		sparse_mat_transpose_replace(trows, rows);
+		std::erase_if(nonpivs, [](index_t i) { return i == sv; });
+		std::vector<index_t> nonpivs_ord(M.ncol, sv);
+		for (size_t i = 0; i < nonpivs.size(); i++)
+			nonpivs_ord[nonpivs[i]] = (index_t)i;
 
-		std::vector<index_t> colpivs(M.ncol, sv);
-		std::vector<index_t> nonpivs;
-		for (size_t i = 0; i < rank; i++)
-			colpivs[pivots[i].c] = pivots[i].r;
+		for (auto i = 0; i < nonpivs.size(); i++) {
+			K[nonpivs[i]].push_back(i, m1);
+		}
 
-		for (size_t i = 0; i < M.ncol; i++)
-			if (colpivs[i] == sv)
-				nonpivs.push_back(i);
-
-		K.init(M.ncol - rank, M.ncol);
-		pool.detach_loop<size_t>(0, nonpivs.size(), [&](size_t i) {
-			auto& thecol = trows[nonpivs[i]];
-			K[i].reserve(thecol.nnz() + 1);
-			for (size_t j = 0; j < thecol.nnz(); j++) {
-				K[i].push_back(pivots[thecol(j)].c, thecol[j]);
-			}
-			K[i].push_back(nonpivs[i], m1);
-			K[i].sort_indices();
-			});
-		pool.wait();
+		for (auto [r, c] : pivots) {
+			for (size_t j = 0; j < K[c].nnz(); j++) 
+				K[c](j) = nonpivs_ord[K[c](j)];
+		}
 
 		return K;
 	}
 
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_rref_kernel(const sparse_mat<T, index_t>& M,
-		const std::vector<std::vector<pivot_t<index_t>>>& pivots, 
+		const std::vector<std::vector<pivot_t<index_t>>>& pivots,
 		const field_t& F, rref_option_t opt) {
 		std::vector<pivot_t<index_t>> n_pivots;
 		for (auto& p : pivots)
