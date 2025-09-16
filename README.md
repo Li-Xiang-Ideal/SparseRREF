@@ -55,26 +55,26 @@ Usage: SparseRREF [--help] [--version] [--output VAR]
                   [--no-backward-substitution]
                   input_file
 
-(exact) Sparse Reduced Row Echelon Form v0.3.2
+(exact) Sparse Reduced Row Echelon Form v0.3.4
 
 Positional arguments:
-  input_file                  input file in the Matrix Market exchange formats (MTX) or
-                              Sparse/Symbolic Matrix Storage (SMS)
+  input_file                       input file in the Matrix Market exchange formats (MTX) or
+                                   Sparse/Symbolic Matrix Storage (SMS)
 
 Optional arguments:
-  -h, --help                  shows help message and exits
-  -v, --version               prints version information and exits
-  -o, --output                output file in MTX format [default: "<input_file>.rref"]
-  -k, --kernel                output the kernel (null vectors)
-  -m, --method                method of RREF  [default: 0]
-  --output-pivots             output pivots
-  -F, --field                 QQ: rational field
-                              Zp or Fp: Z/p for a prime p [default: "QQ"]
-  -p, --prime                 a prime number, only vaild when field is Zp  [default: "34534567"]
-  -t, --threads               the number of threads  [default: 1]
-  -V, --verbose               prints information of calculation
-  -ps, --print_step           print step when --verbose is enabled [default: 100]
-  --no-backward-substitution  no backward substitution
+  -h, --help                       shows help message and exits
+  -v, --version                    prints version information and exits
+  -o, --output                     output file in MTX format [default: "<input_file>.rref"]
+  -k, --kernel                     output the kernel (null vectors)
+  -m, --method                     method of RREF  [default: 0]
+  -op, --output-pivots             output pivots
+  -F, --field                      QQ: rational field
+                                   Zp or Fp: Z/p for a prime p [default: "QQ"]
+  -p, --prime                      a prime number, only vaild when field is Zp  [default: "34534567"]
+  -t, --threads                    the number of threads  [default: 1]
+  -V, --verbose                    prints information of calculation
+  -ps, --print_step                print step when --verbose is enabled [default: 100]
+  -nb, --no-backward-substitution  no backward substitution
 ```
 
 The format (matrix market-like format) of input file looks like this:
@@ -108,9 +108,9 @@ We compare it with [Spasm](https://github.com/cbouilla/spasm). Platform and Conf
 	CPU: Intel(R) Core(TM) Ultra 9 185H (6P+8E+2LPE)
 	MEM: 24.5G + SWAP on PCIE4.0 SSD 
 	OS: Arch Linux x86-64
-	Compiler: gcc (GCC) 15.1.1 20250425 with mimalloc
+	Compiler: gcc (GCC) 15.2.1 20250813 with mimalloc
 	FLINT: v3.1.2
-	SparseRREF: v0.3.2
+	SparseRREF: v0.3.4
 	Prime number: 1073741827 ~ 2^30
 	Configuration: 
 	  - Spasm: Default configuration for Spasm, first spasm_echelonize and then spasm_rref
@@ -120,13 +120,13 @@ First two test matrices come from https://hpac.imag.fr, bs comes from symbol boo
 
 | Matrix   | (#row, #col, #non-zero-values, rank)   | Spasm (echelonize + rref)    | SparseRREF |
 | -------- | -------------------------------------- | ---------------------------- | ---------- |
-| GL7d24   | (21074, 105054, 593892, 18549)         | 20.8001s + 38.2s             | 3.08s      |
-| M0,6-D10 | (1274688, 616320, 5342400, 493432)     | 49.9s + 19.3s                | 56.86s     |
-| bs-1     | (202552, 64350, 11690309, 62130)       | 4.19241s + 1.1s              | 1.108670s  |
-| bs-2     | (709620, 732600, 48819232, 709620)     | too slow                     | 222.11s    |
-| bs-3     | (10011551, 2958306, 33896262, 2867955) | 484s + 327.1s                | 32.6243s   |
-| ibp-1    | (69153, 73316, 1117324, 58252)         | (rank is wrong) 2543.92s + ? | 4.23s      |
-| ibp-2    | (169323, 161970, 2801475, 135009)      | too slow                     | 32.51s     |
+| GL7d24   | (21074, 105054, 593892, 18549)         | 20.8001s + 38.2s             | 2.98s      |
+| M0,6-D10 | (1274688, 616320, 5342400, 493432)     | 49.9s + 19.3s                | 48.26s     |
+| bs-1     | (202552, 64350, 11690309, 62130)       | 4.19241s + 1.1s              | 1.13s      |
+| bs-2     | (709620, 732600, 48819232, 709620)     | too slow                     | 157.57s    |
+| bs-3     | (10011551, 2958306, 33896262, 2867955) | 484s + 327.1s                | 34.00s     |
+| ibp-1    | (69153, 73316, 1117324, 58252)         | (rank is wrong) 2543.92s + ? | 4.97s      |
+| ibp-2    | (169323, 161970, 2801475, 135009)      | too slow                     | 23.32s     |
 
 Some tests for Spasm are slow since the physical memory is not enough, and it uses swap. In the most of cases,
 SparseRREF uses less memory than Spasm since its result has less non zero values.

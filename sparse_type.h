@@ -312,7 +312,7 @@ namespace SparseRREF {
 
 		void canonicalize() {
 			size_t new_nnz = 0;
-			for (size_t i = 0; i < _nnz && new_nnz < _nnz; i++) {
+			for (size_t i = 0; i < _nnz; i++) {
 				if (entries[i] != 0) {
 					if (new_nnz != i) {
 						indices[new_nnz] = indices[i];
