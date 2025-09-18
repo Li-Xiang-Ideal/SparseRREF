@@ -301,9 +301,11 @@ int main(int argc, char** argv) {
 		else
 			wxfdata = sparse_mat_write_wxf(std::get<1>(mat));
 
-		auto parent_path = filePath.parent_path();
-		auto outname_path = parent_path / (outname + outname_add);
-		ustr_write(outname_path, wxfdata);
+		auto outpath = std::filesystem::path(outname);
+		if (outname_add == ".rref")
+			outpath.replace_extension(".rref.wxf");
+
+		ustr_write(outpath, wxfdata);
 	}
 	else {
 		file2.open(outname + outname_add);
@@ -323,26 +325,41 @@ int main(int argc, char** argv) {
 
 	if (program["--kernel"] == true) {
 		outname_add = ".kernel";
-		file2.open(outname + outname_add);
 		if (prime == 0) {
 			auto K = sparse_mat_rref_kernel(std::get<0>(mat), pivots, F, opt);
-			if (K.nrow > 0)
-				sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
+			if (K.nrow > 0) {
+				if (file_ext == ".wxf" || file_ext == ".WXF") {
+					auto wxfdata = sparse_mat_write_wxf(K);
+					ustr_write(outname + outname_add, wxfdata);
+				}
+				else {
+					file2.open(outname + outname_add);
+					sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
+					file2.close();
+				}
+			}
 			else
 				std::cout << "Kernel is empty." << std::endl;
 		}
 		else {
 			auto K = sparse_mat_rref_kernel(std::get<1>(mat), pivots, F, opt);
 			if (K.nrow > 0) {
-				if (prime > (1ULL << 32))
-					sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
-				else
-					sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_MTX);
+				if (file_ext == ".wxf" || file_ext == ".WXF") {
+					auto wxfdata = sparse_mat_write_wxf(K);
+					ustr_write(outname + outname_add, wxfdata);
+				}
+				else {
+					file2.open(outname + outname_add);
+					if (prime > (1ULL << 32))
+						sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_PLAIN);
+					else
+						sparse_mat_write(K, file2, SparseRREF::SPARSE_FILE_TYPE_MTX);
+					file2.close();
+				}
 			}
 			else
 				std::cout << "Kernel is empty." << std::endl;
 		}
-		file2.close();
 	}
 
 	end = SparseRREF::clocknow();
