@@ -33,7 +33,7 @@
 	modprref[mat_SparseArray, p_Integer, method_ : 1, nthread_ : 1] := 
 		With[{joinedmat = modrreflib[mat, p, method, nthread]},
 		 If[method =!= 0, {joinedmat[[;; Length@mat]], 
-		   joinedmat[[Length@mat + 1 ;;]]}, joinedmat]];
+		   Transpose[joinedmat[[Length@mat + 1 ;;]]]}, joinedmat]];
 
 	ratrref[mat_SparseArray, mode_ : 1, nthread_ : 1] := 
 		BinaryDeserialize[ratrreflib[BinarySerialize[mat], mode, nthread]];
@@ -50,18 +50,10 @@
 
 using namespace SparseRREF;
 
-EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args, MArgument Res) {
-	auto mat = MArgument_getMSparseArray(Args[0]);
-	auto p = MArgument_getInteger(Args[1]);
-	auto output_kernel = MArgument_getInteger(Args[2]);
-	auto nthreads = MArgument_getInteger(Args[3]);
-
+sparse_mat<ulong> MSparseArray_to_sparse_mat_ulong(WolframLibraryData ld, MArgument* arg, ulong p) {
+	auto mat = MArgument_getMSparseArray(*arg);
 	auto sf = ld->sparseLibraryFunctions;
 
-	auto ranks = sf->MSparseArray_getRank(mat);
-	if (ranks != 2 && sf->MSparseArray_getImplicitValue(mat) != 0)
-		return LIBRARY_FUNCTION_ERROR;
-	
 	auto dims = sf->MSparseArray_getDimensions(mat);
 	auto nrows = dims[0];
 	auto ncols = dims[1];
@@ -77,83 +69,126 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 	mint* colptr = ld->MTensor_getIntegerData(*m_colptr);
 
 	auto nnz = rowptr[nrows];
-	rref_option_t opt;
-	opt->pool.reset(nthreads);
 
 	// init a sparse matrix
 	nmod_t pp;
-	fmpz_t tmp;
-	fmpz_init(tmp);
+	int_t tmp;
 	nmod_init(&pp, (ulong)p);
 	sparse_mat<ulong> A(nrows, ncols);
-	
+
 	for (auto i = 0; i < nrows; i++) {
+		A[i].reserve(rowptr[i + 1] - rowptr[i]);
 		for (auto k = rowptr[i]; k < rowptr[i + 1]; k++) {
-			fmpz_set_si(tmp, valptr[k]);
-			fmpz_mod_ui(tmp, tmp, p);
-			ulong entry = fmpz_get_ui(tmp);
-			A[i].push_back(colptr[k] - 1, entry);
+			tmp = valptr[k];
+			A[i].push_back(colptr[k] - 1, tmp % pp);
 		}
 	}
-	fmpz_clear(tmp);
 
-	field_t F(FIELD_Fp, p);
+	return A;
+}
 
-	auto pivots = sparse_mat_rref(A, F, opt);
-	sparse_mat<ulong> K;
-	size_t len = 0;
-	if (output_kernel) {
-		K = sparse_mat_rref_kernel(A, pivots, F, opt);
-		len = K.nrow;
-	} 
-	
-	if (len == 0) 
-		nnz = A.nnz();
-	else 
-		nnz = A.nnz() + K.nnz();
-
+int sparse_mat_ulong_to_MSparseArray(WolframLibraryData ld, MSparseArray& res, const sparse_mat<ulong>& A) {
+	auto sf = ld->sparseLibraryFunctions;
+	size_t nnz = A.nnz();
 	MTensor pos, val, dim;
-	mint dims_r2[] = {nnz, 2};
+	mint dims_r2[] = { nnz, 2 };
 	ld->MTensor_new(MType_Integer, 2, dims_r2, &pos);
-	mint dims_r1[] = {nnz};
+	mint dims_r1[] = { nnz };
 	ld->MTensor_new(MType_Integer, 1, dims_r1, &val);
 	dims_r1[0] = 2;
 	ld->MTensor_new(MType_Integer, 1, dims_r1, &dim);
-
 	mint* dimdata = ld->MTensor_getIntegerData(dim);
-	dimdata[0] = A.nrow + K.nrow;
-	dimdata[1] = ncols;
+	dimdata[0] = A.nrow;
+	dimdata[1] = A.ncol;
 	mint* valdata = ld->MTensor_getIntegerData(val);
 	mint* posdata = ld->MTensor_getIntegerData(pos);
-
 	auto nownnz = 0;
-	// output A
-	for (size_t i = 0; i < A.nrow; i++){
-		for (size_t j = 0; j < A[i].nnz(); j++){
+	for (size_t i = 0; i < A.nrow; i++) {
+		for (size_t j = 0; j < A[i].nnz(); j++) {
 			posdata[2 * nownnz] = i + 1;
 			posdata[2 * nownnz + 1] = A[i](j) + 1;
 			valdata[nownnz] = A[i][j];
 			nownnz++;
 		}
 	}
-	if (len > 0) {
-		// output K
-		for (size_t i = 0; i < K.nrow; i++) {
-			for (size_t j = 0; j < K[i].nnz(); j++) {
-				posdata[2 * nownnz] = A.nrow + i + 1;
-				posdata[2 * nownnz + 1] = K[i](j) + 1;
-				valdata[nownnz] = K[i][j];
-				nownnz++;
-			}
-		}
-	}
-
-	MSparseArray result = 0;
-	auto err = sf->MSparseArray_fromExplicitPositions(pos, val, dim, 0, &result);
-
+	auto err = sf->MSparseArray_fromExplicitPositions(pos, val, dim, 0, &res);
 	ld->MTensor_free(pos);
 	ld->MTensor_free(val);
 	ld->MTensor_free(dim);
+	return err;
+}
+
+EXTERN_C DLLEXPORT int modpmatmul(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+	if (Argc != 4)
+		return LIBRARY_FUNCTION_ERROR;
+	auto matA = MArgument_getMSparseArray(Args[0]);
+	auto matB = MArgument_getMSparseArray(Args[1]);
+	auto p = MArgument_getInteger(Args[2]);
+	auto nthreads = MArgument_getInteger(Args[3]);
+	auto sf = ld->sparseLibraryFunctions;
+	auto ranksA = sf->MSparseArray_getRank(matA);
+	if (ranksA != 2 && sf->MSparseArray_getImplicitValue(matA) != 0)
+		return LIBRARY_FUNCTION_ERROR;
+	auto ranksB = sf->MSparseArray_getRank(matB);
+	if (ranksB != 2 && sf->MSparseArray_getImplicitValue(matB) != 0)
+		return LIBRARY_FUNCTION_ERROR;
+	auto A = MSparseArray_to_sparse_mat_ulong(ld, Args, (ulong)p);
+	auto B = MSparseArray_to_sparse_mat_ulong(ld, Args + 1, (ulong)p);
+	if (A.ncol != B.nrow)
+		return LIBRARY_FUNCTION_ERROR;
+	field_t F(FIELD_Fp, p);
+	int err = 0;
+	MSparseArray result = 0;
+	if (nthreads == 1) {
+		auto C = sparse_mat_mul(A, B, F, nullptr);
+		err = sparse_mat_ulong_to_MSparseArray(ld, result, C);
+	}
+	else {
+		thread_pool pool(nthreads);
+		auto C = sparse_mat_mul(A, B, F, &pool);
+		err = sparse_mat_ulong_to_MSparseArray(ld, result, C);
+	}
+	if (err)
+		return LIBRARY_FUNCTION_ERROR;
+	MArgument_setMSparseArray(Res, result);
+	return LIBRARY_NO_ERROR;
+}
+
+EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args, MArgument Res) {
+	if (Argc != 4)
+		return LIBRARY_FUNCTION_ERROR;
+	auto mat = MArgument_getMSparseArray(Args[0]);
+	auto p = MArgument_getInteger(Args[1]);
+	auto output_kernel = MArgument_getInteger(Args[2]);
+	auto nthreads = MArgument_getInteger(Args[3]);
+
+	auto sf = ld->sparseLibraryFunctions;
+
+	auto ranks = sf->MSparseArray_getRank(mat);
+	if (ranks != 2 && sf->MSparseArray_getImplicitValue(mat) != 0)
+		return LIBRARY_FUNCTION_ERROR;
+	
+
+	auto A = MSparseArray_to_sparse_mat_ulong(ld, Args, (ulong)p);
+
+	field_t F(FIELD_Fp, p);
+
+	rref_option_t opt;
+	opt->pool.reset(nthreads);
+
+	auto pivots = sparse_mat_rref(A, F, opt);
+	sparse_mat<ulong> K;
+	size_t len = 0;
+	if (output_kernel) {
+		K = sparse_mat_rref_kernel(A, pivots, F, opt);
+		K = K.transpose();
+		len = K.nrow;
+	} 
+
+	A.append(std::move(K));
+
+	MSparseArray result = 0;
+	int err = sparse_mat_ulong_to_MSparseArray(ld, result, A);
 	
 	if (err)
 		return LIBRARY_FUNCTION_ERROR;
@@ -170,6 +205,8 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 // 2: output the rref and its pivots
 // 3: output the rref, kernel and pivots
 EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+	if (Argc != 3)
+		return LIBRARY_FUNCTION_ERROR;
 	auto na_in = MArgument_getMNumericArray(Args[0]);
 	auto output_mode = MArgument_getInteger(Args[1]);
 	auto nthreads = MArgument_getInteger(Args[2]);
@@ -316,6 +353,8 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 }
 
 EXTERN_C DLLEXPORT int ratmat_inv(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+	if (Argc != 2)
+		return LIBRARY_FUNCTION_ERROR;
 	auto na_in = MArgument_getMNumericArray(Args[0]);
 	auto nthreads = MArgument_getInteger(Args[1]);
 

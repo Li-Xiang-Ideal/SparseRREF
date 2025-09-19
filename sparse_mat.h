@@ -591,7 +591,7 @@ namespace SparseRREF {
 	// TODO: CHECK!!!
 	template <typename T, typename index_t>
 	void triangular_solver_2_rec(sparse_mat<T, index_t>& mat, 
-		const std::vector<std::vector<index_t>>& tranmat, 
+		const sparse_mat<bool, index_t>& tranmat,
 		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, rref_option_t opt, T* cachedensedmat,
 		std::vector<SparseRREF::bit_array>& nonzero_c, size_t n_split, size_t rank, size_t& process) {
@@ -614,8 +614,10 @@ namespace SparseRREF {
 		std::vector<pivot_t<index_t>> left_pivots(pivots.begin(), pivots.end() - n_split);
 
 		std::unordered_set<index_t> pre_leftrows;
-		for (auto [r, c] : sub_pivots)
-			pre_leftrows.insert(tranmat[c].begin(), tranmat[c].end());
+		for (auto [r, c] : sub_pivots) {
+			for (auto i = 0; i < tranmat[c].nnz(); i++)
+				pre_leftrows.insert(tranmat[c](i));
+		}
 		for (auto [r, c] : sub_pivots)
 			pre_leftrows.erase(r);
 		std::vector<index_t> leftrows(pre_leftrows.begin(), pre_leftrows.end());
@@ -680,14 +682,11 @@ namespace SparseRREF {
 			return;
 
 		// we only need to compute the transpose of the submatrix involving pivots
-		std::vector<std::vector<index_t>> tranmat(mat.ncol);
-		for (size_t i = 0; i < pivots.size(); i++) {
-			auto row = pivots[i].r;
-			auto indices = mat[row].indices;
-			for (size_t j = 0; j < mat[row].nnz(); j++) {
-				tranmat[indices[j]].push_back(row);
-			}
-		}
+		std::vector<size_t> rows(pivots.size());
+		for (size_t i = 0; i < pivots.size(); i++)
+			rows[i] = pivots[i].r;
+		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
+		sparse_mat_transpose_part_replace(tranmat, mat, rows, &pool);
 
 		size_t process = 0;
 		// TODO: better split strategy
