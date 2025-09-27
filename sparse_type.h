@@ -1657,6 +1657,91 @@ namespace SparseRREF {
 		return { A, B };
 	}
 
+	// a submatrix view of sparse_mat
+	// it only contains a pointer to the original matrix and a list of row indices
+	// and it does not own any memory
+	// to save memory, if rows[0] > mat.nrow, then it is a full view
+	template <typename T, typename index_t>
+	struct sparse_mat_subview {
+		sparse_mat<T, index_t>* mat_ptr = nullptr;
+		std::vector<size_t> rows;
+
+		sparse_mat_subview() = default;
+		~sparse_mat_subview() = default;
+
+		sparse_mat_subview(sparse_mat<T, index_t>& mat_) {
+			mat_ptr = &mat_;
+			rows = { mat_.nrow + 1 }; // full view
+		}
+
+		sparse_mat_subview(sparse_mat<T, index_t>& mat_, const std::vector<size_t>& rows_) {
+			mat_ptr = &mat_;
+			rows = rows_;
+		}
+
+		sparse_mat_subview(const sparse_mat_subview& l) { mat_ptr = l.mat_ptr; rows = l.rows; }
+		sparse_mat_subview(sparse_mat_subview&& l) noexcept { mat_ptr = l.mat_ptr; rows = std::move(l.rows); }
+		sparse_mat_subview& operator=(const sparse_mat_subview& l) {
+			if (this == &l)
+				return *this;
+			mat_ptr = l.mat_ptr;
+			rows = l.rows;
+			return *this;
+		}
+		sparse_mat_subview& operator=(sparse_mat_subview&& l) noexcept {
+			if (this == &l)
+				return *this;
+			mat_ptr = l.mat_ptr;
+			rows = std::move(l.rows);
+			return *this;
+		}
+
+		size_t nrow() const {
+			if (mat_ptr) {
+				if (rows[0] > mat_ptr->nrow) // full view
+					return mat_ptr->nrow;
+				return rows.size();
+			}
+			return 0;
+		}
+
+		size_t ncol() const {
+			if (mat_ptr)
+				return mat_ptr->ncol;
+			return 0;
+		}
+
+		size_t nnz() const {
+			if (mat_ptr) {
+				size_t result = 0;
+				if (rows[0] > mat_ptr->nrow) // full view
+					return mat_ptr->nnz();
+				for (auto r : rows)
+					result += (*mat_ptr)[r].nnz();
+				return result;
+			}
+			return 0;
+		}
+
+		bool is_full() const {
+			if (mat_ptr) {
+				return rows[0] > mat_ptr->nrow; // full view
+			}
+			return false;
+		}
+
+		// access the i-th row of the subview, it is dangerous because we do not check the index
+		sparse_vec<T, index_t>& operator[](size_t i) {
+			if (rows[0] > mat_ptr->nrow) // full view
+				return (*mat_ptr)[i];
+			return (*mat_ptr)[rows[i]];
+		}
+		const sparse_vec<T, index_t>& operator[](size_t i) const {
+			if (rows[0] > mat_ptr->nrow) // full view
+				return (*mat_ptr)[i];
+			return (*mat_ptr)[rows[i]];
+		}
+	};
 
 }
 

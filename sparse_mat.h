@@ -15,10 +15,13 @@
 
 namespace SparseRREF {
 	template <typename T, typename S, typename index_t>
-	void sparse_mat_transpose_part_replace(
-		sparse_mat<S, index_t>& tranmat, const sparse_mat<T, index_t>& mat,
-		const std::vector<size_t>& rows, thread_pool* pool = nullptr) {
+	void sparse_mat_transpose_replace(
+		sparse_mat<S, index_t>& tranmat, const sparse_mat_subview<T, index_t> submat,
+		thread_pool* pool = nullptr) {
 		tranmat.zero();
+
+		const auto& mat = *submat.mat_ptr;
+		const auto& rows = submat.rows;
 
 		if (pool == nullptr) {
 			for (size_t i = 0; i < rows.size(); i++) {
@@ -58,11 +61,11 @@ namespace SparseRREF {
 	}
 
 	template <typename T, typename S, typename index_t>
-	void sparse_mat_transpose_replace(sparse_mat<S, index_t>& tranmat,
-		const sparse_mat<T, index_t>& mat,
+	void sparse_mat_transpose_replace(
+		sparse_mat<S, index_t>& tranmat, const sparse_mat<T, index_t>& submat,
 		thread_pool* pool = nullptr) {
-		auto rows = perm_init(mat.nrow);
-		sparse_mat_transpose_part_replace(tranmat, mat, rows, pool);
+
+		sparse_mat_transpose_replace(tranmat, sparse_mat_subview<T, index_t>(submat), pool);
 	}
 
 	// rref staffs
@@ -71,12 +74,12 @@ namespace SparseRREF {
 	// we assume that mat is canonical, i.e. each index is sorted
 	// and the result is also canonical
 	template <typename T, typename index_t>
-	size_t eliminate_row_with_one_nnz(sparse_mat<T, index_t>& mat, std::vector<index_t>& donelist,
+	size_t eliminate_row_with_one_nnz(sparse_mat_subview<T, index_t> mat, std::vector<index_t>& donelist,
 		rref_option_t opt) {
 		auto localcounter = 0;
 		std::unordered_map<index_t, index_t> pivlist;
-		bit_array collist(mat.ncol);
-		for (size_t i = 0; i < mat.nrow; i++) {
+		bit_array collist(mat.ncol());
+		for (size_t i = 0; i < mat.nrow(); i++) {
 			if (donelist[i] != index_sval<index_t>())
 				continue;
 			if (mat[i].nnz() == 1) {
@@ -91,7 +94,7 @@ namespace SparseRREF {
 		if (localcounter == 0)
 			return localcounter;
 
-		opt->pool.detach_loop(0, mat.nrow, [&](size_t i) {
+		opt->pool.detach_loop(0, mat.nrow(), [&](size_t i) {
 			bool is_changed = false;
 			for (auto [col, val] : mat[i]) {
 				if (collist[col]) {
@@ -118,14 +121,20 @@ namespace SparseRREF {
 	}
 
 	template <typename T, typename index_t>
-	size_t eliminate_row_with_one_nnz_rec(sparse_mat<T, index_t>& mat, std::vector<index_t>& donelist,
+	size_t eliminate_row_with_one_nnz(sparse_mat<T,index_t>& mat, std::vector<index_t>& donelist,
+		rref_option_t opt) {
+		return eliminate_row_with_one_nnz(sparse_mat_subview<T, index_t>(mat), donelist, opt);
+	}
+
+	template <typename T, typename index_t>
+	size_t eliminate_row_with_one_nnz_rec(sparse_mat_subview<T, index_t> mat, std::vector<index_t>& donelist,
 		rref_option_t opt, int max_depth = 1024) {
 		int depth = 0;
 		size_t localcounter = 0;
 		size_t count = 0;
 		bool verbose = opt->verbose;
 
-		size_t ndir = mat.ncol;
+		size_t ndir = mat.ncol();
 
 		size_t oldnnz = mat.nnz();
 		int bitlen_nnz = (int)std::floor(std::log(oldnnz) / std::log(10)) + 2;
@@ -143,7 +152,7 @@ namespace SparseRREF {
 					<< "  rank: " << std::setw(bitlen_ndir) << count
 					<< "  nnz: " << std::setw(bitlen_nnz) << oldnnz
 					<< "  density: " << std::setprecision(6) << std::setw(8)
-					<< 100 * (double)oldnnz / (mat.nrow * mat.ncol) << "%"
+					<< 100 * (double)oldnnz / (mat.nrow() * mat.ncol()) << "%"
 					<< "    \r" << std::flush;
 			}
 			depth++;
@@ -154,12 +163,18 @@ namespace SparseRREF {
 		return count;
 	}
 
+	template <typename T, typename index_t>
+	size_t eliminate_row_with_one_nnz_rec(sparse_mat<T, index_t>& mat, std::vector<index_t>& donelist,
+		rref_option_t opt, int max_depth = 1024) {
+		return eliminate_row_with_one_nnz_rec(sparse_mat_subview<T, index_t>(mat), donelist, opt, max_depth);
+	}
+
 	// first choose the pivot with minimal col_weight
 	// if the col_weight is negative, we do not choose it
 	template <typename T, typename index_t>
 	std::vector<pivot_t<index_t>> pivots_search(
 		const sparse_mat<T, index_t>& mat, const sparse_mat<bool, index_t>& tranmat,
-		const std::vector<index_t>& leftrows, const std::vector<index_t>& leftcols,
+		const std::vector<size_t>& leftrows, const std::vector<index_t>& leftcols,
 		const std::function<int64_t(int64_t)>& col_weight = [](int64_t i) { return i; }) {
 
 		std::list<pivot_t<index_t>> pivots;
@@ -248,7 +263,7 @@ namespace SparseRREF {
 	// only right search version, do not need the full tranpose
 	template <typename T, typename index_t>
 	std::vector<pivot_t<index_t>> pivots_search_right(const sparse_mat<T, index_t>& mat,
-		const std::vector<index_t>& leftrows, const std::vector<index_t>& leftcols,
+		const std::vector<size_t>& leftrows, const std::vector<index_t>& leftcols,
 		const std::function<int64_t(int64_t)>& col_weight = [](int64_t i) { return i; }) {
 
 		std::vector<pivot_t<index_t>> pivots;
@@ -538,7 +553,7 @@ namespace SparseRREF {
 	// make sure nonzero_c and tmpvec are cleared before calling this function
 	// after this function, nonzero_c and tmpvec are also cleared
 	template <typename T, typename index_t>
-	void schur_complete(sparse_mat<T, index_t>& mat, index_t k, 
+	void schur_complete(sparse_mat<T, index_t>& mat, size_t k, 
 		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, T* tmpvec, SparseRREF::bit_array& nonzero_c) {
 
@@ -585,6 +600,29 @@ namespace SparseRREF {
 		for (size_t i = 0; i < nnz; i++) {
 			mat[k][i] = tmpvec[mat[k](i)];
 			tmpvec[mat[k](i)] = 0; // clear tmpvec for next use
+		}
+	}
+
+	template <typename T, typename index_t>
+	void schur_complete(sparse_mat<T, index_t>& mat, const std::vector<size_t>& rows,
+		const std::vector<pivot_t<index_t>>& pivots,
+		const field_t& F, T* tmpvec, bit_array* nonzero_c,
+		thread_pool* pool = nullptr) {
+
+		if (pool) {
+			auto nthreads = pool->get_thread_count();
+			pool->detach_blocks<size_t>(0, rows.size(), [&](const size_t s, const size_t e) {
+				auto id = SparseRREF::thread_id();
+				for (size_t i = s; i < e; i++) {
+					schur_complete(mat, rows[i], pivots, F, tmpvec + id * mat.ncol, nonzero_c[id]);
+				}
+				}, (rows.size() < 20 * nthreads ? 0 : rows.size() / 10));
+			pool->wait();
+			return;
+		}
+
+		for (size_t i = 0; i < rows.size(); i++) {
+			schur_complete(mat, rows[i], pivots, F, tmpvec, nonzero_c[0]);
 		}
 	}
 
@@ -682,11 +720,14 @@ namespace SparseRREF {
 			return;
 
 		// we only need to compute the transpose of the submatrix involving pivots
-		std::vector<size_t> rows(pivots.size());
+		sparse_mat_subview<T, index_t> submat;
+		submat.mat_ptr = &mat;
+		submat.rows.resize(pivots.size());
 		for (size_t i = 0; i < pivots.size(); i++)
-			rows[i] = pivots[i].r;
+			submat.rows[i] = pivots[i].r;
+
 		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
-		sparse_mat_transpose_part_replace(tranmat, mat, rows, &pool);
+		sparse_mat_transpose_replace(tranmat, submat, &pool);
 
 		size_t process = 0;
 		// TODO: better split strategy
@@ -830,9 +871,10 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	std::vector<std::vector<pivot_t<index_t>>>
-		sparse_mat_rref_forward(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
+		sparse_mat_rref_forward(sparse_mat_subview<T, index_t> submat, const field_t& F, rref_option_t opt) {
 		// first canonicalize, sort and compress the matrix
 
+		sparse_mat<T, index_t>& mat = *submat.mat_ptr;
 		constexpr index_t sv = index_sval<index_t>();
 
 		auto& pool = opt->pool;
@@ -866,7 +908,7 @@ namespace SparseRREF {
 
 		// eliminate rows with only one non-zero entry
 		if (opt->eliminate_one_nnz) {
-			size_t count = eliminate_row_with_one_nnz_rec(mat, rowpivs, opt);
+			size_t count = eliminate_row_with_one_nnz_rec(submat, rowpivs, opt);
 			now_nnz = mat.nnz();
 
 			for (size_t i = 0; i < mat.nrow; i++) {
@@ -895,12 +937,19 @@ namespace SparseRREF {
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
 		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, mat.ncol);
 
-		std::vector<index_t> leftrows;
+		std::vector<size_t> leftrows;
 		leftrows.reserve(mat.nrow);
-		for (size_t i = 0; i < mat.nrow; i++) {
-			if (rowpivs[i] != sv || mat[i].nnz() == 0)
-				continue;
-			leftrows.push_back(i);
+		if (submat.is_full()) {
+			for (size_t i = 0; i < mat.nrow; i++) {
+				if (rowpivs[i] == sv && mat[i].nnz() > 0)
+					leftrows.push_back(i);
+			}
+		}
+		else {
+			for (auto i : submat.rows) {
+				if (rowpivs[i] == sv && mat[i].nnz() > 0)
+					leftrows.push_back(i);
+			}
 		}
 
 		bool only_right_search = true;
@@ -909,7 +958,8 @@ namespace SparseRREF {
 		if (opt->method != 1) {
 			only_right_search = false;
 			tranmat = sparse_mat<bool, index_t>(mat.ncol, mat.nrow);
-			sparse_mat_transpose_replace(tranmat, mat, &pool);
+			sparse_mat_subview<T, index_t> matview(mat, leftrows);
+			sparse_mat_transpose_replace(tranmat, matview, &pool);
 
 			// sort pivots by nnz, it will be faster
 			std::stable_sort(leftcols.begin(), leftcols.end(),
@@ -1133,6 +1183,11 @@ namespace SparseRREF {
 			std::cout << "\n** Rank: " << rank << " nnz: " << mat.nnz() << std::endl;
 
 		return pivots;
+	}
+
+	template <typename T, typename index_t>
+	auto sparse_mat_rref_forward(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
+		return sparse_mat_rref_forward<T, index_t>(sparse_mat_subview<T, index_t>(mat), F, opt);
 	}
 
 	template <typename T, typename index_t>
