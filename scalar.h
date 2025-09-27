@@ -427,7 +427,7 @@ namespace SparseRREF {
 	};
 
 	struct field_t {
-		RING ring;
+		RING ring = FIELD_QQ;
 		nmod_t mod;
 
 		field_t() {}

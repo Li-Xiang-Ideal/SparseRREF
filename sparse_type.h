@@ -1741,6 +1741,12 @@ namespace SparseRREF {
 				return (*mat_ptr)[i];
 			return (*mat_ptr)[rows[i]];
 		}
+
+		const size_t operator()(size_t i) const {
+			if (rows[0] > mat_ptr->nrow) // full view
+				return i;
+			return rows[i];
+		}
 	};
 
 }

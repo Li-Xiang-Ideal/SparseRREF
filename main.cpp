@@ -260,7 +260,7 @@ int main(int argc, char** argv) {
 	printtime("RREF");
 
 	size_t rank = 0;
-	for (auto p : pivots) {
+	for (auto& p : pivots) {
 		rank += p.size();
 	}
 	std::cout << "rank: " << rank << " ";
@@ -282,7 +282,7 @@ int main(int argc, char** argv) {
 	if (program["--output-pivots"] == true) {
 		outname_add = ".piv";
 		file2.open(outname + outname_add);
-		for (auto p : pivots) {
+		for (auto& p : pivots) {
 			for (auto [r, c] : p)
 				file2 << r + 1 << ", " << c + 1 << '\n';
 		}

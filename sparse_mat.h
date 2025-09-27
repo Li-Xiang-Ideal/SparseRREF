@@ -42,7 +42,7 @@ namespace SparseRREF {
 		if (pool->get_thread_count() > 16)
 			mtx_size = 65536;
 		else
-			mtx_size = 1 << pool->get_thread_count();
+			mtx_size = (size_t)1 << pool->get_thread_count();
 		std::vector<std::mutex> mtxes(mtx_size);
 
 		pool->detach_loop(0, rows.size(), [&](size_t i) {
@@ -77,9 +77,10 @@ namespace SparseRREF {
 	size_t eliminate_row_with_one_nnz(sparse_mat_subview<T, index_t> mat, std::vector<index_t>& donelist,
 		rref_option_t opt) {
 		auto localcounter = 0;
-		std::unordered_map<index_t, index_t> pivlist;
+		std::unordered_map<size_t, index_t> pivlist;
 		bit_array collist(mat.ncol());
-		for (size_t i = 0; i < mat.nrow(); i++) {
+		for (size_t a = 0; a < mat.nrow(); a++) {
+			size_t i = mat(a);
 			if (donelist[i] != index_sval<index_t>())
 				continue;
 			if (mat[i].nnz() == 1) {
@@ -96,9 +97,10 @@ namespace SparseRREF {
 
 		opt->pool.detach_loop(0, mat.nrow(), [&](size_t i) {
 			bool is_changed = false;
+			auto row = mat(i);
 			for (auto [col, val] : mat[i]) {
 				if (collist[col]) {
-					if (pivlist.contains(i) && pivlist[i] == col)
+					if (pivlist.contains(row) && pivlist[row] == col)
 						val = 1;
 					else {
 						val = 0;
@@ -792,11 +794,12 @@ namespace SparseRREF {
 			mat[i].compress();
 		}
 
-		std::vector<index_t> leftrows(mat.nrow, sv);
-		if (opt->eliminate_one_nnz)
-			eliminate_row_with_one_nnz(mat, leftrows, opt);
+		if (opt->eliminate_one_nnz) {
+			std::vector<index_t> donelist(mat.nrow, sv);
+			eliminate_row_with_one_nnz(mat, donelist, opt);
+		}
 
-		leftrows.clear();
+		std::vector<size_t> leftrows;
 
 		// then do the elimination parallelly
 		auto nthreads = pool.get_thread_count();
@@ -889,7 +892,7 @@ namespace SparseRREF {
 		if (pool.get_thread_count() > 16)
 			mtx_size = 65536;
 		else
-			mtx_size = 1 << pool.get_thread_count();
+			mtx_size = (size_t)1 << pool.get_thread_count();
 		std::vector<std::mutex> mtxes(mtx_size);
 
 		size_t now_nnz = mat.nnz();
@@ -1126,7 +1129,7 @@ namespace SparseRREF {
 				while (localcount < leftrows.size()) {
 					// if the pool is free and too many rows left, use pool
 					if (localcount * 2 < leftrows.size() && pool.get_tasks_total() == 0) {
-						std::vector<index_t> newleftrows;
+						std::vector<size_t> newleftrows;
 						for (size_t i = 0; i < leftrows.size(); i++) {
 							if (flags[i])
 								newleftrows.push_back(leftrows[i]);
@@ -1588,7 +1591,7 @@ namespace SparseRREF {
 		bool isok = true;
 		sparse_mat<rat_t, index_t> matq(mat.nrow, mat.ncol);
 
-		std::vector<index_t> leftrows;
+		std::vector<size_t> leftrows;
 
 		for (size_t i = 0; i < mat.nrow; i++) {
 			size_t nnz = matul[i].nnz();
@@ -2113,19 +2116,19 @@ namespace SparseRREF {
 			token.to_ustr(res);
 
 #define APPEND_COLIND_DATA(TYPE)                                        \
-    {                                                                   \
-        std::vector<TYPE> tmp((rank - 1) * nnz);                        \
-        size_t idx = 0;                                                 \
+	{                                                                   \
+		std::vector<TYPE> tmp((rank - 1) * nnz);                        \
+		size_t idx = 0;                                                 \
 		for (size_t i = 0; i < mat.nrow; i++) {                         \
 			for (size_t j = 0; j < mat[i].nnz(); j++) {                 \
 				tmp[idx] = mat[i](j) + 1;                               \
 				idx++;                                                  \
 			}                                                           \
 		}                                                               \
-        res.insert(res.end(),                                           \
-                   (uint8_t*)(tmp.data()),                              \
-                   (uint8_t*)(tmp.data()) + tmp.size() * sizeof(TYPE)); \
-    }
+		res.insert(res.end(),                                           \
+				   (uint8_t*)(tmp.data()),                              \
+				   (uint8_t*)(tmp.data()) + tmp.size() * sizeof(TYPE)); \
+	}
 
 			switch (mz) {
 			case 0: APPEND_COLIND_DATA(int8_t); break;
