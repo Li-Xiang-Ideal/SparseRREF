@@ -877,16 +877,13 @@ namespace SparseRREF {
 		sparse_mat_rref_forward(sparse_mat_subview<T, index_t> submat, const field_t& F, rref_option_t opt) {
 		// first canonicalize, sort and compress the matrix
 
-		sparse_mat<T, index_t>& mat = *submat.mat_ptr;
+		sparse_mat<T, index_t>& mat = submat.get_mat();
 		constexpr index_t sv = index_sval<index_t>();
 
 		auto& pool = opt->pool;
 		auto nthreads = pool.get_thread_count();
 
 		pool.detach_loop(0, mat.nrow, [&](auto i) { mat[i].compress(); });
-
-		auto printstep = opt->print_step;
-		bool verbose = opt->verbose;
 
 		size_t mtx_size;
 		if (pool.get_thread_count() > 16)
@@ -896,7 +893,6 @@ namespace SparseRREF {
 		std::vector<std::mutex> mtxes(mtx_size);
 
 		size_t now_nnz = mat.nnz();
-
 		
 		// store the pivots that have been used
 		// sv is not used
@@ -934,26 +930,16 @@ namespace SparseRREF {
 		}
 		std::erase_if(leftcols, [](index_t i) { return i == sv; });
 
-		auto rank = pivots[0].size();
-		size_t kk = rank;
-
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
-		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, mat.ncol);
+		std::vector<bit_array> nonzero_c(nthreads, mat.ncol);
 
 		std::vector<size_t> leftrows;
 		leftrows.reserve(mat.nrow);
-		if (submat.is_full()) {
-			for (size_t i = 0; i < mat.nrow; i++) {
-				if (rowpivs[i] == sv && mat[i].nnz() > 0)
-					leftrows.push_back(i);
+		submat.traverse([&rowpivs, &mat, &leftrows](size_t i) {
+			if (rowpivs[i] == index_sval<index_t>() && mat[i].nnz() > 0)
+				leftrows.push_back(i);
 			}
-		}
-		else {
-			for (auto i : submat.rows) {
-				if (rowpivs[i] == sv && mat[i].nnz() > 0)
-					leftrows.push_back(i);
-			}
-		}
+		);
 
 		bool only_right_search = true;
 
@@ -978,20 +964,12 @@ namespace SparseRREF {
 
 		bit_array tmp_set(mat.ncol);
 
-		while (kk < mat.ncol) {
-			auto start = SparseRREF::clocknow();
+		auto rank = pivots[0].size();
+		while (rank < mat.ncol) {
+			auto start = clocknow();
 
 			std::vector<pivot_t<index_t>> ps;
 
-			if (opt->sort_rows) {
-				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
-					if (mat[a].nnz() < mat[b].nnz())
-						return true;
-					if (mat[a].nnz() == mat[b].nnz())
-						return lexico_compare(mat[a].indices, mat[b].indices, mat[a].nnz()) < 0;
-					return false;
-					});
-			}
 			if (only_right_search) {
 				ps = pivots_search_right(mat, leftrows, leftcols, opt->col_weight);
 			}
@@ -1007,7 +985,6 @@ namespace SparseRREF {
 				n_pivots.emplace_back(r, c);
 			}
 			pivots.push_back(n_pivots);
-			rank += n_pivots.size();
 
 			pool.detach_loop(0, n_pivots.size(), [&](size_t i) {
 				auto [r, c] = n_pivots[i];
@@ -1036,19 +1013,19 @@ namespace SparseRREF {
 
 			auto print_info = [&](size_t kk, size_t x, bool& print_once, double& oldpr) {
 				double pr = kk + (1.0 * ps.size() * x) / leftrows.size();
-				if (verbose && (print_once || pr - oldpr > printstep)) {
-					auto end = SparseRREF::clocknow();
+				if (opt->verbose && (print_once || pr - oldpr > opt->print_step)) {
+					auto end = clocknow();
 					now_nnz = mat.nnz();
 					auto now_alloc = mat.alloc();
 					std::cout << "-- Col: " << std::setw(bitlen_ncol)
 						<< (int)pr << "/" << mat.ncol
-						<< "  rank: " << std::setw(bitlen_ncol) << rank
+						<< "  rank: " << std::setw(bitlen_ncol) << kk + ps.size()
 						<< "  nnz: " << std::setw(bitlen_nnz) << now_nnz
 						<< "  alloc: " << std::setw(bitlen_nnz) << now_alloc
 						<< "  density: " << std::setprecision(6) << std::setw(8)
 						<< 100 * (double)now_nnz / (mat.nrow * mat.ncol) << "%"
 						<< "  speed: " << std::setprecision(6) << std::setw(8) <<
-						((pr - oldpr) / SparseRREF::usedtime(start, end))
+						((pr - oldpr) / usedtime(start, end))
 						<< " col/s    \r" << std::flush;
 					oldpr = pr;
 					start = end;
@@ -1059,7 +1036,7 @@ namespace SparseRREF {
 			if (only_right_search) {
 				std::atomic<size_t> done_count = 0;
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
-					auto id = SparseRREF::thread_id();
+					auto id = thread_id();
 					for (size_t i = s; i < e; i++) {
 						schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 						done_count++;
@@ -1090,7 +1067,7 @@ namespace SparseRREF {
 						return pivots;
 					}
 
-					print_info(kk, done_count, print_once, oldpr);
+					print_info(rank, done_count, print_once, oldpr);
 					std::this_thread::sleep_for(std::chrono::microseconds(10));
 				}
 				pool.wait();
@@ -1098,7 +1075,7 @@ namespace SparseRREF {
 			else {
 				std::vector<int> flags(leftrows.size(), 0);
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
-					auto id = SparseRREF::thread_id();
+					auto id = thread_id();
 					for (size_t i = s; i < e; i++) {
 						schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 						flags[i] = 1;
@@ -1144,6 +1121,14 @@ namespace SparseRREF {
 							}
 							localcount++;
 							}, (newleftrows.size() < 20 * nthreads ? 0 : newleftrows.size() / 10));
+
+						if (opt->verbose) {
+							while (localcount < leftrows.size() && !(opt->abort)) {
+								print_info(rank, localcount, print_once, oldpr);
+								std::this_thread::sleep_for(std::chrono::microseconds(100));
+							}
+						}
+
 						pool.wait();
 					}
 
@@ -1166,7 +1151,7 @@ namespace SparseRREF {
 						return pivots;
 					}
 
-					print_info(kk, localcount, print_once, oldpr);
+					print_info(rank, localcount, print_once, oldpr);
 				}
 				pool.wait();
 			}
@@ -1179,10 +1164,10 @@ namespace SparseRREF {
 				tranmat.clear();
 			}
 
-			kk += ps.size();
+			rank += n_pivots.size();
 		}
 
-		if (verbose)
+		if (opt->verbose)
 			std::cout << "\n** Rank: " << rank << " nnz: " << mat.nnz() << std::endl;
 
 		return pivots;
@@ -1301,15 +1286,6 @@ namespace SparseRREF {
 
 			std::vector<pivot_t<index_t>> ps;
 
-			if (opt->sort_rows) {
-				std::stable_sort(leftrows.begin(), leftrows.end(), [&mat](auto a, auto b) {
-					if (mat[a].nnz() < mat[b].nnz())
-						return true;
-					if (mat[a].nnz() == mat[b].nnz())
-						return lexico_compare(mat[a].indices, mat[b].indices, mat[a].nnz()) < 0;
-					return false;
-					});
-			}
 			if (only_right_search) {
 				ps = pivots_search_right(mat, leftrows, leftcols, col_weight);
 			}

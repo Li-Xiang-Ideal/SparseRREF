@@ -1747,6 +1747,26 @@ namespace SparseRREF {
 				return i;
 			return rows[i];
 		}
+
+		sparse_mat<T, index_t>& get_mat() {
+			return *mat_ptr;
+		}
+		const sparse_mat<T, index_t>& get_mat() const {
+			return *mat_ptr;
+		}
+
+		void traverse(std::function<void(size_t)> func) {
+			if (mat_ptr == nullptr)
+				return;
+			if (rows[0] > mat_ptr->nrow) { // full view
+				for (size_t i = 0; i < mat_ptr->nrow; i++)
+					func(i);
+			}
+			else {
+				for (auto r : rows)
+					func(r);
+			}
+		}
 	};
 
 }

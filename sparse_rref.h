@@ -132,7 +132,6 @@ namespace SparseRREF {
 		bool shrink_memory = false;
 		std::atomic<bool> abort = false;
 		bool is_back_sub = true;
-		bool sort_rows = false;
 		bool eliminate_one_nnz = true;
 		int method = 0;
 		int print_step = 100;
