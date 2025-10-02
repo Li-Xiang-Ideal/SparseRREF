@@ -47,6 +47,10 @@ namespace Flint {
 	struct int_t {
 		fmpz _data;
 
+		// access to the underlying fmpz*
+		fmpz* data() { return &_data; }
+		const fmpz* data() const { return &_data; }
+
 		// fmpz_init(&_data) is equivalent to _data = 0LL;
 		inline void init() { fmpz_init(&_data); }
 		int_t() { init(); }
@@ -138,6 +142,9 @@ namespace Flint {
 		template <unsigned_builtin_integral T> void operator/=(const T other) { fmpz_fdiv_q_ui(&_data, &_data, other); }
 		template <signed_builtin_integral T> void operator/=(const T other) { fmpz_fdiv_q_si(&_data, &_data, other); }
 
+		void operator++() { fmpz_add_ui(&_data, &_data, 1); }
+		void operator--() { fmpz_sub_ui(&_data, &_data, 1); }
+
 		template <unsigned_builtin_integral T>
 		int_t pow(const T n) const { int_t result; fmpz_pow_ui(&result._data, &_data, n); return result; }
 		int_t pow(const int_t& n) const { int_t result; fmpz_pow_fmpz(&result._data, &_data, &n._data); return result; }
@@ -170,6 +177,10 @@ namespace Flint {
 
 	struct rat_t {
 		fmpq _data;
+
+		// access to the underlying fmpq*
+		fmpq* data() { return &_data; }
+		const fmpq* data() const { return &_data; }
 
 		// fmpq_init(&_data) is equivalent to _data = { 0LL, 1LL };
 		inline void init() { fmpq_init(&_data); }
@@ -205,9 +216,15 @@ namespace Flint {
 
 		ulong height_bits() const { return fmpq_height_bits(&_data); }
 		bool is_den_one() const { return fmpz_is_one(fmpq_denref(&_data)); }
+		bool is_integer() const { return is_den_one(); }
 
 		int_t num() const { return fmpq_numref(&_data); }
 		int_t den() const { return fmpq_denref(&_data); }
+
+		fmpz* num_data() { return fmpq_numref(&_data); }
+		const fmpz* num_data() const { return fmpq_numref(&_data); }
+		fmpz* den_data() { return fmpq_denref(&_data); }
+		const fmpz* den_data() const { return fmpq_denref(&_data); }
 
 		rat_t& operator=(const rat_t& other) { if (this != &other) fmpq_set(&_data, &other._data); return *this; }
 		rat_t& operator=(rat_t&& other) noexcept {
@@ -281,12 +298,23 @@ namespace Flint {
 			return nmod_div(nummod, denmod, mod);
 		}
 
+		void operator++() { *this += 1; }
+		void operator--() { *this -= 1; }
+
 		rat_t pow(const int_t& n) const { rat_t result; fmpq_pow_fmpz(&result._data, &_data, &n._data); return result; }
 		template <signed_builtin_integral T>
 		rat_t pow(const T n) const { rat_t result; fmpq_pow_si(&result._data, &_data, n); return result; }
 		rat_t inv() const { rat_t result; fmpq_inv(&result._data, &_data); return result; }
 		rat_t abs() const { rat_t result; fmpq_abs(&result._data, &_data); return result; }
 		rat_t neg() const { rat_t result; fmpq_neg(&result._data, &_data); return result; }
+
+		// explicit conversion to double
+		// the following is copied from flint doc:
+		// Returns as a double, rounding towards zero if f cannot be represented exactly.
+		// The return is system dependent if f is too large or too small to fit in a double.
+		double to_double() const { return fmpq_get_d(&_data); }
+		explicit operator double() const { return to_double(); }
+		explicit operator float() const { return static_cast<float>(to_double()); }
 
 		rat_t operator-() const { return neg(); }
 
