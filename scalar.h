@@ -67,9 +67,14 @@ namespace Flint {
 		template <unsigned_builtin_integral T> int_t(const T a) { init(); fmpz_set_ui(&_data, a); }
 
 		bool fits_si() const { return fmpz_fits_si(&_data); }
+		bool abs_fits_ui() const { return fmpz_abs_fits_ui(&_data); }
 		slong to_si() const { return fmpz_get_si(&_data); }
 		ulong to_ui() const { return fmpz_get_ui(&_data); }
 		ulong bits() const { return fmpz_bits(&_data); }
+		size_t sizeinbase(int base) const { return fmpz_sizeinbase(&_data, base); }
+
+		double to_double() const { return fmpz_get_d(&_data); }
+		explicit operator double() const { return to_double(); }
 
 		void set_str(const std::string& str, int base = 10) { fmpz_set_str(&_data, str.c_str(), base); }
 		void set_str(const char* str, int base = 10) { fmpz_set_str(&_data, str, base); }
@@ -154,6 +159,8 @@ namespace Flint {
 		bool even() const { return fmpz_is_even(&_data); }
 		bool odd() const { return fmpz_is_odd(&_data); }
 		bool is_prime() const { return fmpz_is_prime(&_data); }
+		int_t next_prime(int proved = 0) const { int_t result; fmpz_nextprime(&result._data, &_data, proved); return result; }
+		bool is_square() const { return fmpz_is_square(&_data); }
 
 		int_t operator-() const { return neg(); }
 
@@ -409,6 +416,11 @@ namespace Flint {
 
 	int rational_reconstruct(rat_t& q, const int_t& a, const int_t& mod) {
 		return  fmpq_reconstruct_fmpz(&q._data, &a._data, &mod._data);
+	}
+
+	//  Jacobi symbol (a/n), n is positive
+	int jacobi(const int_t& a, const int_t& n) {
+		return fmpz_jacobi(&a._data, &n._data);
 	}
 
 	// GCD & LCM
