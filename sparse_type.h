@@ -474,6 +474,7 @@ namespace SparseRREF {
 			nrow = l.nrow;
 			ncol = l.ncol;
 			rows = std::move(l.rows);
+			l.nrow = 0;
 		}
 
 		sparse_mat& operator=(const sparse_mat& l) {
@@ -491,6 +492,7 @@ namespace SparseRREF {
 			nrow = l.nrow;
 			ncol = l.ncol;
 			rows = std::move(l.rows);
+			l.nrow = 0;
 			return *this;
 		}
 
