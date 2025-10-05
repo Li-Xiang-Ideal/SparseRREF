@@ -1884,6 +1884,9 @@ namespace SparseRREF {
 	// TODO: more check!!!
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t& F) {
+		if (tree.tokens.size() == 0) 
+			return sparse_mat<T, index_t>();
+
 		auto& root = tree.root;
 
 		// SparseArray

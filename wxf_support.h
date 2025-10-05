@@ -469,10 +469,11 @@ namespace WXF_PARSER {
 		const uint8_t* buffer; // the buffer to read
 		size_t pos = 0;
 		size_t size = 0; // the size of the buffer
+		int err = 0; // 0 is ok, otherwise error
 		std::vector<TOKEN> tokens; // the tokens read from the buffer
 
-		Parser(const uint8_t* buf, const size_t len) : buffer(buf), pos(0), size(len) {}
-		Parser(const std::vector<uint8_t>& buf) : buffer(buf.data()), pos(0), size(buf.size()) {}
+		Parser(const uint8_t* buf, const size_t len) : buffer(buf), pos(0), size(len), err(0) {}
+		Parser(const std::vector<uint8_t>& buf) : buffer(buf.data()), pos(0), size(buf.size()), err(0) {}
 
 		// we suppose that the length does not exceed 2^64 - 1 .. 
 		uint64_t ReadVarint() {
@@ -496,6 +497,7 @@ namespace WXF_PARSER {
 			if (pos == 0) {
 				if (size < 2 || buffer[0] != 56 || buffer[1] != 58) {
 					std::cerr << "Invalid WXF file" << std::endl;
+					err = 1;
 					return;
 				}
 				pos = 2;
@@ -566,6 +568,7 @@ namespace WXF_PARSER {
 					auto num_type = ReadVarint();
 					if (num_type > 50) {
 						std::cerr << "Unsupported type: " << num_type << std::endl;
+						err = 2;
 						break;
 					}
 					auto r = ReadVarint();
@@ -581,9 +584,11 @@ namespace WXF_PARSER {
 				}
 				default:
 					std::cerr << "Unknown head type: " << (int)type << " pos: " << pos << std::endl;
+					err = 3;
 					break;
 				}
 			}
+			err = 0;
 		}
 
 		// numeric/packed array, rank, dimensions, data
@@ -787,6 +792,9 @@ namespace WXF_PARSER {
 
 	ExprTree MakeExprTree(Parser& parser) {
 		ExprTree tree;
+		if (parser.err != 0)
+			return tree;
+
 		tree.tokens = std::move(parser.tokens);
 		auto total_len = tree.tokens.size();
 		auto& tokens = tree.tokens;
