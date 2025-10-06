@@ -14,6 +14,10 @@
 #include "flint/fmpz.h"
 #include "flint/fmpq.h"
 
+#ifdef USE_MIMALLOC
+#include "mimalloc.h"
+#endif
+
 // a simple wrapper for flint's fmpz and fmpq
 namespace Flint {
 	// for to_string, get_str and output, caution: the buffer is shared
@@ -43,6 +47,21 @@ namespace Flint {
 
 	template <typename T>
 	concept unsigned_builtin_integral = builtin_integral<T> && std::is_unsigned_v<T>;
+
+	// set memory functions for flint
+	inline void set_memory_functions() {
+#ifdef USE_MIMALLOC
+		__flint_set_memory_functions(&mi_malloc, &mi_calloc, &mi_realloc, &mi_free);
+#endif
+	}
+
+	// clear flint's cache:
+	// usually it's not necessary to call this function for one-time computation,
+	// just returning the main function and leaving the memory cleanup to OS.
+	// If one wants make some memory leak analyzer happy, 
+	// just call this function at the end of main function.
+	// Note: double calling this function may cause problems!
+	inline void clear_cache() { flint_cleanup_master(); }
 
 	struct int_t {
 		fmpz _data;

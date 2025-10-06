@@ -80,6 +80,8 @@ using namespace SparseRREF;
 	std::cout << "ncol: " << (mat).ncol << std::endl
 
 int main(int argc, char** argv) {
+	Flint::set_memory_functions();
+
 	argparse::ArgumentParser program("SparseRREF", SparseRREF::version);
 	program.set_usage_max_line_width(80);
 	program.add_description("(exact) Sparse Reduced Row Echelon Form " + std::string(SparseRREF::version));
@@ -369,5 +371,6 @@ int main(int argc, char** argv) {
 
 	thread_listener.join();
 
+	Flint::clear_cache();
 	return 0;
 }
