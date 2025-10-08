@@ -21,7 +21,15 @@ namespace SparseRREF {
 		tranmat.zero();
 
 		const auto& mat = *submat.mat_ptr;
-		const auto& rows = submat.rows;
+
+		if (submat.rows.size() == 0 || mat.nrow == 0 || mat.ncol == 0)
+			return;
+
+		std::vector<size_t> rows;
+		if (submat.rows[0] > mat.nrow) // full view
+			rows = perm_init(mat.nrow);
+		else 
+			rows = submat.rows;
 
 		if (pool == nullptr) {
 			for (size_t i = 0; i < rows.size(); i++) {

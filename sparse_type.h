@@ -1676,6 +1676,11 @@ namespace SparseRREF {
 			rows = { mat_.nrow + 1 }; // full view
 		}
 
+		sparse_mat_subview(const sparse_mat<T, index_t>& mat_) {
+			mat_ptr = const_cast<sparse_mat<T, index_t>*>(&mat_);
+			rows = { mat_.nrow + 1 }; // full view
+		}
+
 		sparse_mat_subview(sparse_mat<T, index_t>& mat_, const std::vector<size_t>& rows_) {
 			mat_ptr = &mat_;
 			rows = rows_;
