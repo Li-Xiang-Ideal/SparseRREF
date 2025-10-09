@@ -20,11 +20,6 @@
 
 // a simple wrapper for flint's fmpz and fmpq
 namespace Flint {
-	// for to_string, get_str and output, caution: the buffer is shared
-	// multi-threading should be careful
-	constexpr size_t MAX_STR_LEN = 256;
-	static char _buf[MAX_STR_LEN];
-
 	// some concepts
 	template<typename T, typename... Ts>
 	concept IsOneOf = (std::same_as<T, Ts> || ...);
@@ -185,19 +180,10 @@ namespace Flint {
 
 		std::string get_str(int base = 10, bool thread_safe = false) const {
 			auto len = fmpz_sizeinbase(&_data, base) + 3;
-
-			if (thread_safe || len > MAX_STR_LEN - 4) {
-				char* str = new char[len + 10];
-				fmpz_get_str(str, base, &_data);
-				std::string result(str);
-				delete[] str;
-				return result;
-			}
-			else {
-				fmpz_get_str(_buf, base, &_data);
-				std::string result(_buf);
-				return result;
-			}
+			std::string result;
+			result.resize(len + 5);
+			fmpz_get_str(result.data(), base, &_data);
+			return result;
 		}
 	};
 
@@ -348,18 +334,10 @@ namespace Flint {
 			auto len = fmpz_sizeinbase(fmpq_numref(&_data), base) +
 				fmpz_sizeinbase(fmpq_denref(&_data), base) + 3;
 
-			if (thread_safe || len > MAX_STR_LEN - 4) {
-				char* str = new char[len + 10];
-				fmpq_get_str(str, base, &_data);
-				std::string result(str);
-				delete[] str;
-				return result;
-			}
-			else {
-				fmpq_get_str(_buf, base, &_data);
-				std::string result(_buf);
-				return result;
-			}
+			std::string result;
+			result.resize(len + 5);
+			fmpq_get_str(result.data(), base, &_data);
+			return result;
 		}
 	};
 
@@ -369,34 +347,13 @@ namespace Flint {
 
 	template <typename T>
 	T& operator<< (T& os, const int_t& i) {
-		auto len = fmpz_sizeinbase(&i._data, 10);
-		if (len > MAX_STR_LEN - 4) {
-			char* str = new char[len + 10];
-			os << fmpz_get_str(str, 10, &i._data);
-			delete[] str;
-		}
-		else {
-			fmpz_get_str(_buf, 10, &i._data);
-			os << _buf;
-		}
+		os << i.get_str();
 		return os;
 	}
 
 	template <typename T>
 	T& operator<< (T& os, const rat_t& r) {
-		auto len = fmpz_sizeinbase(&(r._data.num), 10)
-			+ fmpz_sizeinbase(&(r._data.den), 10) + 3;
-
-		if (len > MAX_STR_LEN - 4) {
-			char* str = new char[len + 10];
-			os << fmpq_get_str(str, 10, &r._data);
-			delete[] str;
-		}
-		else {
-			fmpq_get_str(_buf, 10, &r._data);
-			os << _buf;
-		}
-
+		os << r.get_str();
 		return os;
 	}
 
@@ -487,7 +444,7 @@ namespace SparseRREF {
 
 	struct field_t {
 		RING ring = FIELD_QQ;
-		nmod_t mod;
+		nmod_t mod = { 0,0,0 };
 
 		field_t() {}
 		~field_t() {}
