@@ -562,6 +562,29 @@ namespace SparseRREF {
 		return perm;
 	}
 
+	// some print helpers
+	template <typename T, typename S>
+	void print_vec(S&& os, const std::vector<T> v, const std::string_view delim = " ") {
+		for (size_t i = 0; i < v.size(); i++) {
+			os << v[i];
+			if (i + 1 != v.size())
+				os << delim;
+		}
+	}
+	template <typename T, typename S>
+	void print_vec(S&& os, const std::span<T> v, const std::string_view delim = " ") {
+		for (size_t i = 0; i < v.size(); i++) {
+			os << v[i];
+			if (i + 1 != v.size())
+				os << delim;
+		}
+	}
+
+	template <typename T>
+	void print_vec(T v, const std::string_view delim = " ") {
+		print_vec(std::cout, v, delim);
+	}
+
 	struct MMapFile {
 		std::string_view view;
 #if defined(_WIN32)

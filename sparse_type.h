@@ -945,7 +945,30 @@ namespace SparseRREF {
 			return B;
 		}
 
-		void sort_indices() {
+		// multithread version use more memory and it will compress the tensor
+		void sort_indices(thread_pool* pool = nullptr) {
+			if (pool == nullptr) {
+				for (size_t i = 0; i < dims[0]; i++) {
+					size_t rownnz = rowptr[i + 1] - rowptr[i];
+					std::vector<size_t> perm(rownnz);
+					for (size_t j = 0; j < rownnz; j++)
+						perm[j] = j;
+					std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
+						auto ptra = colptr + (rowptr[i] + a) * (rank - 1);
+						auto ptrb = colptr + (rowptr[i] + b) * (rank - 1);
+						return lexico_compare(ptra, ptrb, rank - 1) < 0;
+						});
+
+					permute(perm, colptr + rowptr[i] * (rank - 1), rank - 1);
+					permute(perm, valptr + rowptr[i]);
+				}
+				return;
+			}
+
+			auto nz = nnz();
+			auto n_colptr = s_malloc<index_t>(nz * (rank - 1));
+			auto n_valptr = s_malloc<T>(nz);
+
 			for (size_t i = 0; i < dims[0]; i++) {
 				size_t rownnz = rowptr[i + 1] - rowptr[i];
 				std::vector<size_t> perm(rownnz);
@@ -957,9 +980,19 @@ namespace SparseRREF {
 					return lexico_compare(ptra, ptrb, rank - 1) < 0;
 					});
 
-				permute(perm, colptr + rowptr[i] * (rank - 1), rank - 1);
-				permute(perm, valptr + rowptr[i]);
+				pool->detach_loop(0, rownnz, [&](size_t j) {
+					auto oldptr = colptr + (rowptr[i] + perm[j]) * (rank - 1);
+					auto newptr = n_colptr + (rowptr[i] + j) * (rank - 1);
+					std::copy(oldptr, oldptr + (rank - 1), newptr);
+					n_valptr[rowptr[i] + j] = valptr[rowptr[i] + perm[j]];
+					});
+				pool->wait();
 			}
+			s_free(colptr);
+			s_free(valptr);
+			colptr = n_colptr;
+			valptr = n_valptr;
+			alloc = nz;
 		}
 	};
 
@@ -996,7 +1029,7 @@ namespace SparseRREF {
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(l, val, mode); }
 		inline void push_back(const index_v& l, const T& val) { data.push_back(l, val); }
 		inline void canonicalize() { data.canonicalize(); }
-		inline void sort_indices() { data.sort_indices(); }
+		inline void sort_indices(thread_pool* pool = nullptr) { data.sort_indices(pool); }
 		inline void reserve(size_t size) { data.reserve(size); }
 		inline sparse_tensor transpose(const std::vector<size_t>& perm) {
 			sparse_tensor B;
@@ -1311,7 +1344,7 @@ namespace SparseRREF {
 			data.rowptr[1]++; // increase the nnz
 		}
 		inline void canonicalize() { data.canonicalize(); }
-		inline void sort_indices() { data.sort_indices(); }
+		inline void sort_indices(thread_pool* pool = nullptr) { data.sort_indices(pool); }
 		inline sparse_tensor transpose(const std::vector<size_t>& perm) {
 			std::vector<size_t> perm_new(perm);
 			for (auto& a : perm_new) { a++; }
@@ -1328,7 +1361,7 @@ namespace SparseRREF {
 				return sparse_mat<T, index_t>();
 			}
 			if (sort_ind)
-				sort_indices();
+				sort_indices(pool);
 			auto r = dim(0);
 			auto c = dim(1);
 			auto rptr = rowptr();
