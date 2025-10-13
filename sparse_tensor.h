@@ -481,7 +481,7 @@ namespace SparseRREF {
 		}
 		perm.erase(perm.begin() + A.rank() - 1);
 		perm.insert(perm.begin() + a, A.rank() - 1);
-		C.transpose_replace(perm);
+		C.transpose_replace(perm, pool);
 
 		return C;
 	}

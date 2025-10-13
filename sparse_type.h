@@ -254,6 +254,14 @@ namespace SparseRREF {
 			_nnz++;
 		}
 
+		inline void push_back(const index_t index, T&& val) {
+			if (_nnz + 1 > _alloc)
+				reserve((1 + _alloc) * 2); // +1 to avoid _alloc = 0
+			indices[_nnz] = index;
+			entries[_nnz] = std::move(val);
+			_nnz++;
+		}
+
 		index_t& operator()(const size_t pos) { return indices[pos]; }
 		const index_t& operator()(const size_t pos) const { return indices[pos]; }
 		T& operator[](const size_t pos) { return entries[pos]; }
@@ -1335,14 +1343,7 @@ namespace SparseRREF {
 			val(n_nnz) = new_val;
 			data.rowptr[1]++; // increase the nnz
 		}
-		void push_back(const index_v& l, const T& new_val) {
-			auto n_nnz = nnz();
-			if (n_nnz + 1 > data.alloc)
-				reserve((data.alloc + 1) * 2);
-			std::copy(l.begin(), l.end(), index(n_nnz));
-			val(n_nnz) = new_val;
-			data.rowptr[1]++; // increase the nnz
-		}
+		void push_back(const index_v& l, const T& new_val) { push_back(l.data(), new_val); }
 		inline void canonicalize() { data.canonicalize(); }
 		inline void sort_indices(thread_pool* pool = nullptr) { data.sort_indices(pool); }
 		inline sparse_tensor transpose(const std::vector<size_t>& perm) {
@@ -1411,6 +1412,9 @@ namespace SparseRREF {
 				exit(1);
 			}
 
+			if (std::is_sorted(index_perm.begin(), index_perm.end())) 
+				return gen_perm();
+
 			std::vector<size_t> perm = perm_init(nnz());
 			std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
 				return lexico_compare(index(a), index(b), index_perm) < 0;
@@ -1427,25 +1431,20 @@ namespace SparseRREF {
 				new_dims[i + 1] = data.dims[perm[i] + 1];
 			data.dims = new_dims;
 
-			if (pool == nullptr) {
+			auto method = [&](size_t ss, size_t ee) {
 				std::vector<size_t> index_new(rank());
-				for (size_t i = 0; i < nnz(); i++) {
+				for (size_t i = ss; i < ee; i++) {
 					auto ptr = index(i);
 					for (size_t j = 0; j < rank(); j++)
 						index_new[j] = ptr[perm[j]];
 					std::copy(index_new.begin(), index_new.end(), ptr);
 				}
-			}
+				};
+
+			if (pool == nullptr) 
+				method(0, nnz());
 			else {
-				pool->detach_blocks(0, nnz(), [&](size_t ss, size_t ee) {
-					std::vector<size_t> index_new(rank());
-					for (size_t i = ss; i < ee; i++) {
-						auto ptr = index(i);
-						for (size_t j = 0; j < rank(); j++)
-							index_new[j] = ptr[perm[j]];
-						std::copy(index_new.begin(), index_new.end(), ptr);
-					}
-					});
+				pool->detach_blocks(0, nnz(), method);
 				pool->wait();
 			}
 		}

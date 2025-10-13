@@ -111,7 +111,7 @@ namespace SparseRREF {
 #endif
 
 	template <typename T>
-	void s_copy(T* des, T* ini, const size_t size) {
+	void s_copy(T* des, const T* ini, const size_t size) {
 		if (des == ini)
 			return;
 		std::copy(ini, ini + size, des);
@@ -237,8 +237,8 @@ namespace SparseRREF {
 	}
 
 	template <typename T>
-	int lexico_compare(const std::vector<T>& a, const std::vector<T>& b) {
-		for (size_t i = 0; i < a.size(); i++) {
+	int lexico_compare(const T* a, const T* b, const size_t len) {
+		for (size_t i = 0; i < len; i++) {
 			if (a[i] < b[i])
 				return -1;
 			if (a[i] > b[i])
@@ -248,14 +248,8 @@ namespace SparseRREF {
 	}
 
 	template <typename T>
-	int lexico_compare(const T* a, const T* b, const size_t len) {
-		for (size_t i = 0; i < len; i++) {
-			if (a[i] < b[i])
-				return -1;
-			if (a[i] > b[i])
-				return 1;
-		}
-		return 0;
+	int lexico_compare(const std::vector<T>& a, const std::vector<T>& b) {
+		return lexico_compare(a.data(), b.data(), a.size());
 	}
 
 	template <typename T>
