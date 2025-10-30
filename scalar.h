@@ -10,6 +10,7 @@
 #define SCALAR_H
 
 #include <string>
+#include <cstring>
 #include "flint/nmod.h"
 #include "flint/fmpz.h"
 #include "flint/fmpq.h"
@@ -183,6 +184,7 @@ namespace Flint {
 			std::string result;
 			result.resize(len + 5);
 			fmpz_get_str(result.data(), base, &_data);
+			result.resize(strlen(result.c_str()));
 			return result;
 		}
 	};
@@ -337,6 +339,7 @@ namespace Flint {
 			std::string result;
 			result.resize(len + 5);
 			fmpq_get_str(result.data(), base, &_data);
+			result.resize(strlen(result.c_str()));
 			return result;
 		}
 	};
