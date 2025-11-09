@@ -1891,148 +1891,6 @@ namespace SparseRREF {
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	// TODO: more check!!!
 	template <typename T, typename index_t>
-	sparse_mat<T, index_t> sparse_mat_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t& F) {
-		if (tree.tokens.size() == 0) 
-			return sparse_mat<T, index_t>();
-
-		auto& root = tree.root;
-
-		// SparseArray
-		std::string tmp_str(tree[root].str);
-
-		if (tmp_str != "SparseArray") { 
-			std::cerr << "Error: sparse_mat_read: ";
-			std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
-			return sparse_mat<T, index_t>();
-		}
-
-		// dims
-		std::vector<size_t> dims(tree[root[1]].i_arr, tree[root[1]].i_arr + tree[root[1]].dim(0));
-
-		if (tree[root[2]].i != 0) {
-			std::cerr << "Error: sparse_mat_read: the implicit value is not 0" << std::endl;
-			return sparse_mat<T, index_t>();
-		}
-
-		// {1,{rowptr,colindex},vals}
-		auto& last_node = root[3];
-
-		// last_node[0] should be 1, what's the meaning of this?
-
-		// last_node[1] is {rowptr,colindex}
-		// last_node[1][0] is rowptr, last_node[1][1] is colindex
-		std::vector<size_t> rowptr(tree[last_node[1][0]].i_arr, tree[last_node[1][0]].i_arr
-			+ tree[last_node[1][0]].dim(0));
-		std::vector<index_t> colindex(tree[last_node[1][1]].i_arr, tree[last_node[1][1]].i_arr
-			+ tree[last_node[1][1]].dim(0));
-	
-		auto toInteger = [](const WXF_PARSER::TOKEN& node) {
-			switch (node.type) {
-			case WXF_PARSER::WXF_HEAD::i8:
-			case WXF_PARSER::WXF_HEAD::i16:
-			case WXF_PARSER::WXF_HEAD::i32:
-			case WXF_PARSER::WXF_HEAD::i64:
-				return Flint::int_t(node.i);
-			case WXF_PARSER::WXF_HEAD::bigint:
-				return Flint::int_t(node.str);
-			default:
-				std::cerr << "not a integer" << std::endl;
-				return Flint::int_t(0);
-			}
-			};
-
-		// last_node[2] is vals
-		std::vector<T> vals;
-		if (tree[last_node[2]].type == WXF_PARSER::WXF_HEAD::array ||
-			tree[last_node[2]].type == WXF_PARSER::WXF_HEAD::narray) {
-
-			auto ptr = tree[last_node[2]].i_arr;
-			auto nnz = tree[last_node[2]].dim(0);
-
-			vals.resize(nnz);
-			if constexpr (std::is_same_v<T, rat_t>) {
-				for (size_t i = 0; i < nnz; i++) {
-					vals[i] = ptr[i];
-				}
-			}
-			else if constexpr (std::is_same_v<T, ulong>) {
-				for (size_t i = 0; i < nnz; i++) {
-					vals[i] = nmod_set_si(ptr[i], F.mod);
-				}
-			}
-		}
-		else {
-			auto nnz = last_node[2].size;
-			vals.resize(nnz);
-
-			for (size_t i = 0; i < nnz; i++) {
-				T val;
-				auto& val_node = last_node[2][i];
-				auto& token = tree[val_node];
-
-				switch (tree[val_node].type) {
-				case WXF_PARSER::WXF_HEAD::i8:
-				case WXF_PARSER::WXF_HEAD::i16:
-				case WXF_PARSER::WXF_HEAD::i32:
-				case WXF_PARSER::WXF_HEAD::i64:
-					if constexpr (std::is_same_v<T, rat_t>) {
-						val = token.i;
-					}
-					else if constexpr (std::is_same_v<T, ulong>) {
-						val = int_t(token.i) % F.mod;
-					}
-					break;
-				case WXF_PARSER::WXF_HEAD::bigint:
-					if constexpr (std::is_same_v<T, rat_t>) {
-						val = toInteger(token);
-					}
-					else if constexpr (std::is_same_v<T, ulong>) {
-						val = int_t(token.str) % F.mod;
-					}
-					break;
-				case WXF_PARSER::WXF_HEAD::symbol:
-					tmp_str = token.str;
-					if (tmp_str == "Rational") {
-						int_t n_1 = toInteger(tree[val_node[0]]);
-						int_t d_1 = toInteger(tree[val_node[1]]);
-						if constexpr (std::is_same_v<T, rat_t>) {
-							val = rat_t(std::move(n_1), std::move(d_1), true);
-						}
-						else if constexpr (std::is_same_v<T, ulong>) {
-							val = rat_t(std::move(n_1), std::move(d_1), true) % F.mod;
-						}
-					}
-					else {
-						std::cerr << "Error: sparse_mat_read: ";
-						std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
-						return sparse_mat<T, index_t>();
-					}
-					break;
-				default:
-					std::cerr << "Error: sparse_mat_read: ";
-					std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
-					return sparse_mat<T, index_t>();
-					break;
-				}
-				vals[i] = val;
-			}
-		}
-
-		sparse_mat<T, index_t> mat(dims[0], dims[1]);
-		for (size_t i = 0; i < rowptr.size() - 1; i++) {
-			mat[i].reserve(rowptr[i + 1] - rowptr[i]);
-			for (auto j = rowptr[i]; j < rowptr[i + 1]; j++) {
-				// mathematica is 1-indexed
-				mat[i].push_back(colindex[j] - 1, vals[j]);
-			}
-		}
-
-		return mat;
-	}
-
-	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
-	// TODO: more check!!!
-	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::vector<WXF_PARSER::TOKEN_VIEW>& tokens, const field_t& F) {
 		if (tokens.size() == 0)
 			return sparse_mat<T, index_t>();
@@ -2056,10 +1914,10 @@ namespace SparseRREF {
 #define TMP_IDENTITY_FUNC(x) (x)
 
 #define GENERATE_ALL_ARR(FUNC2) \
-		GENERATE_COPY_ARR(0, int8_t, FUNC2) \
-		GENERATE_COPY_ARR(1, int16_t, FUNC2)   \
-		GENERATE_COPY_ARR(2, int32_t, FUNC2)   \
-		GENERATE_COPY_ARR(3, int64_t, FUNC2)   \
+		GENERATE_COPY_ARR(0, int8_t, FUNC2)  \
+		GENERATE_COPY_ARR(1, int16_t, FUNC2) \
+		GENERATE_COPY_ARR(2, int32_t, FUNC2) \
+		GENERATE_COPY_ARR(3, int64_t, FUNC2) \
 		GENERATE_COPY_ARR(16, uint8_t, FUNC2)  \
 		GENERATE_COPY_ARR(17, uint16_t, FUNC2) \
 		GENERATE_COPY_ARR(18, uint32_t, FUNC2) \
@@ -2081,10 +1939,10 @@ namespace SparseRREF {
 			out.reserve(token.dimensions[1]);
 			switch (num_type) {
 				GENERATE_ALL_ARR(func);
-			default:
-				std::cerr << "Error: sparse_mat_read: wrong dims type" << std::endl;
-				break;
-			}
+				default:
+					std::cerr << "Error: sparse_mat_read: read array fails" << std::endl;
+					break;
+				}
 			};
 #undef TMP_IDENTITY_FUNC
 #undef GENERATE_COPY_ARR
