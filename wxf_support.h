@@ -106,13 +106,9 @@ namespace WXF_PARSER {
 	// 51 complex float 52 complex double
 	// we only support int8_t, int16_t, int32_t, int64_t, float, double
 
+	// only the last 3 bits are used to indicate the size
 	size_t size_of_arr_num_type(const int num_type) {
-		if (num_type >= 16 && num_type < 20)
-			return (size_t)1 << (num_type - 16);
-		else if (num_type >= 34 && num_type <= 35)
-			return (size_t)1 << (num_type - 32);
-		else 
-			return (size_t)1 << num_type;
+		return size_t(1) << (num_type & 0b111);
 	}
 
 	using NumberType = std::variant<int8_t, int16_t, int32_t, int64_t,
@@ -166,12 +162,17 @@ namespace WXF_PARSER {
 	}
 
 	inline void serialize_varint(std::vector<uint8_t>& buffer, uint64_t val) {
-		while (val > 0) {
-			uint8_t byte = val & 127;
+		uint8_t temp[10];
+		size_t i = 0;
+
+		do {
+			temp[i] = val & 0x7F;
 			val >>= 7;
-			if (val > 0) byte |= 128; // set the continuation bit
-			buffer.push_back(byte);
-		}
+			if (val != 0) temp[i] |= 0x80;
+			++i;
+		} while (val != 0);
+
+		buffer.insert(buffer.end(), temp, temp + i);
 	}
 
 	template <typename T>
@@ -702,24 +703,30 @@ namespace WXF_PARSER {
 		Parser(Parser&&) noexcept = default;
 		Parser& operator=(Parser&&) noexcept = default;
 
-		// we suppose that the length does not exceed 2^64 - 1 .. 
-		uint64_t ReadVarint() {
-			size_t count = 0;
+		inline uint64_t read_varint() {
+			const uint8_t* ptr = buffer + pos;
+			const uint8_t* end = buffer + size; 
 			uint64_t result = 0;
-			auto ptr = buffer + pos;
+			uint8_t b;
 
-			while (pos < size && count < 8) {
-				result |= (uint64_t)((*ptr) & 127) << (7 * count);
-				count++; pos++;
-				if (!((*ptr) & 128))
-					break;
-				ptr++;
-			}
+			if (ptr >= end) return 0;
 
+			b = *ptr++; result = uint64_t(b & 0x7F);         if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 7;   if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 14;  if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 21;  if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 28;  if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 35;  if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 42;  if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 49;  if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 56;  if (!(b & 0x80) || ptr >= end) goto done;
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 63;    
+		done:
+			pos = ptr - buffer;
 			return result;
 		}
 
-		void parseExpr() {
+		void parse() {
 			// check the file head
 			if (pos == 0) {
 				if (size < 2 || buffer[0] != 56 || buffer[1] != 58) {
@@ -752,14 +759,14 @@ namespace WXF_PARSER {
 				case WXF_HEAD::bigreal:
 				case WXF_HEAD::string:
 				case WXF_HEAD::binary_string: {
-					auto length = ReadVarint();
+					auto length = read_varint();
 					token_views.emplace_back(type, length, buffer + pos);
 					pos += length;
 					break;
 				}
 				case WXF_HEAD::func:
 				case WXF_HEAD::association: {
-					auto length = ReadVarint();
+					auto length = read_varint();
 					token_views.emplace_back(type, length, buffer + pos);
 					break;
 				}
@@ -769,17 +776,17 @@ namespace WXF_PARSER {
 					break;
 				case WXF_HEAD::array:
 				case WXF_HEAD::narray: {
-					int num_type = ReadVarint();
+					int num_type = read_varint();
 					if (num_type > 50) {
 						std::cerr << "Unsupported type: " << num_type << std::endl;
 						err = 2;
 						break;
 					}
-					auto r = ReadVarint();
+					auto r = read_varint();
 					std::vector<size_t> dims(r);
 					size_t all_len = 1;
 					for (size_t i = 0; i < r; i++) {
-						dims[i] = ReadVarint();
+						dims[i] = read_varint();
 						all_len *= dims[i];
 					}
 					token_views.emplace_back(type, dims, num_type, all_len, buffer + pos);
@@ -797,7 +804,7 @@ namespace WXF_PARSER {
 			if (view_mode == 1) {
 				tokens.reserve(token_views.size());
 				for (auto& t : token_views) 
-					tokens.emplace_back(std::move(t.to_token()));
+					tokens.emplace_back(t.to_token());
 				// clear the token_views to save memory
 				token_views = std::vector<TOKEN_VIEW>();
 			}
@@ -1050,19 +1057,19 @@ namespace WXF_PARSER {
 
 	ExprTree MakeExprTree(const uint8_t* str, const size_t len) {
 		Parser parser(str, len, 1);
-		parser.parseExpr();
+		parser.parse();
 		return MakeExprTree(parser);
 	}
 
 	ExprTree MakeExprTree(const std::vector<uint8_t>& str) {
 		Parser parser(str, 1);
-		parser.parseExpr();
+		parser.parse();
 		return MakeExprTree(parser);
 	}
 
 	ExprTree MakeExprTree(const std::string_view str) {
 		Parser parser(reinterpret_cast<const uint8_t*>(str.data()), str.size(), 1);
-		parser.parseExpr();
+		parser.parse();
 		return MakeExprTree(parser);
 	}
 

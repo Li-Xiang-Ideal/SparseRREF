@@ -2129,7 +2129,7 @@ namespace SparseRREF {
 		auto buffer = file_to_ustr(file);
 		wxf_parser = WXF_PARSER::Parser(buffer);
 
-		wxf_parser.parseExpr();
+		wxf_parser.parse();
 
 		return sparse_mat_read_wxf<T, index_t>(wxf_parser.token_views, F);
 	}
