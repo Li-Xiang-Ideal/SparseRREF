@@ -47,6 +47,7 @@
 #include <fstream>
 #include <functional>
 #include <vector>
+#include <span>
 #include <string>
 #include <string_view>
 #include <cstdint>
@@ -77,6 +78,42 @@ namespace WXF_PARSER {
 		array = 193,
 		narray = 194
 	};
+
+	size_t size_of_head_num_type(const WXF_HEAD head) {
+		switch (head) {
+		case WXF_HEAD::i8:
+			return sizeof(int8_t);
+		case WXF_HEAD::i16:
+			return sizeof(int16_t);
+		case WXF_HEAD::i32:
+			return sizeof(int32_t);
+		case WXF_HEAD::i64:
+			return sizeof(int64_t);
+		case WXF_HEAD::f64:
+			return sizeof(double);
+		default:
+			return 0;
+		}
+	}
+
+	// numeric/packed array, rank, dimensions, data
+	// for the num_type
+	// 0 is int8_t      1 is int16_t
+	// 2 is int32_t     3 is int64_t
+	// 16 is uint8_t    17 is uint16_t ; only for numeric array
+	// 18 is uint32_t   19 is uint64_t ; only for numeric array
+	// 34 float         35 double
+	// 51 complex float 52 complex double
+	// we only support int8_t, int16_t, int32_t, int64_t, float, double
+
+	size_t size_of_arr_num_type(const int num_type) {
+		if (num_type >= 16 && num_type < 20)
+			return (size_t)1 << (num_type - 16);
+		else if (num_type >= 34 && num_type <= 35)
+			return (size_t)1 << (num_type - 32);
+		else 
+			return (size_t)1 << num_type;
+	}
 
 	using NumberType = std::variant<int8_t, int16_t, int32_t, int64_t,
 		uint8_t, uint16_t, uint32_t, uint64_t,
@@ -465,15 +502,205 @@ namespace WXF_PARSER {
 		}
 	};
 
+	struct TOKEN_VIEW {
+		WXF_HEAD type;
+		int rank = 0;
+		union {
+			// for number, string, symbol, bigint
+			size_t length;
+			// for array and narray, dimensions[0] is the type, dimensions[1] is the total flatten length
+			// so the length is dimensions is rank + 2
+			size_t* dimensions;
+		};
+		const uint8_t* data; // pointer to the data in the original buffer
+
+		TOKEN_VIEW() : type(WXF_HEAD::i8), rank(0), length(0), data(nullptr) {}
+		TOKEN_VIEW(const WXF_HEAD t, const size_t len, const uint8_t* d) : type(t), rank(0), length(len), data(d) {}
+		TOKEN_VIEW(const WXF_HEAD t, const std::vector<size_t>& dims, const int num_type, const size_t len, const uint8_t* d) : type(t), data(d) {
+			int r = dims.size();
+			rank = r;
+			dimensions = (size_t*)malloc((r + 2) * sizeof(size_t));
+			dimensions[0] = num_type;
+			dimensions[1] = len;
+			for (auto i = 0; i < r; i++) {
+				dimensions[i + 2] = dims[i];
+			}
+		}
+
+		size_t dim(size_t i) const {
+			if (rank > 0)
+				return dimensions[i + 2];
+			return length;
+		}
+
+		~TOKEN_VIEW() { 
+			if (type == WXF_HEAD::array || type == WXF_HEAD::narray)
+				free(dimensions);
+		}
+
+		TOKEN_VIEW(const TOKEN_VIEW& other) : type(other.type), rank(other.rank), length(other.length), data(other.data) {
+			if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
+				dimensions = (size_t*)malloc((rank + 2) * sizeof(size_t));
+				std::memcpy(dimensions, other.dimensions, (rank + 2) * sizeof(size_t));
+			}
+		}
+
+		TOKEN_VIEW(TOKEN_VIEW&& other) noexcept : type(other.type), rank(other.rank), length(other.length), data(other.data) {
+			if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
+				dimensions = other.dimensions;
+				other.dimensions = nullptr;
+			}
+		}
+
+		TOKEN_VIEW& operator=(const TOKEN_VIEW& other) {
+			if (this != &other) {
+				type = other.type;
+				rank = other.rank;
+				length = other.length;
+				data = other.data;
+				if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
+					dimensions = (size_t*)malloc((rank + 2) * sizeof(size_t));
+					std::memcpy(dimensions, other.dimensions, (rank + 2) * sizeof(size_t));
+				}
+			}
+			return *this;
+		}
+
+		TOKEN_VIEW& operator=(TOKEN_VIEW&& other) noexcept {
+			if (this != &other) {
+				type = other.type;
+				rank = other.rank;
+				length = other.length;
+				data = other.data;
+				if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
+					dimensions = other.dimensions;
+					other.dimensions = nullptr;
+				}
+			}
+			return *this;
+		}
+
+		int64_t get_integer() const {
+			if (type == WXF_HEAD::i8) 
+				return *(int8_t*)data;
+			else if (type == WXF_HEAD::i16) 
+				return *(int16_t*)data;
+			else if (type == WXF_HEAD::i32) 
+				return *(int32_t*)data;
+			else if (type == WXF_HEAD::i64) 
+				return *(int64_t*)data;
+			else 
+				return 0;
+		}
+
+		std::string_view get_string_view() const {
+			if (type == WXF_HEAD::symbol
+				|| type == WXF_HEAD::bigint
+				|| type == WXF_HEAD::bigreal
+				|| type == WXF_HEAD::string
+				|| type == WXF_HEAD::binary_string) {
+				return std::string_view((const char*)data, length);
+			}
+			else 
+				return std::string_view();
+		}
+
+		template<typename T>
+		std::span<T> get_arr_span() const {
+			if (type != WXF_HEAD::array && type != WXF_HEAD::narray)
+				return std::span<T>();
+			return std::span<T>((T*)data, dimensions[1]);
+		}
+
+		TOKEN to_token(const bool with_arr = true) const {
+			TOKEN token;
+			token.type = type;
+			token.rank = rank;
+			if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
+				token.dimensions = (uint64_t*)malloc((rank + 2) * sizeof(uint64_t));
+				for (auto i = 0; i < rank + 2; i++) {
+					token.dimensions[i] = dimensions[i];
+				}
+			}
+			else
+				token.length = length;
+
+			if (type == WXF_HEAD::symbol
+				|| type == WXF_HEAD::bigint
+				|| type == WXF_HEAD::bigreal
+				|| type == WXF_HEAD::string
+				|| type == WXF_HEAD::binary_string) {
+				token.length = length;
+				token.str = (char*)malloc(length + 1);
+				std::memcpy(token.str, data, length);
+				token.str[length] = '\0';
+			}
+			else if (type == WXF_HEAD::i8) 
+				token.i = *(int8_t*)data;
+			else if (type == WXF_HEAD::i16) 
+				token.i = *(int16_t*)data;
+			else if (type == WXF_HEAD::i32) 
+				token.i = *(int32_t*)data;
+			else if (type == WXF_HEAD::i64) 
+				token.i = *(int64_t*)data;
+			else if (type == WXF_HEAD::f64) 
+				token.d = *(double*)data;
+			else if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
+				if (with_arr) {
+					auto num_type = dimensions[0];
+					auto all_len = dimensions[1];
+					size_t st = size_of_arr_num_type(num_type);
+					token.i_arr = (int64_t*)malloc(all_len * sizeof(int64_t));
+
+					auto load_array = [&](auto&& assign) {
+						std::visit([&](auto&& x) {
+							using T = std::decay_t<decltype(x)>;
+							T val;
+							const uint8_t* buffer = data;
+							for (size_t i = 0; i < all_len; i++) {
+								std::memcpy(&val, buffer, st);
+								assign(i, val);
+								buffer += st;
+							}
+							}, select_type(num_type));
+						};
+
+					if (type == WXF_HEAD::narray && num_type >= 16 && num_type < 20) {
+						load_array([&](size_t i, auto val) { token.u_arr[i] = static_cast<uint64_t>(val); });
+					}
+					else if (num_type < 10) {
+						load_array([&](size_t i, auto val) { token.i_arr[i] = static_cast<int64_t>(val); });
+					}
+					else if (num_type >= 34 && num_type <= 35) {
+						load_array([&](size_t i, auto val) { token.d_arr[i] = static_cast<double>(val); });
+					}
+				}
+			}
+			return token;
+		}
+
+	};
+
 	struct Parser {
 		const uint8_t* buffer; // the buffer to read
 		size_t pos = 0;
 		size_t size = 0; // the size of the buffer
 		int err = 0; // 0 is ok, otherwise error
-		std::vector<TOKEN> tokens; // the tokens read from the buffer
+		int view_mode = 0; // 0 is view mode, 1 is normal mode
+		std::vector<TOKEN_VIEW> token_views;
+		std::vector<TOKEN> tokens;
 
-		Parser(const uint8_t* buf, const size_t len) : buffer(buf), pos(0), size(len), err(0) {}
-		Parser(const std::vector<uint8_t>& buf) : buffer(buf.data()), pos(0), size(buf.size()), err(0) {}
+		Parser(const uint8_t* buf, const size_t len, int view_mode = 0) : buffer(buf), pos(0), size(len), err(0), view_mode(view_mode) {}
+		Parser(const std::vector<uint8_t>& buf, int view_mode = 0) : buffer(buf.data()), pos(0), size(buf.size()), err(0), view_mode(view_mode) {}
+		Parser(const std::string_view buf, int view_mode = 0) : buffer((const uint8_t*)buf.data()), pos(0), size(buf.size()), err(0), view_mode(view_mode) {}
+
+		// default special member functions
+		Parser() = default;
+		~Parser() = default;
+		Parser(const Parser&) = default;
+		Parser& operator=(const Parser&) = default;
+		Parser(Parser&&) noexcept = default;
+		Parser& operator=(Parser&&) noexcept = default;
 
 		// we suppose that the length does not exceed 2^64 - 1 .. 
 		uint64_t ReadVarint() {
@@ -510,39 +737,14 @@ namespace WXF_PARSER {
 					break;
 
 				switch (type) {
-				case WXF_HEAD::i8: {
-					int8_t val;
-					std::memcpy(&val, buffer + pos, sizeof(int8_t));
-					pos += sizeof(int8_t) / sizeof(uint8_t);
-					tokens.emplace_back(type, val);
-					break;
-				}
-				case WXF_HEAD::i16: {
-					int16_t val;
-					std::memcpy(&val, buffer + pos, sizeof(int16_t));
-					pos += sizeof(int16_t) / sizeof(uint8_t);
-					tokens.emplace_back(type, val);
-					break;
-				}
-				case WXF_HEAD::i32: {
-					int32_t val;
-					std::memcpy(&val, buffer + pos, sizeof(int32_t));
-					pos += sizeof(int32_t) / sizeof(uint8_t);
-					tokens.emplace_back(type, val);
-					break;
-				}
-				case WXF_HEAD::i64: {
-					int64_t val;
-					std::memcpy(&val, buffer + pos, sizeof(int64_t));
-					pos += sizeof(int64_t) / sizeof(uint8_t);
-					tokens.emplace_back(type, val);
-					break;
-				}
+				case WXF_HEAD::i8:
+				case WXF_HEAD::i16:
+				case WXF_HEAD::i32:
+				case WXF_HEAD::i64:
 				case WXF_HEAD::f64: {
-					double val;
-					std::memcpy(&val, buffer + pos, sizeof(double));
-					pos += sizeof(double) / sizeof(uint8_t);
-					tokens.emplace_back(type, val);
+					auto length = size_of_head_num_type(type);
+					token_views.emplace_back(type, length, buffer + pos);
+					pos += length;
 					break;
 				}
 				case WXF_HEAD::symbol:
@@ -551,21 +753,23 @@ namespace WXF_PARSER {
 				case WXF_HEAD::string:
 				case WXF_HEAD::binary_string: {
 					auto length = ReadVarint();
-					tokens.emplace_back(type, (const char*)(buffer + pos), length);
+					token_views.emplace_back(type, length, buffer + pos);
 					pos += length;
 					break;
 				}
 				case WXF_HEAD::func:
-				case WXF_HEAD::association:
-					tokens.emplace_back(type, uint64_t(ReadVarint()));
+				case WXF_HEAD::association: {
+					auto length = ReadVarint();
+					token_views.emplace_back(type, length, buffer + pos);
 					break;
+				}
 				case WXF_HEAD::delay_rule:
 				case WXF_HEAD::rule:
-					tokens.emplace_back(type, uint64_t(2));
+					token_views.emplace_back(type, size_t(2), buffer + pos);
 					break;
 				case WXF_HEAD::array:
 				case WXF_HEAD::narray: {
-					auto num_type = ReadVarint();
+					int num_type = ReadVarint();
 					if (num_type > 50) {
 						std::cerr << "Unsupported type: " << num_type << std::endl;
 						err = 2;
@@ -578,8 +782,8 @@ namespace WXF_PARSER {
 						dims[i] = ReadVarint();
 						all_len *= dims[i];
 					}
-					tokens.emplace_back(type, dims, num_type, all_len);
-					makeArray(type, tokens.back());
+					token_views.emplace_back(type, dims, num_type, all_len, buffer + pos);
+					pos += all_len * size_of_arr_num_type(num_type);
 					break;
 				}
 				default:
@@ -589,52 +793,13 @@ namespace WXF_PARSER {
 				}
 			}
 			err = 0;
-		}
 
-		// numeric/packed array, rank, dimensions, data
-		// for the num_type
-		// 0 is int8_t      1 is int16_t
-		// 2 is int32_t     3 is int64_t
-		// 16 is uint8_t    17 is uint16_t ; only for numeric array
-		// 18 is uint32_t   19 is uint64_t ; only for numeric array
-		// 34 float         35 double
-		// 51 complex float 52 complex double
-		// we only support int8_t, int16_t, int32_t, int64_t, float, double
-
-		void makeArray(WXF_HEAD type, TOKEN& token) {
-			auto num_type = token.dimensions[0];
-			auto all_len = token.dimensions[1];
-			size_t size_of_type;
-			if (num_type >= 16 && num_type < 20) {
-				size_of_type = (size_t)1 << (num_type - 16);
-			}
-			else if (num_type >= 34 && num_type <= 35) {
-				size_of_type = (size_t)1 << (num_type - 32);
-			}
-			else {
-				size_of_type = (size_t)1 << num_type;
-			}
-
-			auto load_array = [&](auto&& assign) {
-				std::visit([&](auto&& x) {
-					using T = std::decay_t<decltype(x)>;
-					T val;
-					for (size_t i = 0; i < all_len; i++) {
-						std::memcpy(&val, buffer + pos, size_of_type);
-						assign(i, val);
-						pos += size_of_type;
-					}
-					}, select_type(num_type));
-				};
-
-			if (type == WXF_HEAD::narray && num_type >= 16 && num_type < 20) {
-				load_array([&](size_t i, auto val) { token.u_arr[i] = static_cast<uint64_t>(val); });
-			}
-			else if (num_type < 10) {
-				load_array([&](size_t i, auto val) { token.i_arr[i] = static_cast<int64_t>(val); });
-			}
-			else if (num_type >= 34 && num_type <= 35) {
-				load_array([&](size_t i, auto val) { token.d_arr[i] = static_cast<double>(val); });
+			if (view_mode == 1) {
+				tokens.reserve(token_views.size());
+				for (auto& t : token_views) 
+					tokens.emplace_back(std::move(t.to_token()));
+				// clear the token_views to save memory
+				token_views = std::vector<TOKEN_VIEW>();
 			}
 		}
 	};
@@ -884,19 +1049,19 @@ namespace WXF_PARSER {
 	}
 
 	ExprTree MakeExprTree(const uint8_t* str, const size_t len) {
-		Parser parser(str, len);
+		Parser parser(str, len, 1);
 		parser.parseExpr();
 		return MakeExprTree(parser);
 	}
 
 	ExprTree MakeExprTree(const std::vector<uint8_t>& str) {
-		Parser parser(str);
+		Parser parser(str, 1);
 		parser.parseExpr();
 		return MakeExprTree(parser);
 	}
 
 	ExprTree MakeExprTree(const std::string_view str) {
-		Parser parser(reinterpret_cast<const uint8_t*>(str.data()), str.size());
+		Parser parser(reinterpret_cast<const uint8_t*>(str.data()), str.size(), 1);
 		parser.parseExpr();
 		return MakeExprTree(parser);
 	}

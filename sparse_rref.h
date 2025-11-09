@@ -635,6 +635,23 @@ namespace SparseRREF {
 #endif
 	}
 
+	std::vector<uint8_t> file_to_ustr(const std::filesystem::path filename) {
+		if (!std::filesystem::exists(filename)) {
+			std::cerr << "Error: File does not exist!" << std::endl;
+			return std::vector<uint8_t>();
+		}
+		std::ifstream file(filename, std::ios::binary | std::ios::ate);
+		std::streamsize size = file.tellg();
+		file.seekg(0, std::ios::beg);
+
+		std::vector<uint8_t> buffer(size);
+		if (!file.read((char*)buffer.data(), size)) {
+			std::cerr << "Failed to read file!" << std::endl;
+			return std::vector<uint8_t>();
+		}
+
+		return buffer;
+	}
 
 } // namespace SparseRREF
 
