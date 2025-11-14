@@ -340,6 +340,12 @@ namespace SparseRREF {
 			data[idx] &= ~mask_table[pos];
 		}
 
+		void xor_insert(size_t val) {
+			auto idx = val >> 6;
+			auto pos = val & 63;
+			data[idx] ^= mask_table[pos];
+		}
+
 		bool operator[](size_t idx) const {
 			return test(idx);
 		}

@@ -613,6 +613,36 @@ namespace SparseRREF {
 		}
 	}
 
+	// tempvec is of useless, only nonzero_c is used
+	template <typename index_t>
+	void schur_complete(sparse_mat<bool, index_t>& mat, size_t k,
+		const std::vector<pivot_t<index_t>>& pivots,
+		const field_t& F, bool* tmpvec, SparseRREF::bit_array& nonzero_c) {
+
+		auto nk = mat[k].nnz();
+		if (nk == 0)
+			return;
+
+		for (size_t i = 0; i < nk; i++) 
+			nonzero_c.insert(mat[k](i));
+
+		for (auto [r, c] : pivots) {
+			if (!nonzero_c.test(c)) 
+				continue;
+
+			auto nr = mat[r].nnz();
+			for (size_t i = 0; i < nr; i++) 
+				nonzero_c.xor_insert(mat[r](i));
+		}
+
+		auto nnz = nonzero_c.nnz();
+		if (mat[k].alloc() < nnz) {
+			mat[k].reserve(nnz, false);
+		}
+		mat[k].resize(nnz);
+		nonzero_c.nonzero_and_clear(mat[k].indices);
+	}
+
 	template <typename T, typename index_t>
 	void schur_complete(sparse_mat<T, index_t>& mat, const std::vector<size_t>& rows,
 		const std::vector<pivot_t<index_t>>& pivots,

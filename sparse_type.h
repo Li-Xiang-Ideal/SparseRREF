@@ -408,6 +408,7 @@ namespace SparseRREF {
 
 		sparse_vec(const sparse_vec& l) { copy(l); }
 		size_t nnz() const { return _nnz; }
+		size_t alloc() const { return _alloc; }
 
 		sparse_vec(sparse_vec&& l) noexcept {
 			indices = l.indices;
@@ -578,6 +579,39 @@ namespace SparseRREF {
 					res[i - span.first] = rows[i];
 				});
 				pool->wait();
+			}
+			return res;
+		}
+
+		// if is_binary is true, we assume that the column indices are sorted in each row
+		sparse_mat<T, index_t> submat(const std::pair<size_t, size_t>& rowspan, 
+			const std::pair<size_t, size_t>& colspan, const bool is_binary = true) const {
+
+			sparse_mat<T, index_t> res(rowspan.second - rowspan.first, colspan.second - colspan.first);
+
+			if (is_binary) {
+				for (size_t i = rowspan.first; i < rowspan.second; i++) {
+					// binary search for the starting and end position
+					auto indptr = rows[i].indices;
+					auto it_start = std::lower_bound(indptr, indptr + rows[i].nnz(), colspan.first);
+					auto it_end = std::lower_bound(it_start, indptr + rows[i].nnz(), colspan.second);
+					res[i - rowspan.first].reserve(it_end - it_start);
+					for (auto it = it_start; it != it_end; it++) {
+						auto pos = it - indptr;
+						res[i - rowspan.first].push_back(indptr[pos] - colspan.first, rows[i].entries[pos]);
+					}
+				}
+			}
+			else {
+				for (size_t i = rowspan.first; i < rowspan.second; i++) {
+					// use more memory but simpler
+					res[i - rowspan.first].reserve(rows[i].nnz());
+					for (size_t j = 0; j < rows[i].nnz(); j++) {
+						auto col_index = rows[i](j);
+						if (col_index >= colspan.first && col_index < colspan.second) 
+							res[i - rowspan.first].push_back(col_index - colspan.first, rows[i][j]);
+					}
+				}
 			}
 			return res;
 		}

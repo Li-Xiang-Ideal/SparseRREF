@@ -34,6 +34,12 @@ namespace SparseRREF {
 		}
 	}
 
+	template <typename index_t>
+	inline void sparse_vec_rescale(sparse_vec<bool, index_t>& vec, const bool scalar, const field_t& F) {
+		if (scalar == false)
+			vec.zero();
+	}
+
 	// we assume that vec and src are sorted, and the result is also sorted
 	template <typename index_t>
 	static int snmod_vec_add_mul(
@@ -176,6 +182,35 @@ namespace SparseRREF {
 		if (vec._alloc > 4 * vec.nnz())
 			vec.reserve(2 * vec.nnz());
 
+		return 0;
+	}
+
+	template <typename index_t>
+	int sparse_vec_add(sparse_vec<bool, index_t>& vec, sparse_vec<bool, index_t>& src, const field_t& F) {
+		if (src.nnz() == 0)
+			return 0;
+
+		if (vec.nnz() == 0) {
+			vec = src;
+			return 0;
+		}
+
+		index_t mmax = std::max(src(src.nnz() - 1), vec(vec.nnz() - 1));
+
+		bit_array ba(mmax + 1);
+		for (size_t i = 0; i < vec.nnz(); i++)
+			ba.insert(vec(i));
+		for (size_t i = 0; i < src.nnz(); i++)
+			ba.xor_insert(src(i));
+
+		auto nnz = ba.nnz();
+		if (vec.alloc() < nnz)
+			vec.reserve(nnz);
+		else if (vec._alloc > 4 * vec.nnz())
+			vec.reserve(2 * vec.nnz());
+
+		vec.resize(nnz);
+		ba.nonzero_and_clear(vec.indices);
 		return 0;
 	}
 
