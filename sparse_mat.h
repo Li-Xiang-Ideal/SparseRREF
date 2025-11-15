@@ -395,17 +395,32 @@ namespace SparseRREF {
 			auto [row, col] = pivots[index];
 			auto& thecol = tranmat[col];
 			auto start = SparseRREF::clocknow();
-			if (thecol.size() > 1) {
-				pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
-					auto r = thecol[j];
-					if (r == row)
-						return;
-					auto entry = *sparse_mat_entry(mat, r, col);
-					sparse_vec_sub_mul(mat[r], mat[row], entry, F);
-					},
-					((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
+
+			if constexpr (std::is_same_v<T, bool>) {
+				if (thecol.size() > 1) {
+					pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
+						auto r = thecol[j];
+						if (r == row)
+							return;
+						sparse_vec_add(mat[r], mat[row], F);
+						},
+						((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
+				}
+				pool.wait();
 			}
-			pool.wait();
+			else {
+				if (thecol.size() > 1) {
+					pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
+						auto r = thecol[j];
+						if (r == row)
+							return;
+						auto entry = *sparse_mat_entry(mat, r, col);
+						sparse_vec_sub_mul(mat[r], mat[row], entry, F);
+						},
+						((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
+				}
+				pool.wait();
+			}
 
 			if (verbose && (i % printstep == 0 || i == pivots.size() - 1) && thecol.size() > 1) {
 				count++;
@@ -2345,35 +2360,6 @@ namespace SparseRREF {
 		if (type == SPARSE_FILE_TYPE_SMS) {
 			st << "0 0 0\n";
 		}
-	}
-
-	
-	static std::pair<char*, char*> snmod_mat_to_binary(sparse_mat<ulong>& mat) {
-		auto ratio_i = sizeof(slong) / sizeof(char);
-		auto ratio_e = sizeof(ulong) / sizeof(char);
-		auto nnz = mat.nnz();
-		auto len = 3 * ratio_e + mat.nrow * ratio_e + nnz * (ratio_i + ratio_e);
-		char* buffer = s_malloc<char>(len);
-		char* ptr = buffer;
-		ulong some_n[3] = { mat.nrow, mat.ncol, nnz };
-		std::memcpy(ptr, some_n, 3 * sizeof(ulong)); ptr += 3 * ratio_e;
-		for (size_t i = 0; i < mat.nrow; i++) 
-			ptr = snmod_vec_to_binary(mat[i], ptr).second;
-		return std::make_pair(buffer, ptr);
-	}
-
-	
-	sparse_mat<ulong> snmod_mat_from_binary(char* buffer) {
-		auto ratio_i = sizeof(slong) / sizeof(char);
-		auto ratio_e = sizeof(ulong) / sizeof(char);
-		char* ptr = buffer;
-		ulong some_n[3]; // nrow, ncol, nnz
-		std::memcpy(some_n, ptr, 3 * sizeof(ulong)); ptr += 3 * ratio_e;
-		sparse_mat<ulong> mat(some_n[0], some_n[1]);
-		for (size_t i = 0; i < mat.nrow; i++)
-			ptr = snmod_vec_from_binary(mat[i], ptr);
-
-		return mat;
 	}
 
 } // namespace SparseRREF

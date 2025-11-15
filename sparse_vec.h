@@ -35,14 +35,14 @@ namespace SparseRREF {
 	}
 
 	template <typename index_t>
-	inline void sparse_vec_rescale(sparse_vec<bool, index_t>& vec, const bool scalar, const field_t& F) {
+	void sparse_vec_rescale(sparse_vec<bool, index_t>& vec, const bool scalar, const field_t& F) {
 		if (scalar == false)
 			vec.zero();
 	}
 
 	// we assume that vec and src are sorted, and the result is also sorted
 	template <typename index_t>
-	static int snmod_vec_add_mul(
+	int snmod_vec_add_mul(
 		snmod_vec<index_t>& vec, const snmod_vec<index_t>& src,
 		const ulong a, const field_t& F) {
 		if (src.nnz() == 0)
@@ -215,37 +215,37 @@ namespace SparseRREF {
 	}
 
 	template <typename index_t>
-	static inline int sfmpq_vec_add_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
+	inline int sfmpq_vec_add_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
 		return sfmpq_vec_addsub_mul<index_t, true>(vec, src, a);
 	}
 
 	template <typename index_t>
-	static inline int sfmpq_vec_sub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
+	inline int sfmpq_vec_sub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
 		return sfmpq_vec_addsub_mul<index_t, false>(vec, src, a);
 	}
 
 	template <typename index_t>
-	static inline int snmod_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
+	inline int snmod_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, F.mod.n - a, F);
 	}
 
 	template <typename index_t>
-	static inline int sparse_vec_add(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const field_t& F) {
+	inline int sparse_vec_add(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, 1, F);
 	}
 
 	template <typename index_t>
-	static inline int sparse_vec_sub(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const field_t& F) {
+	inline int sparse_vec_sub(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, F.mod.n - 1, F);
 	}
 
 	template <typename index_t>
-	static inline int sparse_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
+	inline int sparse_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
 		return snmod_vec_sub_mul(vec, src, a, F);
 	}
 
 	template <typename index_t>
-	static inline int sparse_vec_sub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a, const field_t& F) {
+	inline int sparse_vec_sub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a, const field_t& F) {
 		return sfmpq_vec_sub_mul(vec, src, a);
 	}
 
@@ -262,6 +262,33 @@ namespace SparseRREF {
 		while (ptr1 < v1.nnz() && ptr2 < v2.nnz()) {
 			if (v1(ptr1) == v2(ptr2)) {
 				result = scalar_add(result, scalar_mul(v1[ptr1], v2[ptr2], F), F);
+				ptr1++;
+				ptr2++;
+			}
+			else if (v1(ptr1) < v2(ptr2)) {
+				ptr1 = std::lower_bound(v1.indices + ptr1, e1, v2(ptr2)) - v1.indices;
+			}
+			else {
+				ptr2 = std::lower_bound(v2.indices + ptr2, e2, v1(ptr1)) - v2.indices;
+			}
+		}
+
+		return result;
+	}
+
+	template <typename index_t>
+	bool sparse_vec_dot(const sparse_vec<bool, index_t>& v1, const sparse_vec<bool, index_t>& v2, const field_t& F) {
+		if (v1.nnz() == 0 || v2.nnz() == 0) {
+			return false;
+		}
+		size_t ptr1 = 0, ptr2 = 0;
+		bool result = false;
+		auto e1 = v1.indices + v1.nnz();
+		auto e2 = v2.indices + v2.nnz();
+		while (ptr1 < v1.nnz() && ptr2 < v2.nnz()) {
+			if (v1(ptr1) == v2(ptr2)) {
+				// add one in GF(2), 0 to 1 and 1 to 0, so it is !result
+				result = !result;
 				ptr1++;
 				ptr2++;
 			}
@@ -293,34 +320,15 @@ namespace SparseRREF {
 	}
 
 	template <typename index_t>
-	std::pair<char*, char*> snmod_vec_to_binary(const sparse_vec<ulong, index_t>& vec, char* buffer = nullptr) {
-		constexpr auto ratio_i = sizeof(index_t) / sizeof(char);
-		constexpr auto ratio_e = sizeof(ulong) / sizeof(char);
-		auto nnz = vec.nnz();
-		if (buffer == nullptr)
-			buffer = s_malloc<char>(ratio_e + nnz * (ratio_i + ratio_e));
-		auto ptr = buffer;
-		std::memcpy(ptr, &nnz, sizeof(ulong));
-		ptr += ratio_e;
-		std::memcpy(ptr, vec.indices, nnz * sizeof(index_t));
-		ptr += nnz * ratio_i;
-		std::memcpy(ptr, vec.entries, nnz * sizeof(ulong));
-		ptr += nnz * ratio_e;
-		return std::make_pair(buffer, ptr);
-	}
+	bool sparse_vec_dot_dense_vec(const sparse_vec<bool, index_t>& v1, const bool* v2, const field_t& F) {
+		if (v1.nnz() == 0) 
+			return bool(false);
 
-	template <typename index_t>
-	char* snmod_vec_from_binary(sparse_vec<ulong, index_t>& vec, const char* buffer) {
-		constexpr auto ratio_i = sizeof(index_t) / sizeof(char);
-		constexpr auto ratio_e = sizeof(ulong) / sizeof(char);
-		ulong nnz;
-		std::memcpy(&nnz, buffer, sizeof(ulong));
-		vec.reserve(nnz);
-		vec.resize(nnz);
-		std::memcpy(vec.indices, buffer + ratio_e, nnz * sizeof(index_t));
-		std::memcpy(vec.entries, buffer + ratio_e + nnz * ratio_i, nnz * sizeof(ulong));
-		char* ptr = (char*)(buffer + ratio_e + nnz * (ratio_i + ratio_e));
-		return ptr;
+		bool result = false;
+		for (size_t i = 0; i < v1.nnz(); i++) 
+			result ^= v1[i] && v2[v1(i)];
+
+		return result;
 	}
 
 	// debug only, not used to the large vector
