@@ -130,6 +130,63 @@ namespace SparseRREF {
 		return localcounter;
 	}
 
+	template <typename index_t>
+	size_t eliminate_row_with_one_nnz(sparse_mat_subview<bool, index_t> mat, std::vector<index_t>& donelist,
+		rref_option_t opt) {
+		auto localcounter = 0;
+		std::unordered_map<size_t, index_t> pivlist;
+		bit_array collist(mat.ncol());
+		for (size_t a = 0; a < mat.nrow(); a++) {
+			size_t i = mat(a);
+			if (donelist[i] != index_sval<index_t>())
+				continue;
+			if (mat[i].nnz() == 1) {
+				if (!collist[mat[i](0)]) {
+					localcounter++;
+					pivlist[i] = mat[i](0);
+					collist.insert(mat[i](0));
+				}
+			}
+		}
+
+		if (localcounter == 0)
+			return localcounter;
+
+		constexpr index_t sv = index_sval<index_t>();
+
+		opt->pool.detach_loop(0, mat.nrow(), [&](size_t i) {
+			auto row = mat(i);
+			bool is_changed = false;
+			for (size_t j = 0; j < mat[i].nnz(); j++) {
+				if (collist[mat[i](j)]) {
+					if (!(pivlist.contains(row) && pivlist[row] == mat[i](j))) {
+						mat[i](j) = sv; // mark as deleted
+						is_changed = true;
+					}
+				}
+			}
+			if (is_changed) {
+				size_t new_nnz = 0;
+				for (size_t j = 0; j < mat[i].nnz(); j++) {
+					if (mat[i](j) != sv) {
+						if (new_nnz != j) 
+							mat[i](new_nnz) = mat[i](j);
+						new_nnz++;
+					}
+				}
+				mat[i].resize(new_nnz);
+				mat[i].reserve(mat[i].nnz());
+			}
+			});
+
+		for (auto [a, b] : pivlist)
+			donelist[a] = b;
+
+		opt->pool.wait();
+
+		return localcounter;
+	}
+
 	template <typename T, typename index_t>
 	size_t eliminate_row_with_one_nnz(sparse_mat<T,index_t>& mat, std::vector<index_t>& donelist,
 		rref_option_t opt) {
@@ -2103,22 +2160,23 @@ namespace SparseRREF {
 						val = get_int_from_sv(token.get_string_view()) % F.mod;
 					}
 					break;
-				case WXF_PARSER::WXF_HEAD::symbol: {
-					if (token.get_string_view() == "Rational") {
-						if (pos + 2 >= tokens.size()) {
+				case WXF_PARSER::WXF_HEAD::func: {
+					auto& ntoken = tokens[pos + 1];
+					if (ntoken.get_string_view() == "Rational") {
+						if (pos + 3 >= tokens.size()) {
 							std::cerr << "Error: sparse_mat_read: wrong format in SparseArray" << std::endl;
 							return sparse_mat<T, index_t>();
 						}
 
-						int_t n_1 = get_int_from_tv(tokens[pos + 1]);
-						int_t d_1 = get_int_from_tv(tokens[pos + 2]);
+						int_t n_1 = get_int_from_tv(tokens[pos + 2]);
+						int_t d_1 = get_int_from_tv(tokens[pos + 3]);
 						if constexpr (std::is_same_v<T, rat_t>) {
 							val = rat_t(std::move(n_1), std::move(d_1), true);
 						}
 						else if constexpr (std::is_same_v<T, ulong>) {
 							val = rat_t(std::move(n_1), std::move(d_1), true) % F.mod;
 						}
-						pos += 2;
+						pos += 3;
 					}
 					else {
 						std::cerr << "Error: sparse_mat_read: ";
@@ -2183,6 +2241,9 @@ namespace SparseRREF {
 	template <typename T, typename index_t>
 	std::vector<uint8_t> sparse_mat_write_wxf(const sparse_mat<T, index_t>& mat, bool include_head = true) {
 		using namespace WXF_PARSER;
+
+		if (mat.nrow == 0)
+			return std::vector<uint8_t>();
 
 		std::vector<uint8_t> res;
 		res.reserve(mat.nnz() * 8);

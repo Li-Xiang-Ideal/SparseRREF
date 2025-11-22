@@ -185,6 +185,7 @@ namespace SparseRREF {
 		return 0;
 	}
 
+	// it is just symmetric difference for bool vectors
 	template <typename index_t>
 	int sparse_vec_add(sparse_vec<bool, index_t>& vec, sparse_vec<bool, index_t>& src, const field_t& F) {
 		if (src.nnz() == 0)
@@ -195,22 +196,35 @@ namespace SparseRREF {
 			return 0;
 		}
 
-		index_t mmax = std::max(src(src.nnz() - 1), vec(vec.nnz() - 1));
+		auto a = vec.indices;
+		auto a_end = vec.indices + vec.nnz();
+		auto b = src.indices;
+		auto b_end = src.indices + src.nnz();
 
-		bit_array ba(mmax + 1);
-		for (size_t i = 0; i < vec.nnz(); i++)
-			ba.insert(vec(i));
-		for (size_t i = 0; i < src.nnz(); i++)
-			ba.xor_insert(src(i));
+		index_t* out = s_malloc<index_t>(vec.nnz() + src.nnz());
+		auto out_start = out;
+		auto out_alloc = vec.nnz() + src.nnz();
 
-		auto nnz = ba.nnz();
-		if (vec.alloc() < nnz)
-			vec.reserve(nnz);
-		else if (vec._alloc > 4 * vec.nnz())
-			vec.reserve(2 * vec.nnz());
+		while (a != a_end && b != b_end) {
+			if (*a < *b)
+				*out++ = *a++;
+			else if (*b < *a)
+				*out++ = *b++;
+			else {
+				++a; ++b;
+			}
+		}
 
-		vec.resize(nnz);
-		ba.nonzero_and_clear(vec.indices);
+		// remaining
+		while (a != a_end) *out++ = *a++;
+		while (b != b_end) *out++ = *b++;
+
+		size_t new_nnz = out - out_start;
+		s_free(vec.indices);
+		vec.indices = out_start;
+		vec._nnz = new_nnz;
+		vec._alloc = out_alloc;
+
 		return 0;
 	}
 

@@ -967,7 +967,16 @@ namespace WXF_PARSER {
 		if (parser.err != 0)
 			return tree;
 
-		tree.tokens = std::move(parser.tokens);
+		// convert token views to tokens if in view mode
+		if (parser.view_mode == 0) {
+			tree.tokens.reserve(parser.token_views.size());
+			for (auto& t : parser.token_views)
+				tree.tokens.emplace_back(t.to_token());
+		}
+		else {
+			tree.tokens = std::move(parser.tokens);
+		}
+
 		auto total_len = tree.tokens.size();
 		auto& tokens = tree.tokens;
 

@@ -57,7 +57,7 @@
 
 namespace SparseRREF {
 	// version
-	static const char version[] = "v0.3.4";
+	static const char version[] = "v0.3.5";
 
 	enum SPARSE_FILE_TYPE {
 		SPARSE_FILE_TYPE_PLAIN,

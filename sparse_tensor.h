@@ -1005,135 +1005,221 @@ namespace SparseRREF {
 	}
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
-	// TODO: more check!!!
 	template <typename T, typename index_t>
-	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const WXF_PARSER::ExprTree& tree, const field_t& F) {
-		using namespace WXF_PARSER;
-		auto& root = tree.root;
+	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const std::vector<WXF_PARSER::TOKEN_VIEW>& tokens, const field_t& F) {
+		using st = sparse_tensor<T, index_t, SPARSE_CSR>;
 
-		sparse_tensor<T, index_t, SPARSE_CSR> res;
+		if (tokens.size() == 0)
+			return st();
 
-		if (tree[root].str != std::string_view("SparseArray")) {
-			std::cerr << "Error: sparse_tensor_read_wxf: ";
-			std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
-			return res;
+		if (tokens[0].type != WXF_PARSER::WXF_HEAD::func ||
+			tokens[0].length != 4 ||
+			tokens[1].type != WXF_PARSER::WXF_HEAD::symbol ||
+			tokens[1].get_string_view() != "SparseArray" ||
+			tokens[2].type != WXF_PARSER::WXF_HEAD::symbol ||
+			tokens[2].get_string_view() != "Automatic") {
+			std::cerr << "Error: sparse_tensor_read: not a SparseArray" << std::endl;
+			return st();
 		}
 
-		// dims
-		std::vector<size_t> dims(tree[root[1]].i_arr, tree[root[1]].i_arr + tree[root[1]].dim(0));
+#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC) \
+		case TYPE: { \
+			auto sp = token.get_arr_span<CTYPE>(); \
+			for (const auto& v : sp) {*out = FUNC(v); out++;} \
+			break; }
 
-		if (tree[root[2]].i != 0) {
-			std::cerr << "Error: sparse_tensor_read_wxf: the implicit value is not 0" << std::endl;
-			return res;
-		}
+#define TMP_IDENTITY_FUNC(x) (x)
 
-		// {1,{rowptr,colindex},vals}
-		auto& last_node = root[3];
+#define GENERATE_ALL_ARR(FUNC2) \
+		GENERATE_COPY_ARR(0, int8_t, FUNC2)  \
+		GENERATE_COPY_ARR(1, int16_t, FUNC2) \
+		GENERATE_COPY_ARR(2, int32_t, FUNC2) \
+		GENERATE_COPY_ARR(3, int64_t, FUNC2) \
+		GENERATE_COPY_ARR(16, uint8_t, FUNC2)  \
+		GENERATE_COPY_ARR(17, uint16_t, FUNC2) \
+		GENERATE_COPY_ARR(18, uint32_t, FUNC2) \
+		GENERATE_COPY_ARR(19, uint64_t, FUNC2)
 
-		// last_node[0] should be 1, what's the meaning of this?
-
-		// last_node[1] is {rowptr,colindex}
-		// last_node[1][0] is rowptr, last_node[1][1] is colindex
-
-		res = sparse_tensor<T, index_t, SPARSE_CSR>(dims);
-		res.data.rowptr = std::vector<size_t>(tree[last_node[1][0]].i_arr, tree[last_node[1][0]].i_arr
-			+ tree[last_node[1][0]].dim(0));
-		auto nnz = res.data.rowptr.back();
-
-		res.data.reserve(nnz);
-		for (size_t i = 0; i < nnz * (dims.size() - 1); i++) {
-			res.data.colptr[i] = tree[last_node[1][1]].i_arr[i] - 1; // mma is 1-base
-		}
-
-		auto toInteger = [](const WXF_PARSER::TOKEN& node) {
-			switch (node.type) {
-			case WXF_HEAD::i8:
-			case WXF_HEAD::i16:
-			case WXF_HEAD::i32:
-			case WXF_HEAD::i64:
-				return Flint::int_t(node.i);
-			case WXF_HEAD::bigint:
-				return Flint::int_t(node.str);
+		auto copy_arr = [](const WXF_PARSER::TOKEN_VIEW& token, auto out) {
+			int num_type = token.dimensions[0];
+			switch (num_type) {
+				GENERATE_ALL_ARR(TMP_IDENTITY_FUNC);
 			default:
-				std::cerr << "not a integer" << std::endl;
-				return Flint::int_t(0);
+				std::cerr << "Error: sparse_tensor_read: read array fails" << std::endl;
+				break;
 			}
 			};
 
-		// last_node[2] is vals
-		T* vals = res.data.valptr;
-		if (tree[last_node[2]].type == WXF_HEAD::array ||
-			tree[last_node[2]].type == WXF_HEAD::narray) {
-
-			auto ptr = tree[last_node[2]].i_arr;
-			if constexpr (std::is_same_v<T, rat_t>) {
-				for (size_t i = 0; i < nnz; i++) 
-					vals[i] = ptr[i];
+		auto copy_modify_arr = [](const WXF_PARSER::TOKEN_VIEW& token, auto out, auto&& func) {
+			int num_type = token.dimensions[0];
+			switch (num_type) {
+				GENERATE_ALL_ARR(func);
+			default:
+				std::cerr << "Error: sparse_tensor_read: read array fails" << std::endl;
+				break;
 			}
+			};
+#undef TMP_IDENTITY_FUNC
+#undef GENERATE_COPY_ARR
+#undef GENERATE_ALL_ARR
+
+		// dims
+		std::vector<size_t> dims(tokens[3].dimensions[1]);
+		copy_arr(tokens[3], dims.data());
+
+		// imp_val
+		if (tokens[4].get_integer() != 0) {
+			std::cerr << "Error: sparse_tensor_read: the implicit value is not 0" << std::endl;
+			return st();
+		}
+
+		// List of length 3
+		// {1,{rowptr,colindex},vals}
+
+		// check 
+		if (tokens[5].type != WXF_PARSER::WXF_HEAD::func ||
+			tokens[5].length != 3 ||
+			tokens[6].type != WXF_PARSER::WXF_HEAD::symbol ||
+			tokens[6].get_string_view() != "List" ||
+			tokens[8].type != WXF_PARSER::WXF_HEAD::func ||
+			tokens[8].length != 2 ||
+			tokens[9].type != WXF_PARSER::WXF_HEAD::symbol ||
+			tokens[9].get_string_view() != "List") {
+			std::cerr << "Error: sparse_tensor_read: wrong format in SparseArray" << std::endl;
+			return st();
+		}
+
+		// rowptr is tokens[10]
+		std::vector<size_t> rowptr(tokens[10].dimensions[1]);
+		copy_arr(tokens[10], rowptr.data());
+		size_t nz = rowptr.back();
+
+		st tensor(dims, nz);
+		tensor.data.rowptr = std::move(rowptr);
+
+		// colindex is tokens[11]
+		if (WXF_PARSER::size_of_arr_num_type(tokens[11].dimensions[0]) > sizeof(index_t)) {
+			std::cerr << "Error: sparse_tensor_read: the type of index is not enough for colindex" << std::endl;
+			return st();
+		}
+		// mma is 1-based for colindex
+		copy_modify_arr(tokens[11], tensor.data.colptr, [](auto v) { return v - 1; });
+
+		std::vector<char> buffer;
+		auto get_int_from_sv = [&buffer](std::string_view sv) -> int_t {
+			buffer.clear();
+			buffer.reserve(sv.size() + 1);
+
+			buffer.insert(buffer.end(), sv.begin(), sv.end());
+			buffer.push_back('\0');
+			return int_t(buffer.data());
+			};
+
+		auto get_int_from_tv = [&get_int_from_sv](const WXF_PARSER::TOKEN_VIEW& node) -> int_t {
+			switch (node.type) {
+			case WXF_PARSER::WXF_HEAD::i8:
+			case WXF_PARSER::WXF_HEAD::i16:
+			case WXF_PARSER::WXF_HEAD::i32:
+			case WXF_PARSER::WXF_HEAD::i64:
+				return int_t(node.get_integer());
+			case WXF_PARSER::WXF_HEAD::bigint:
+				return get_int_from_sv(node.get_string_view());
+			default:
+				std::cerr << "not a integer" << std::endl;
+				return int_t(0);
+			}
+			};
+
+		// the other is vals
+		if (tokens[12].type == WXF_PARSER::WXF_HEAD::array ||
+			tokens[12].type == WXF_PARSER::WXF_HEAD::narray) {
+			if constexpr (std::is_same_v<T, rat_t>)
+				copy_arr(tokens[12], tensor.data.valptr);
 			else if constexpr (std::is_same_v<T, ulong>) {
-				for (size_t i = 0; i < nnz; i++) 
-					vals[i] = nmod_set_si(ptr[i], F.mod);
+				copy_modify_arr(tokens[12], tensor.data.valptr, [&](auto v) {
+					return nmod_set_si(v, F.mod);
+					});
 			}
 		}
 		else {
-			for (size_t i = 0; i < nnz; i++) {
-				T val;
-				auto& val_node = last_node[2][i];
-				auto& token = tree[val_node];
+			// it is a list
+			if (tokens[12].type != WXF_PARSER::WXF_HEAD::func ||
+				tokens[13].type != WXF_PARSER::WXF_HEAD::symbol ||
+				tokens[13].get_string_view() != "List") {
+				std::cerr << "Error: sparse_tensor_read: wrong format in SparseArray" << std::endl;
+				return st();
+			}
 
-				switch (tree[val_node].type) {
-				case WXF_HEAD::i8:
-				case WXF_HEAD::i16:
-				case WXF_HEAD::i32:
-				case WXF_HEAD::i64:
+			size_t pos = 14;
+			T* vals = tensor.data.valptr;
+			while (pos < tokens.size()) {
+				auto& token = tokens[pos];
+				T val;
+				switch (token.type) {
+				case WXF_PARSER::WXF_HEAD::i8:
+				case WXF_PARSER::WXF_HEAD::i16:
+				case WXF_PARSER::WXF_HEAD::i32:
+				case WXF_PARSER::WXF_HEAD::i64:
 					if constexpr (std::is_same_v<T, rat_t>) {
-						val = token.i;
+						val = token.get_integer();
 					}
 					else if constexpr (std::is_same_v<T, ulong>) {
-						val = nmod_set_si(token.i, F.mod);
+						val = int_t(token.get_integer()) % F.mod;
 					}
 					break;
-				case WXF_HEAD::bigint:
+				case WXF_PARSER::WXF_HEAD::bigint:
 					if constexpr (std::is_same_v<T, rat_t>) {
-						val = toInteger(token);
+						val = get_int_from_tv(token);
 					}
 					else if constexpr (std::is_same_v<T, ulong>) {
-						val = int_t(token.str) % F.mod;
+						val = get_int_from_sv(token.get_string_view()) % F.mod;
 					}
 					break;
-				case WXF_HEAD::symbol:
-					if (token.str == std::string_view("Rational")) {
-						int_t n_1 = toInteger(tree[val_node[0]]);
-						int_t d_1 = toInteger(tree[val_node[1]]);
+				case WXF_PARSER::WXF_HEAD::func: {
+					auto ntoken = tokens[pos + 1];
+					if (ntoken.get_string_view() == "Rational") {
+						if (pos + 3 >= tokens.size()) {
+							std::cerr << "Error: sparse_tensor_read: wrong format in SparseArray" << std::endl;
+							return sparse_mat<T, index_t>();
+						}
+
+						int_t n_1 = get_int_from_tv(tokens[pos + 2]);
+						int_t d_1 = get_int_from_tv(tokens[pos + 3]);
 						if constexpr (std::is_same_v<T, rat_t>) {
 							val = rat_t(std::move(n_1), std::move(d_1), true);
 						}
 						else if constexpr (std::is_same_v<T, ulong>) {
 							val = rat_t(std::move(n_1), std::move(d_1), true) % F.mod;
 						}
+						pos += 3;
 					}
 					else {
-						std::cerr << "Error: sparse_mat_read: ";
+						std::cerr << "Error: sparse_tensor_read: ";
 						std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
-						return res;
+						return st();
 					}
 					break;
+				}
 				default:
-					std::cerr << "Error: sparse_mat_read: ";
+					std::cerr << "Error: sparse_tensor_read: ";
 					std::cerr << "not a SparseArray with rational / integer entries" << std::endl;
-					return res;
+					return st();
 					break;
 				}
-				vals[i] = val;
+				*vals = val;
+				vals++;
+				pos++;
 			}
 		}
 
-		return res;
+		return tensor;
 	}
-	
+
 	template <typename T, typename index_t>
 	auto sparse_tensor_read_wxf(const std::filesystem::path file, const field_t& F) {
-		auto fz = file_size(file);
+		auto fz = std::filesystem::file_size(file);
+
+		WXF_PARSER::Parser wxf_parser;
 
 		// if > 1GB, use mmap
 		if (fz > 1ULL << 30) {
@@ -1142,21 +1228,29 @@ namespace SparseRREF {
 			bool status = mmap_file(cc_str.c_str(), mm);
 
 			if (!status) {
-				// mmap failed, use the file directly
-				return sparse_tensor_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(file), F);
+				// if mmap failed, read the file directly
+				auto buffer = file_to_ustr(file);
+				wxf_parser = WXF_PARSER::Parser(buffer);
 			}
 
-			return sparse_tensor_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(mm.view), F);
+			wxf_parser = WXF_PARSER::Parser(mm.view);
 		}
 
-		return sparse_tensor_read_wxf<T, index_t>(WXF_PARSER::MakeExprTree(file), F);
+		auto buffer = file_to_ustr(file);
+		wxf_parser = WXF_PARSER::Parser(buffer);
+
+		wxf_parser.parse();
+
+		return sparse_tensor_read_wxf<T, index_t>(wxf_parser.token_views, F);
 	}
 
-	// TODO...
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	template <typename T, typename index_t>
 	std::vector<uint8_t> sparse_tensor_write_wxf(const sparse_tensor<T, index_t, SPARSE_CSR>& tensor, bool include_head = true) {
 		using namespace WXF_PARSER;
+
+		if (tensor.alloc() == 0)
+			return std::vector<uint8_t>();
 
 		std::vector<uint8_t> res;
 		res.reserve(tensor.nnz() * 8);

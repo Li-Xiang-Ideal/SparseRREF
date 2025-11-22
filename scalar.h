@@ -179,12 +179,12 @@ namespace Flint {
 
 		int_t operator-() const { return neg(); }
 
-		std::string get_str(int base = 10, bool thread_safe = false) const {
+		std::string get_str(int base = 10) const {
 			auto len = fmpz_sizeinbase(&_data, base) + 3;
 			std::string result;
 			result.resize(len + 5);
 			fmpz_get_str(result.data(), base, &_data);
-			result.resize(strlen(result.c_str()));
+			result.resize(strlen(result.data()));
 			return result;
 		}
 	};
@@ -234,6 +234,7 @@ namespace Flint {
 
 		int_t num() const { return fmpq_numref(&_data); }
 		int_t den() const { return fmpq_denref(&_data); }
+		int sign() const { return fmpq_sgn(&_data); }
 
 		fmpz* num_data() { return fmpq_numref(&_data); }
 		const fmpz* num_data() const { return fmpq_numref(&_data); }
@@ -312,8 +313,8 @@ namespace Flint {
 			return nmod_div(nummod, denmod, mod);
 		}
 
-		void operator++() { *this += 1; }
-		void operator--() { *this -= 1; }
+		void operator++() { fmpq_add_ui(&_data, &_data, 1); }
+		void operator--() { fmpq_sub_ui(&_data, &_data, 1); }
 
 		rat_t pow(const int_t& n) const { rat_t result; fmpq_pow_fmpz(&result._data, &_data, &n._data); return result; }
 		template <signed_builtin_integral T>
@@ -332,14 +333,14 @@ namespace Flint {
 
 		rat_t operator-() const { return neg(); }
 
-		std::string get_str(int base = 10, bool thread_safe = false) const {
+		std::string get_str(int base = 10) const {
 			auto len = fmpz_sizeinbase(fmpq_numref(&_data), base) +
 				fmpz_sizeinbase(fmpq_denref(&_data), base) + 3;
 
 			std::string result;
 			result.resize(len + 5);
 			fmpq_get_str(result.data(), base, &_data);
-			result.resize(strlen(result.c_str()));
+			result.resize(strlen(result.data()));
 			return result;
 		}
 	};
@@ -469,8 +470,8 @@ namespace SparseRREF {
 	using Flint::int_t;
 
 	// TODO: avoid copy
-	static inline std::string scalar_to_str(const rat_t& a) { return a.get_str(10, true); }
-	static inline std::string scalar_to_str(const int_t& a) { return a.get_str(10, true); }
+	static inline std::string scalar_to_str(const rat_t& a) { return a.get_str(10); }
+	static inline std::string scalar_to_str(const int_t& a) { return a.get_str(10); }
 	static inline std::string scalar_to_str(const ulong& a) { return std::to_string(a); }
 
 	// arithmetic
