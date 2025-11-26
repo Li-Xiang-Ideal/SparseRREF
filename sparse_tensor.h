@@ -42,6 +42,7 @@ namespace SparseRREF {
 				indexC.resize(A.rank());
 			}
 		}
+		C.set_sorted(true);
 
 		return C;
 	}
@@ -127,6 +128,7 @@ namespace SparseRREF {
 			C.push_back(B.index(posB), B.val(posB));
 			j++;
 		}
+		C.set_sorted(true);
 
 		return C;
 	}
@@ -158,6 +160,11 @@ namespace SparseRREF {
 				std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
 				exit(1);
 			}
+		}
+
+		if (!((A.is_sorted() || A.check_sorted()) && (B.is_sorted() || B.check_sorted()))) {
+			std::cerr << "Error: tensor_sum_replace: Both tensors must be sorted." << std::endl;
+			exit(1);
 		}
 
 		// if one of the tensors is zero
@@ -221,6 +228,7 @@ namespace SparseRREF {
 
 		// // then remove the zero entries
 		// A.canonicalize();
+		A.set_sorted(true);
 	}
 
 	// the result is sorted
@@ -305,6 +313,8 @@ namespace SparseRREF {
 		rowptrB.push_back(B.nnz());
 
 		sparse_tensor<T, index_type, SPARSE_COO> C(dimsC);
+		C.set_sorted(true);
+
 		// parallel version
 		size_t nthread;
 		if (pool == nullptr)
@@ -479,6 +489,7 @@ namespace SparseRREF {
 		perm.erase(perm.begin() + A.rank() - 1);
 		perm.insert(perm.begin() + a, A.rank() - 1);
 		C.transpose_replace(perm, pool);
+		C.set_sorted(false);
 
 		return C;
 	}
@@ -617,6 +628,7 @@ namespace SparseRREF {
 				}
 			}
 		}
+		C.set_sorted(true);
 
 		return C;
 	}
@@ -872,6 +884,7 @@ namespace SparseRREF {
 
 		if (pool == nullptr) {
 			method(0, each_rowptr[0].size() - 1);
+			Cs[0].check_sorted(); // Cs[0].set_sorted(true);
 			return Cs[0];
 		}
 
@@ -896,6 +909,7 @@ namespace SparseRREF {
 			s_copy(colptr, Cs[i].data.colptr, tmpnnz * C.rank());
 			nownnz += tmpnnz;
 		}
+		C.check_sorted(); // C.set_sorted(true);
 
 		return C;
 	}
@@ -966,6 +980,7 @@ namespace SparseRREF {
 
 			tensor.push_back(index, val);
 		}
+		tensor.check_sorted();
 
 		return tensor;
 	}
