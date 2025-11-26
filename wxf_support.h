@@ -134,7 +134,7 @@ namespace WXF_PARSER {
 	}
 
 	template <typename T>
-	requires std::is_integral_v<T>&& std::is_signed_v<T>
+		requires std::is_integral_v<T>&& std::is_signed_v<T>
 	inline uint8_t minimal_signed_bits(T x) noexcept {
 		if (x >= INT8_MIN && x <= INT8_MAX) return 0;
 		if (x >= INT16_MIN && x <= INT16_MAX) return 1;
@@ -153,7 +153,7 @@ namespace WXF_PARSER {
 	}
 
 	template <typename T>
-	requires std::is_integral_v<T>&& std::is_unsigned_v<T>
+		requires std::is_integral_v<T>&& std::is_unsigned_v<T>
 	inline uint8_t minimal_unsigned_bits(T x) noexcept {
 		if (x <= UINT8_MAX) return 0;
 		if (x <= UINT16_MAX) return 1;
@@ -473,7 +473,7 @@ namespace WXF_PARSER {
 				size_t all_len = token.dimensions[1];
 
 				ss << "data: ";
-				if (token.i_arr == nullptr) 
+				if (token.i_arr == nullptr)
 					break;
 				if (num_type >= 16 && num_type < 20) {
 					for (size_t i = 0; i < all_len; i++)
@@ -534,7 +534,7 @@ namespace WXF_PARSER {
 			return length;
 		}
 
-		~TOKEN_VIEW() { 
+		~TOKEN_VIEW() {
 			if (type == WXF_HEAD::array || type == WXF_HEAD::narray)
 				free(dimensions);
 		}
@@ -582,15 +582,15 @@ namespace WXF_PARSER {
 		}
 
 		int64_t get_integer() const {
-			if (type == WXF_HEAD::i8) 
+			if (type == WXF_HEAD::i8)
 				return *(int8_t*)data;
-			else if (type == WXF_HEAD::i16) 
+			else if (type == WXF_HEAD::i16)
 				return *(int16_t*)data;
-			else if (type == WXF_HEAD::i32) 
+			else if (type == WXF_HEAD::i32)
 				return *(int32_t*)data;
-			else if (type == WXF_HEAD::i64) 
+			else if (type == WXF_HEAD::i64)
 				return *(int64_t*)data;
-			else 
+			else
 				return 0;
 		}
 
@@ -602,7 +602,7 @@ namespace WXF_PARSER {
 				|| type == WXF_HEAD::binary_string) {
 				return std::string_view((const char*)data, length);
 			}
-			else 
+			else
 				return std::string_view();
 		}
 
@@ -636,15 +636,15 @@ namespace WXF_PARSER {
 				std::memcpy(token.str, data, length);
 				token.str[length] = '\0';
 			}
-			else if (type == WXF_HEAD::i8) 
+			else if (type == WXF_HEAD::i8)
 				token.i = *(int8_t*)data;
-			else if (type == WXF_HEAD::i16) 
+			else if (type == WXF_HEAD::i16)
 				token.i = *(int16_t*)data;
-			else if (type == WXF_HEAD::i32) 
+			else if (type == WXF_HEAD::i32)
 				token.i = *(int32_t*)data;
-			else if (type == WXF_HEAD::i64) 
+			else if (type == WXF_HEAD::i64)
 				token.i = *(int64_t*)data;
-			else if (type == WXF_HEAD::f64) 
+			else if (type == WXF_HEAD::f64)
 				token.d = *(double*)data;
 			else if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
 				if (with_arr) {
@@ -705,7 +705,7 @@ namespace WXF_PARSER {
 
 		inline uint64_t read_varint() {
 			const uint8_t* ptr = buffer + pos;
-			const uint8_t* end = buffer + size; 
+			const uint8_t* end = buffer + size;
 			uint64_t result = 0;
 			uint8_t b;
 
@@ -720,7 +720,7 @@ namespace WXF_PARSER {
 			b = *ptr++; result |= uint64_t(b & 0x7F) << 42;  if (!(b & 0x80) || ptr >= end) goto done;
 			b = *ptr++; result |= uint64_t(b & 0x7F) << 49;  if (!(b & 0x80) || ptr >= end) goto done;
 			b = *ptr++; result |= uint64_t(b & 0x7F) << 56;  if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 63;    
+			b = *ptr++; result |= uint64_t(b & 0x7F) << 63;
 		done:
 			pos = ptr - buffer;
 			return result;
@@ -803,7 +803,7 @@ namespace WXF_PARSER {
 
 			if (view_mode == 1) {
 				tokens.reserve(token_views.size());
-				for (auto& t : token_views) 
+				for (auto& t : token_views)
 					tokens.emplace_back(t.to_token());
 				// clear the token_views to save memory
 				token_views = std::vector<TOKEN_VIEW>();
@@ -823,7 +823,8 @@ namespace WXF_PARSER {
 			constexpr size_t MAX_ALLOC = std::numeric_limits<int64_t>::max();
 			if (size > MAX_ALLOC) {
 				throw std::bad_alloc();
-			} else if (size > 0) {
+			}
+			else if (size > 0) {
 				children = std::make_unique<ExprNode[]>(size);
 			}
 		}
@@ -887,7 +888,7 @@ namespace WXF_PARSER {
 
 		switch (node.type) {
 		case WXF_HEAD::func:
-		case WXF_HEAD::association: 
+		case WXF_HEAD::association:
 			res.push_back((uint8_t)node.type);
 			serialize_varint(res, node.size);
 			res.push_back((uint8_t)token.type);

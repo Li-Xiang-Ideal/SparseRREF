@@ -1259,7 +1259,7 @@ namespace SparseRREF {
 			res.push_back(56); // WXF head
 			res.push_back(58); // WXF head
 		}
-		
+
 		auto push_func = [&res](const std::string_view str, size_t size) {
 			TOKEN(WXF_HEAD::func, size).to_ustr(res);
 			TOKEN(WXF_HEAD::symbol, str).to_ustr(res);
@@ -1271,7 +1271,7 @@ namespace SparseRREF {
 		auto rank = tensor.rank();
 		auto nnz = tensor.nnz();
 		const auto& dims = tensor.dims();
-		
+
 		{
 			TOKEN token(WXF_HEAD::array, { rank }, 3, rank);
 			for (auto i = 0; i < rank; i++) {
@@ -1321,9 +1321,9 @@ namespace SparseRREF {
 		}
 
 		auto push_int = [&](const int_t& val) {
-			if (val.fits_si()) 
+			if (val.fits_si())
 				TOKEN(WXF_HEAD::i64, val.to_si()).to_ustr(res);
-			else 
+			else
 				TOKEN(WXF_HEAD::bigint, val.get_str()).to_ustr(res);
 			};
 
@@ -1335,7 +1335,7 @@ namespace SparseRREF {
 				T& val = tensor.val(i);
 				int_t num = val.num();
 				int_t den = val.den();
-				if (den == 1) 
+				if (den == 1)
 					push_int(num);
 				else {
 					res.insert(res.end(), func_rational, func_rational + sizeof(func_rational) - 1); // -1 for '\0'

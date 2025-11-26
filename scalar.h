@@ -72,7 +72,7 @@ namespace Flint {
 		inline void clear() { fmpz_clear(&_data); }
 		~int_t() { clear(); }
 		int_t(const int_t& other) { init(); fmpz_set(&_data, &other._data); }
-		int_t(int_t&& other) noexcept { 
+		int_t(int_t&& other) noexcept {
 			_data = other._data;
 			other.init(); // reset the other data to avoid double free
 		}
@@ -216,10 +216,10 @@ namespace Flint {
 		rat_t(const int_t& a) { init(); fmpq_set_fmpz(&_data, &a._data); }
 		rat_t(int_t&& a) { _data = { a._data,1LL }; a.init(); }
 		rat_t(const int_t& a, const int_t& b) { init(); fmpq_set_fmpz_frac(&_data, &a._data, &b._data); }
-		rat_t(int_t&& a, int_t&& b, const bool is_canonical = false) { 
-			_data = { a._data, b._data }; 
+		rat_t(int_t&& a, int_t&& b, const bool is_canonical = false) {
+			_data = { a._data, b._data };
 			a.init(); b.init(); // reset the other data to avoid double free
-			if (!is_canonical) 
+			if (!is_canonical)
 				canonicalize();
 		}
 
@@ -261,9 +261,9 @@ namespace Flint {
 		bool operator==(const rat_t& other) const { return fmpq_equal(&_data, &other._data); }
 		bool operator==(const int_t& other) const { return fmpq_equal_fmpz((fmpq*)&_data, (fmpz*)&other._data); }
 		template <builtin_integral T> bool operator==(const T other) const {
-			if (other == 0) 
+			if (other == 0)
 				return fmpq_is_zero(&_data);
-			if (other == 1) 
+			if (other == 1)
 				return fmpq_is_one(&_data);
 			return fmpq_equal_si((fmpq*)&_data, other);
 		};

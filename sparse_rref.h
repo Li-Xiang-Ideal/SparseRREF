@@ -167,10 +167,11 @@ namespace SparseRREF {
 	}
 
 	template <typename T> requires (std::is_integral_v<T>)
-	constexpr T index_sval() { 
+		constexpr T index_sval() {
 		if constexpr (std::is_signed_v<T>) {
 			return (T)(-1);
-		} else {
+		}
+		else {
 			return std::numeric_limits<T>::max();
 		}
 	}
@@ -265,8 +266,8 @@ namespace SparseRREF {
 
 	// mulit for
 	void multi_for(
-		const std::vector<size_t>& start, 
-		const std::vector<size_t>& end, 
+		const std::vector<size_t>& start,
+		const std::vector<size_t>& end,
 		const std::function<void(std::vector<size_t>&)> func) {
 
 		if (start.size() != end.size()) {
@@ -281,7 +282,7 @@ namespace SparseRREF {
 			func(index);
 
 			for (int i = nt - 1; i > -2; i--) {
-				if (i == -1) 
+				if (i == -1)
 					return;
 				index[i]++;
 				if (index[i] < end[i])
@@ -516,7 +517,7 @@ namespace SparseRREF {
 					continue;
 
 				size_t j = i;
-				for (size_t k = 0; k < block_size; ++k) 
+				for (size_t k = 0; k < block_size; ++k)
 					temp_block[k] = std::move(A[j * block_size + k]);
 
 				while (!visited[j]) {

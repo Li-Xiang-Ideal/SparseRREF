@@ -335,11 +335,11 @@ namespace SparseRREF {
 
 	template <typename index_t>
 	bool sparse_vec_dot_dense_vec(const sparse_vec<bool, index_t>& v1, const bool* v2, const field_t& F) {
-		if (v1.nnz() == 0) 
+		if (v1.nnz() == 0)
 			return bool(false);
 
 		bool result = false;
-		for (size_t i = 0; i < v1.nnz(); i++) 
+		for (size_t i = 0; i < v1.nnz(); i++)
 			result ^= v1[i] && v2[v1(i)];
 
 		return result;
