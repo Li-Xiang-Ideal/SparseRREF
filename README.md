@@ -55,7 +55,7 @@ Usage: SparseRREF [--help] [--version] [--output VAR]
                   [--no-backward-substitution]
                   input_file
 
-(exact) Sparse Reduced Row Echelon Form v0.3.4
+(exact) Sparse Reduced Row Echelon Form v0.3.5
 
 Positional arguments:
   input_file                       input file in the Matrix Market exchange formats (MTX) or
