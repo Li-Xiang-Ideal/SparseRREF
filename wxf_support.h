@@ -15,8 +15,6 @@
 	The details of the WXF format are described in the Wolfram Language documentation:
 	https://reference.wolfram.com/language/tutorial/WXFFormatDescription.html.en .
 
-	We here intend to support import and export a SparseArray expression with rational
-	entries, so some types are not supported, such as complex numbers.
 	The full list of supported types is given below:
 
 	done	byte value  type of part
@@ -31,17 +29,16 @@
 	*		115			symbol
 	*		73			big integer
 	*		82			big real
-	-		193			packed array
-	-		194			numeric array
+	*		193			packed array
+	*		194			numeric array
 	*		65			association
 	*		58			delayed rule in association
 	*		45			rule in association
-
-	* is supported, - is partially supported
 */
 
 #pragma once
 
+#include <complex>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -52,9 +49,11 @@
 #include <string_view>
 #include <cstdint>
 #include <cstring>
-#include <variant>
 
 namespace WXF_PARSER {
+
+	using complex_float_t = std::complex<float>;
+	using complex_double_t = std::complex<double>;
 
 	enum class WXF_HEAD {
 		// function type
@@ -104,38 +103,15 @@ namespace WXF_PARSER {
 	// 18 is uint32_t   19 is uint64_t ; only for numeric array
 	// 34 float         35 double
 	// 51 complex float 52 complex double
-	// we only support int8_t, int16_t, int32_t, int64_t, float, double
 
 	// only the last 3 bits are used to indicate the size
 	size_t size_of_arr_num_type(const int num_type) {
 		return size_t(1) << (num_type & 0b111);
 	}
 
-	using NumberType = std::variant<int8_t, int16_t, int32_t, int64_t,
-		uint8_t, uint16_t, uint32_t, uint64_t,
-		float, double, bool>;
-
-	NumberType select_type(int index) {
-		switch (index) {
-		case 0: return int8_t(0);
-		case 1: return int16_t(0);
-		case 2: return int32_t(0);
-		case 3: return int64_t(0);
-		case 16: return uint8_t(0);
-		case 17: return uint16_t(0);
-		case 18: return uint32_t(0);
-		case 19: return uint64_t(0);
-		case 34: return float(0);
-		case 35: return double(0);
-		default:
-			std::cerr << "Unsupported type index" << std::endl;
-			return bool(0);
-		}
-	}
-
 	template <typename T>
 		requires std::is_integral_v<T>&& std::is_signed_v<T>
-	inline uint8_t minimal_signed_bits(T x) noexcept {
+	constexpr uint8_t minimal_signed_bits(T x) noexcept {
 		if (x >= INT8_MIN && x <= INT8_MAX) return 0;
 		if (x >= INT16_MIN && x <= INT16_MAX) return 1;
 		if (x >= INT32_MIN && x <= INT32_MAX) return 2;
@@ -144,7 +120,7 @@ namespace WXF_PARSER {
 
 	// for positive signed/unsigned integer
 	template <typename T>
-	inline uint8_t minimal_pos_signed_bits(T x) noexcept {
+	constexpr uint8_t minimal_pos_signed_bits(T x) noexcept {
 		if (x <= INT8_MAX) return 0;
 		if (x <= INT16_MAX) return 1;
 		if (x <= INT32_MAX) return 2;
@@ -154,7 +130,7 @@ namespace WXF_PARSER {
 
 	template <typename T>
 		requires std::is_integral_v<T>&& std::is_unsigned_v<T>
-	inline uint8_t minimal_unsigned_bits(T x) noexcept {
+	constexpr uint8_t minimal_unsigned_bits(T x) noexcept {
 		if (x <= UINT8_MAX) return 0;
 		if (x <= UINT16_MAX) return 1;
 		if (x <= UINT32_MAX) return 2;
@@ -189,6 +165,176 @@ namespace WXF_PARSER {
 		std::memcpy(buffer.data() + old_size, valptr, sizeof(T) * len);
 	}
 
+	struct Encoder {
+		std::vector<uint8_t> buffer;
+
+		Encoder() = default;
+		~Encoder() = default;
+		void clear() { buffer.clear(); }
+		const std::vector<uint8_t>& get_buffer() const { return buffer; }
+
+		// move from existing buffer
+		Encoder(std::vector<uint8_t>&& buf) : buffer(std::move(buf)) {}
+
+		// push ustr directly
+		Encoder& push_ustr(const std::span<uint8_t> str) { buffer.insert(buffer.end(), str.begin(), str.end()); return *this; }
+		Encoder& push_ustr(const std::vector<uint8_t>& str) { buffer.insert(buffer.end(), str.begin(), str.end()); return *this; }
+		Encoder& push_ustr(const std::string_view str) {
+			buffer.insert(buffer.end(), (uint8_t*)str.data(), (uint8_t*)(str.data() + str.size())); return *this;
+		}
+		template<typename T>
+		Encoder& push_ustr(const T* str_ptr, const size_t len) {
+			buffer.insert(buffer.end(), (uint8_t*)str_ptr, (uint8_t*)(str_ptr + len)); return *this;
+		}
+		template<typename T>
+		Encoder& push_ustr(T* start, T* end) {
+			buffer.insert(buffer.end(), (uint8_t*)start, (uint8_t*)end); return *this;
+		}
+
+		Encoder& push_integer(const int64_t val) {
+			auto num_type = minimal_signed_bits(val);
+			switch (num_type) {
+			case 0:
+				buffer.push_back((uint8_t)WXF_HEAD::i8);
+				serialize_binary(buffer, (int8_t)val);
+				break;
+			case 1:
+				buffer.push_back((uint8_t)WXF_HEAD::i16);
+				serialize_binary(buffer, (int16_t)val);
+				break;
+			case 2:
+				buffer.push_back((uint8_t)WXF_HEAD::i32);
+				serialize_binary(buffer, (int32_t)val);
+				break;
+			case 3:
+				buffer.push_back((uint8_t)WXF_HEAD::i64);
+				serialize_binary(buffer, val);
+				break;
+			default:
+				break;
+			}
+			return *this;
+		}
+
+		Encoder& push_real(const double val) {
+			buffer.push_back((uint8_t)WXF_HEAD::f64);
+			serialize_binary(buffer, val);
+			return *this;
+		}
+
+		// push string type struct: string/symbol/bigint/bigreal, default type is string
+		Encoder& push_string(const std::string_view str, const WXF_HEAD type = WXF_HEAD::string) {
+			buffer.push_back((uint8_t)type);
+			serialize_varint(buffer, str.size());
+			return push_ustr(str);
+		}
+
+		Encoder& push_symbol(const std::string_view sym) { return push_string(sym, WXF_HEAD::symbol); }
+		Encoder& push_bigint(const std::string_view bigint_str) { return push_string(bigint_str, WXF_HEAD::bigint); }
+		Encoder& push_bigreal(const std::string_view bigreal_str) { return push_string(bigreal_str, WXF_HEAD::bigreal); }
+		Encoder& push_binary_string(const std::string_view bin_str) { return push_string(bin_str, WXF_HEAD::binary_string); }
+
+		Encoder& push_function(const std::string_view head, const size_t num_vars) {
+			buffer.push_back((uint8_t)WXF_HEAD::func);
+			serialize_varint(buffer, num_vars);
+			return push_string(head, WXF_HEAD::symbol);
+		}
+
+		Encoder& push_association(const size_t num_rules) {
+			buffer.push_back((uint8_t)WXF_HEAD::association);
+			serialize_varint(buffer, num_rules);
+			return *this;
+		}
+
+		Encoder& push_rule() { buffer.push_back((uint8_t)WXF_HEAD::rule); return *this; }
+		Encoder& push_delay_rule() { buffer.push_back((uint8_t)WXF_HEAD::delay_rule); return *this; }
+
+		// return the total length of the array
+		size_t push_array_info(const std::vector<size_t>& dimension_array, WXF_HEAD type, uint8_t num_type) {
+			size_t all_len = 1;
+			// [array_type, num_type, rank, dimensions...]
+			buffer.push_back((uint8_t)type);
+			buffer.push_back(num_type);
+			serialize_varint(buffer, dimension_array.size());
+			for (auto dim : dimension_array) {
+				serialize_varint(buffer, dim);
+				all_len *= dim;
+			}
+			return all_len;
+		}
+
+		template<typename T>
+		Encoder& push_array(const std::vector<size_t>& dimension_array, const std::span<T> data, WXF_HEAD type, uint8_t num_type) {
+			// backup current size
+			size_t old_size = buffer.size();
+
+			// [array_type, num_type, rank, dimensions..., data...]
+			auto all_len = push_array_info(dimension_array, type, num_type);
+
+			if (all_len != data.size()) {
+				std::cerr << "Encoder::push_array: Data size does not match the dimension array." << std::endl;
+				// restore buffer
+				buffer.resize(old_size);
+				return *this;
+			}
+
+			// push data
+			return push_ustr(data.data(), data.size());
+		}
+
+		template<typename T>
+			requires std::is_integral_v<T>&& std::is_signed_v<T>
+		Encoder& push_packed_array(const std::vector<size_t>& dimension_array, const std::span<T> data) {
+			int num_type = minimal_signed_bits(std::numeric_limits<T>::max());
+			return push_array(dimension_array, data, WXF_HEAD::array, num_type);
+		}
+
+		Encoder& push_packed_array(const std::vector<size_t>& dimension_array, const std::span<float> data) {
+			return push_array(dimension_array, data, WXF_HEAD::array, 34);
+		}
+
+		Encoder& push_packed_array(const std::vector<size_t>& dimension_array, const std::span<double> data) {
+			return push_array(dimension_array, data, WXF_HEAD::array, 35);
+		}
+
+		Encoder& push_packed_array(const std::vector<size_t>& dimension_array, const std::span<complex_float_t> data) {
+			return push_array(dimension_array, data, WXF_HEAD::array, 51);
+		}
+
+		Encoder& push_packed_array(const std::vector<size_t>& dimension_array, const std::span<complex_double_t> data) {
+			return push_array(dimension_array, data, WXF_HEAD::array, 52);
+		}
+
+		template<typename T>
+			requires std::is_integral_v<T>
+		Encoder& push_numeric_array(const std::vector<size_t>& dimension_array, const std::span<T> data) {
+			bool is_signed = std::is_signed_v<T>;
+			int num_type;
+
+			if (is_signed)
+				num_type = minimal_signed_bits(std::numeric_limits<T>::max());
+			else
+				num_type = 16 + minimal_unsigned_bits(std::numeric_limits<T>::max());
+			return push_array(dimension_array, data, WXF_HEAD::narray, num_type);
+		}
+
+		Encoder& push_numeric_array(const std::vector<size_t>& dimension_array, const std::span<float> data) {
+			return push_array(dimension_array, data, WXF_HEAD::narray, 34);
+		}
+
+		Encoder& push_numeric_array(const std::vector<size_t>& dimension_array, const std::span<double> data) {
+			return push_array(dimension_array, data, WXF_HEAD::narray, 35);
+		}
+
+		Encoder& push_numeric_array(const std::vector<size_t>& dimension_array, const std::span<complex_float_t> data) {
+			return push_array(dimension_array, data, WXF_HEAD::narray, 51);
+		}
+
+		Encoder& push_numeric_array(const std::vector<size_t>& dimension_array, const std::span<complex_double_t> data) {
+			return push_array(dimension_array, data, WXF_HEAD::narray, 52);
+		}
+	};
+
 	struct TOKEN {
 		WXF_HEAD type;
 		int rank = 0;
@@ -202,9 +348,11 @@ namespace WXF_PARSER {
 		union { // data
 			int64_t i;
 			double d;
-			int64_t* i_arr; // for array
+			int64_t* i_arr; 
 			uint64_t* u_arr; // only for narray
-			double* d_arr; // for array and narray, but not fully supported yet
+			double* d_arr; 
+			complex_float_t* cf_arr; 
+			complex_double_t* cd_arr; 
 			char* str;
 		};
 
@@ -294,46 +442,30 @@ namespace WXF_PARSER {
 			for (auto i = 0; i < r; i++) {
 				dimensions[i + 2] = dims[i];
 			}
-			if (with_arr)
-				i_arr = (int64_t*)malloc(len * sizeof(int64_t));
+			if (with_arr) {
+				if (num_type == 52) // 128 bits
+					cd_arr = (complex_double_t*)malloc(len * sizeof(complex_double_t));
+				else // 64 bits
+					i_arr = (int64_t*)malloc(len * sizeof(int64_t));
+			}
 			else
 				i_arr = nullptr;
 		}
 
-		void to_ustr(std::vector<uint8_t>& res) const {
+		void to_ustr(Encoder& enc) const {
 			const auto& token = *this;
+
+			auto& res = enc.buffer;
 
 			switch (token.type) {
 			case WXF_HEAD::i8:
 			case WXF_HEAD::i16:
 			case WXF_HEAD::i32:
-			case WXF_HEAD::i64: {
-				auto num_type = minimal_signed_bits(token.i);
-				switch (num_type) {
-				case 0:
-					res.push_back((uint8_t)WXF_HEAD::i8);
-					serialize_binary(res, (int8_t)token.i);
-					break;
-				case 1:
-					res.push_back((uint8_t)WXF_HEAD::i16);
-					serialize_binary(res, (int16_t)token.i);
-					break;
-				case 2:
-					res.push_back((uint8_t)WXF_HEAD::i32);
-					serialize_binary(res, (int32_t)token.i);
-					break;
-				case 3:
-					res.push_back((uint8_t)WXF_HEAD::i64);
-					serialize_binary(res, token.i);
-					break;
-				default:
-					break;
-				}
+			case WXF_HEAD::i64:
+				enc.push_integer(token.i);
 				break;
-			}
 			case WXF_HEAD::f64:
-				res.push_back((uint8_t)WXF_HEAD::f64);
-				serialize_binary(res, token.d);
+				enc.push_real(token.d);
 				break;
 			case WXF_HEAD::func:
 			case WXF_HEAD::association: {
@@ -350,9 +482,7 @@ namespace WXF_PARSER {
 			case WXF_HEAD::bigreal:
 			case WXF_HEAD::string:
 			case WXF_HEAD::binary_string:
-				res.push_back((uint8_t)token.type);
-				serialize_varint(res, token.length);
-				res.insert(res.end(), token.str, token.str + token.length);
+				enc.push_string(std::string_view(token.str, token.length), token.type);
 				break;
 			case WXF_HEAD::array:
 			case WXF_HEAD::narray:
@@ -373,6 +503,12 @@ namespace WXF_PARSER {
 				else if (token.dimensions[0] == 35) {
 					serialize_binary(res, token.d_arr, token.dimensions[1]);
 				}
+				else if (token.dimensions[0] == 51) {
+					serialize_binary(res, token.cf_arr, token.dimensions[1]);
+				}
+				else if (token.dimensions[0] == 52) {
+					serialize_binary(res, token.cd_arr, token.dimensions[1]);
+				}
 				else {
 					std::cerr << "Unsupported number type in packed array or numeric array. " << std::endl;
 				}
@@ -383,11 +519,12 @@ namespace WXF_PARSER {
 		}
 
 		std::vector<uint8_t> to_ustr() const {
-			std::vector<uint8_t> res;
-			to_ustr(res);
-			return res;
+			Encoder enc;
+			to_ustr(enc);
+			return enc.buffer;
 		}
 
+		// debug only, print the token info
 		template<typename T>
 		void print(T& ss) const {
 			auto& token = *this;
@@ -456,8 +593,18 @@ namespace WXF_PARSER {
 						ss << token.d_arr[i] << " ";
 					}
 				}
+				else if (num_type == 51) {
+					for (size_t i = 0; i < all_len; i++) {
+						ss << token.cf_arr[i] << " ";
+					}
+				}
+				else if (num_type == 52) {
+					for (size_t i = 0; i < all_len; i++) {
+						ss << token.cd_arr[i] << " ";
+					}
+				}
 				else {
-					std::cerr << "Unknown type" << std::endl;
+					std::cerr << "Unknown type:" << num_type << std::endl;
 				}
 				ss << std::endl;
 				break;
@@ -487,14 +634,22 @@ namespace WXF_PARSER {
 					for (size_t i = 0; i < all_len; i++)
 						ss << token.d_arr[i] << " ";
 				}
+				else if (num_type == 51) {
+					for (size_t i = 0; i < all_len; i++)
+						ss << token.cf_arr[i] << " ";
+				}
+				else if (num_type == 52) {
+					for (size_t i = 0; i < all_len; i++)
+						ss << token.cd_arr[i] << " ";
+				}
 				else {
-					std::cerr << "Unknown type" << std::endl;
+					std::cerr << "Unknown type: " << num_type << std::endl;
 				}
 				ss << std::endl;
 				break;
 			}
 			default:
-				std::cerr << "Unknown type" << std::endl;
+				std::cerr << "Unknown type: " << (int)token.type << std::endl;
 			}
 		}
 
@@ -650,31 +805,39 @@ namespace WXF_PARSER {
 				if (with_arr) {
 					auto num_type = dimensions[0];
 					auto all_len = dimensions[1];
-					size_t st = size_of_arr_num_type(num_type);
-					token.i_arr = (int64_t*)malloc(all_len * sizeof(int64_t));
 
-					auto load_array = [&](auto&& assign) {
-						std::visit([&](auto&& x) {
-							using T = std::decay_t<decltype(x)>;
-							T val;
-							const uint8_t* buffer = data;
-							for (size_t i = 0; i < all_len; i++) {
-								std::memcpy(&val, buffer, st);
-								assign(i, val);
-								buffer += st;
-							}
-							}, select_type(num_type));
-						};
+					if (num_type == 52) // 128 bits
+						token.cd_arr = (complex_double_t*)malloc(all_len * sizeof(complex_double_t));
+					else // 64 bits
+						token.i_arr = (int64_t*)malloc(all_len * sizeof(int64_t));
 
-					if (type == WXF_HEAD::narray && num_type >= 16 && num_type < 20) {
-						load_array([&](size_t i, auto val) { token.u_arr[i] = static_cast<uint64_t>(val); });
+#define LOAD_ARRAY_TMP(TYPE1, TYPE2, FIELD) do { \
+						const uint8_t* buffer = data; \
+						for (size_t i = 0; i < all_len; i++) { \
+							token.FIELD[i] = static_cast<TYPE2>(*(TYPE1*)buffer); \
+							buffer += sizeof(TYPE1); \
+						} \
+					} while (0)
+
+					switch (num_type) {
+					case 0: LOAD_ARRAY_TMP(int8_t, int64_t, i_arr); break;
+					case 1: LOAD_ARRAY_TMP(int16_t, int64_t, i_arr); break;
+					case 2: LOAD_ARRAY_TMP(int32_t, int64_t, i_arr); break;
+					case 3: LOAD_ARRAY_TMP(int64_t, int64_t, i_arr); break;
+					case 16: LOAD_ARRAY_TMP(uint8_t, uint64_t, u_arr); break;
+					case 17: LOAD_ARRAY_TMP(uint16_t, uint64_t, u_arr); break;
+					case 18: LOAD_ARRAY_TMP(uint32_t, uint64_t, u_arr); break;
+					case 19: LOAD_ARRAY_TMP(uint64_t, uint64_t, u_arr); break;
+					case 34: LOAD_ARRAY_TMP(float, double, d_arr); break;
+					case 35: LOAD_ARRAY_TMP(double, double, d_arr); break;
+					case 51: LOAD_ARRAY_TMP(complex_float_t, complex_float_t, cf_arr); break;
+					case 52: LOAD_ARRAY_TMP(complex_double_t, complex_double_t, cd_arr); break;
+					default:
+						std::cerr << "Unsupported number type in packed array or numeric array. " << std::endl;
+						break;
 					}
-					else if (num_type < 10) {
-						load_array([&](size_t i, auto val) { token.i_arr[i] = static_cast<int64_t>(val); });
-					}
-					else if (num_type >= 34 && num_type <= 35) {
-						load_array([&](size_t i, auto val) { token.d_arr[i] = static_cast<double>(val); });
-					}
+#undef LOAD_ARRAY_TMP
+
 				}
 			}
 			return token;
@@ -777,11 +940,6 @@ namespace WXF_PARSER {
 				case WXF_HEAD::array:
 				case WXF_HEAD::narray: {
 					int num_type = read_varint();
-					if (num_type > 50) {
-						std::cerr << "Unsupported type: " << num_type << std::endl;
-						err = 2;
-						break;
-					}
 					auto r = read_varint();
 					std::vector<size_t> dims(r);
 					size_t all_len = 1;
@@ -883,8 +1041,9 @@ namespace WXF_PARSER {
 		}
 	};
 
-	void node_to_ustr(std::vector<uint8_t>& res, const std::vector<TOKEN>& tokens, const ExprNode& node) {
+	void node_to_ustr(Encoder& enc, const std::vector<TOKEN>& tokens, const ExprNode& node) {
 		auto& token = tokens[node.index];
+		auto& res = enc.buffer;
 
 		switch (node.type) {
 		case WXF_HEAD::func:
@@ -895,18 +1054,18 @@ namespace WXF_PARSER {
 			serialize_varint(res, token.length);
 			res.insert(res.end(), token.str, token.str + token.length);
 			for (size_t i = 0; i < node.size; i++) {
-				node_to_ustr(res, tokens, node.children[i]);
+				node_to_ustr(enc, tokens, node.children[i]);
 			}
 			break;
 		case WXF_HEAD::rule:
 		case WXF_HEAD::delay_rule:
 			res.push_back((uint8_t)node.type);
 			for (size_t i = 0; i < node.size; i++) {
-				node_to_ustr(res, tokens, node.children[i]);
+				node_to_ustr(enc, tokens, node.children[i]);
 			}
 			break;
 		default:
-			token.to_ustr(res);
+			token.to_ustr(enc);
 			break;
 		}
 	}
@@ -949,13 +1108,13 @@ namespace WXF_PARSER {
 		// it is super slow...
 		// TODO: optimize this function
 		std::vector<uint8_t> to_ustr(bool include_head = true) const {
-			std::vector<uint8_t> res;
+			Encoder enc;
 			if (include_head) {
-				res.push_back(56); // WXF head
-				res.push_back(58); // WXF head
+				enc.buffer.push_back(56); // WXF head
+				enc.buffer.push_back(58); // WXF head
 			}
-			node_to_ustr(res, tokens, root);
-			return res;
+			node_to_ustr(enc, tokens, root);
+			return enc.buffer;
 		}
 
 		//void plot() const {
@@ -1100,67 +1259,6 @@ namespace WXF_PARSER {
 		}
 
 		return MakeExprTree(buffer);
-	}
-
-	// debug only: convert the expression tree to DOT format of Graphviz
-	template <typename SS>
-	void toDotFormat(const ExprTree& tree, SS& oss) {
-		oss << "digraph ExprTree {\n";
-		oss << "  node [shape=box];\n";
-
-		auto& tokens = tree.tokens;
-
-		int nodeId = 0;
-		std::function<void(const ExprNode&)> traverse = [&](const ExprNode& node) {
-			int currentId = nodeId++;
-
-			oss << "  n" << currentId << " [label=\"";
-			switch (tokens[node.index].type) {
-			case WXF_HEAD::symbol:
-				oss << tokens[node.index].str;
-				break;
-			case WXF_HEAD::i8:
-			case WXF_HEAD::i16:
-			case WXF_HEAD::i32:
-			case WXF_HEAD::i64:
-				oss << tokens[node.index].i;
-				break;
-			case WXF_HEAD::f64:
-				oss << tokens[node.index].d;
-				break;
-			case WXF_HEAD::bigint:
-				oss << "bigint " << node.index;
-				break;
-			case WXF_HEAD::bigreal:
-				oss << "bigreal " << node.index;
-				break;
-			case WXF_HEAD::string:
-				oss << "string " << node.index;
-				break;
-			case WXF_HEAD::binary_string:
-				oss << "binary_string " << node.index;
-				break;
-			case WXF_HEAD::array:
-				oss << "array " << node.index;
-				break;
-			case WXF_HEAD::narray:
-				oss << "narray " << node.index;
-				break;
-			default:
-				oss << node.index;
-				break;
-			}
-			oss << "\"];\n";
-
-			for (size_t i = 0; i < node.size; ++i) {
-				int childId = nodeId;
-				traverse(node.children[i]);
-				oss << "  n" << currentId << " -> n" << childId << ";\n";
-			}
-			};
-
-		traverse(tree.root);
-		oss << "}\n";
 	}
 
 	/*

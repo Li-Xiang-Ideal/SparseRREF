@@ -12,12 +12,12 @@
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <charconv> 
+#include <charconv>
 #include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstring>
-#include <execution> 
+#include <execution>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -28,7 +28,6 @@
 #include <queue>
 #include <random>
 #include <ranges>
-#include <set>
 #include <span>
 #include <sstream>
 #include <string>
@@ -211,7 +210,7 @@ namespace SparseRREF {
 	void ustr_write(const std::filesystem::path file, const std::vector<uint8_t>& str) {
 		std::ofstream ofs(file, std::ios::binary);
 		if (!ofs.is_open()) {
-			std::cerr << "Error: u8str_write: file not open." << std::endl;
+			std::cerr << "Error: ustr_write: file not open." << std::endl;
 			return;
 		}
 		ofs.write((const char*)str.data(), str.size());

@@ -1061,9 +1061,9 @@ namespace SparseRREF {
 			sparse_mat_transpose_replace(tranmat, matview, &pool);
 
 			// sort pivots by nnz, it will be faster
-			std::stable_sort(leftcols.begin(), leftcols.end(),
-				[&tranmat](index_t a, index_t b) {
-					return tranmat[a].nnz() < tranmat[b].nnz();
+			std::ranges::stable_sort(leftcols, std::less{},
+				[&tranmat](size_t r) {
+					return tranmat[r].nnz();
 				});
 		}
 
@@ -2245,7 +2245,9 @@ namespace SparseRREF {
 		if (mat.nrow == 0)
 			return std::vector<uint8_t>();
 
-		std::vector<uint8_t> res;
+		Encoder enc;
+
+		std::vector<uint8_t>& res = enc.buffer;
 		res.reserve(mat.nnz() * 8);
 
 		if (include_head) {
@@ -2253,46 +2255,34 @@ namespace SparseRREF {
 			res.push_back(58); // WXF head
 		}
 
-		auto push_func = [&res](const std::string_view str, size_t size) {
-			TOKEN(WXF_HEAD::func, size).to_ustr(res);
-			TOKEN(WXF_HEAD::symbol, str).to_ustr(res);
-			};
-
-		push_func("SparseArray", 4);
-		TOKEN(WXF_HEAD::symbol, "Automatic").to_ustr(res);
+		enc.push_function("SparseArray", 4);
+		enc.push_symbol("Automatic");
 
 		size_t rank = 2;
 		size_t nnz = mat.nnz();
+		int64_t dims_arr[2] = { mat.nrow, mat.ncol };
+		enc.push_packed_array({ 2 }, std::span<int64_t>(dims_arr));
 
+		enc.push_integer(0); // imp_val = 0
+		enc.push_function("List", 3);
+		enc.push_integer(1);
+		enc.push_function("List", 2);
+
+		// rowptr
 		{
-			TOKEN token(WXF_HEAD::array, { 2 }, 3, 2);
-			token.i_arr[0] = mat.nrow;
-			token.i_arr[1] = mat.ncol;
-			token.to_ustr(res);
-		}
-
-		TOKEN(WXF_HEAD::i8, 0).to_ustr(res);
-		push_func("List", 3);
-		TOKEN(WXF_HEAD::i8, 1).to_ustr(res);
-		push_func("List", 2);
-
-		{
-			TOKEN token(WXF_HEAD::array, { mat.nrow + 1 }, 3, mat.nrow + 1);
-			token.i_arr[0] = 0;
+			std::vector<int64_t> rowptr(mat.nrow + 1);
+			rowptr[0] = 0;
 			for (size_t i = 0; i < mat.nrow; i++) {
-				token.i_arr[i + 1] = token.i_arr[i] + mat[i].nnz();
+				rowptr[i + 1] = rowptr[i] + mat[i].nnz();
 			}
-			token.to_ustr(res);
+			enc.push_packed_array({ mat.nrow + 1 }, std::span<int64_t>(rowptr));
 		}
 
 		{
 			auto mz = minimal_pos_signed_bits(mat.ncol);
+			enc.push_array_info({ nnz, rank - 1 }, WXF_HEAD::array, mz);
 
-			TOKEN token(WXF_HEAD::array, { nnz, rank - 1 }, mz, (rank - 1) * nnz, false);
-			token.to_ustr(res);
-
-#define APPEND_COLIND_DATA(TYPE)                                        \
-	{                                                                   \
+#define APPEND_COLIND_DATA(TYPE) do {                                   \
 		std::vector<TYPE> tmp((rank - 1) * nnz);                        \
 		size_t idx = 0;                                                 \
 		for (size_t i = 0; i < mat.nrow; i++) {                         \
@@ -2301,10 +2291,8 @@ namespace SparseRREF {
 				idx++;                                                  \
 			}                                                           \
 		}                                                               \
-		res.insert(res.end(),                                           \
-				   (uint8_t*)(tmp.data()),                              \
-				   (uint8_t*)(tmp.data()) + tmp.size() * sizeof(TYPE)); \
-	}
+		enc.push_ustr(tmp.data(), tmp.size());                          \
+	} while (0)
 
 			switch (mz) {
 			case 0: APPEND_COLIND_DATA(int8_t); break;
@@ -2318,48 +2306,42 @@ namespace SparseRREF {
 
 		auto push_int = [&](const int_t& val) {
 			if (val.fits_si())
-				TOKEN(WXF_HEAD::i64, val.to_si()).to_ustr(res);
+				enc.push_integer(val.to_si());
 			else
-				TOKEN(WXF_HEAD::bigint, val.get_str()).to_ustr(res);
+				enc.push_bigint(val.get_str());
 			};
 
 		if constexpr (std::is_same_v<T, rat_t>) {
-			push_func("List", nnz);
-			// func,2,symbol,8,"Rational"
-			constexpr uint8_t func_rational[] = "f\x02s\x08Rational";
+			enc.push_function("List", nnz);
 			for (size_t i = 0; i < mat.nrow; i++) {
 				for (size_t j = 0; j < mat[i].nnz(); j++) {
-					rat_t rat_val = mat[i][j];
-					int_t num = rat_val.num();
-					int_t den = rat_val.den();
-					if (den == 1) {
-						push_int(num);
-					}
+					auto& rat_val = mat[i][j];
+					if (rat_val.is_integer())
+						push_int(rat_val.num());
 					else {
-						res.insert(res.end(), func_rational, func_rational + sizeof(func_rational) - 1); // -1 for '\0'
-						push_int(num);
-						push_int(den);
+						// func,2,symbol,8,"Rational"
+						enc.push_ustr("f\x02s\x08Rational");
+						push_int(rat_val.num());
+						push_int(rat_val.den());
 					}
 				}
 			}
 		}
 		else if constexpr (std::is_same_v<T, int_t>) {
-			push_func("List", nnz);
+			enc.push_function("List", nnz);
 			for (size_t i = 0; i < mat.nrow; i++) {
 				for (size_t j = 0; j < mat[i].nnz(); j++)
 					push_int(mat[i][j]);
 			}
 		}
 		else if constexpr (std::is_same_v<T, ulong>) {
-			TOKEN token(WXF_HEAD::narray, { nnz }, 19, nnz, false);
-			token.to_ustr(res);
+			enc.push_array_info({ nnz }, WXF_HEAD::narray, 19);
 			for (size_t i = 0; i < mat.nrow; i++) {
-				res.insert(res.end(), (uint8_t*)(mat[i].entries),
-					(uint8_t*)(mat[i].entries + mat[i].nnz()));
+				enc.push_ustr(mat[i].entries, mat[i].nnz());
 			}
 		}
 
-		return res;
+		return enc.buffer;
 	}
 
 	template <typename T, typename S, typename index_t>

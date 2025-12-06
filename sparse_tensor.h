@@ -1252,7 +1252,8 @@ namespace SparseRREF {
 		if (tensor.alloc() == 0)
 			return std::vector<uint8_t>();
 
-		std::vector<uint8_t> res;
+		Encoder enc;
+		std::vector<uint8_t>& res = enc.buffer;
 		res.reserve(tensor.nnz() * 8);
 
 		if (include_head) {
@@ -1260,55 +1261,35 @@ namespace SparseRREF {
 			res.push_back(58); // WXF head
 		}
 
-		auto push_func = [&res](const std::string_view str, size_t size) {
-			TOKEN(WXF_HEAD::func, size).to_ustr(res);
-			TOKEN(WXF_HEAD::symbol, str).to_ustr(res);
-			};
-
-		push_func("SparseArray", 4);
-		TOKEN(WXF_HEAD::symbol, "Automatic").to_ustr(res);
+		enc.push_function("SparseArray", 4);
+		enc.push_symbol("Automatic");
 
 		auto rank = tensor.rank();
 		auto nnz = tensor.nnz();
-		const auto& dims = tensor.dims();
+		std::vector<int64_t> dims(tensor.dims().begin(), tensor.dims().end());
 
-		{
-			TOKEN token(WXF_HEAD::array, { rank }, 3, rank);
-			for (auto i = 0; i < rank; i++) {
-				token.i_arr[i] = dims[i];
-			}
-			token.to_ustr(res);
-		}
+		enc.push_packed_array({ rank }, std::span(dims));
 
-		TOKEN(WXF_HEAD::i8, 0).to_ustr(res);
-		push_func("List", 3);
-		TOKEN(WXF_HEAD::i8, 1).to_ustr(res);
-		push_func("List", 2);
+		enc.push_integer(0); // imp_val = 0
+		enc.push_function("List", 3);
+		enc.push_integer(1);
+		enc.push_function("List", 2);
 
+		// important: we assume size_t fits into int64_t !!!!!!!!!
 		const auto& rowptr = tensor.data.rowptr;
-		{
-			TOKEN token(WXF_HEAD::array, { rowptr.size() }, 3, rowptr.size());
-			for (size_t i = 0; i < rowptr.size(); i++) {
-				token.i_arr[i] = rowptr[i];
-			}
-			token.to_ustr(res);
-		}
+		enc.push_array_info({ rowptr.size() }, WXF_HEAD::array, 3);
+		enc.push_ustr(rowptr.data(), rowptr.size());
 
 		{
 			auto mz = minimal_pos_signed_bits(1 + *std::max_element(dims.begin() + 1, dims.end()));
+			enc.push_array_info({ nnz, rank - 1 }, WXF_HEAD::array, mz);
 
-			TOKEN token(WXF_HEAD::array, { nnz, rank - 1 }, mz, (rank - 1) * nnz, false);
-			token.to_ustr(res);
-
-#define APPEND_COLIND_DATA(TYPE)                                        \
-    {                                                                   \
+#define APPEND_COLIND_DATA(TYPE) do {                                   \
         std::vector<TYPE> tmp((rank - 1) * nnz);                        \
         for (size_t i = 0; i < tmp.size(); i++)                         \
             tmp[i] = tensor.data.colptr[i] + 1;                         \
-        res.insert(res.end(),                                           \
-                   (uint8_t*)(tmp.data()),                              \
-                   (uint8_t*)(tmp.data()) + tmp.size() * sizeof(TYPE)); \
-    }
+		enc.push_ustr(tmp.data(), tmp.size());                          \
+    } while (0)
 
 			switch (mz) {
 			case 0: APPEND_COLIND_DATA(int8_t); break;
@@ -1322,38 +1303,34 @@ namespace SparseRREF {
 
 		auto push_int = [&](const int_t& val) {
 			if (val.fits_si())
-				TOKEN(WXF_HEAD::i64, val.to_si()).to_ustr(res);
+				enc.push_integer(val.to_si());
 			else
-				TOKEN(WXF_HEAD::bigint, val.get_str()).to_ustr(res);
+				enc.push_bigint(val.get_str());
 			};
 
 		if constexpr (std::is_same_v<T, rat_t>) {
-			push_func("List", nnz);
-			// func,2,symbol,8,"Rational"
-			constexpr uint8_t func_rational[] = "f\x02s\x08Rational";
+			enc.push_function("List", nnz);
 			for (size_t i = 0; i < nnz; i++) {
-				T& val = tensor.val(i);
-				int_t num = val.num();
-				int_t den = val.den();
-				if (den == 1)
-					push_int(num);
+				auto& rat_val = tensor.val(i);
+				if (rat_val.is_integer())
+					push_int(rat_val.num());
 				else {
-					res.insert(res.end(), func_rational, func_rational + sizeof(func_rational) - 1); // -1 for '\0'
-					push_int(num);
-					push_int(den);
+					// func,2,symbol,8,"Rational"
+					enc.push_ustr("f\x02s\x08Rational");
+					push_int(rat_val.num());
+					push_int(rat_val.den());
 				}
 			}
 		}
 		else if constexpr (std::is_same_v<T, int_t>) {
-			push_func("List", nnz);
+			enc.push_function("List", nnz);
 			for (size_t i = 0; i < nnz; i++) {
 				push_int(tensor.val(i));
 			}
 		}
 		else if constexpr (std::is_same_v<T, ulong>) {
-			TOKEN token(WXF_HEAD::narray, { nnz }, 19, nnz, false);
-			token.to_ustr(res);
-			res.insert(res.end(), (uint8_t*)(tensor.data.valptr), (uint8_t*)(tensor.data.valptr + nnz));
+			enc.push_array_info({ nnz }, WXF_HEAD::narray, 19);
+			enc.push_ustr(tensor.data.valptr, tensor.data.valptr + nnz);
 		}
 
 		return res;

@@ -360,7 +360,7 @@ namespace SparseRREF {
 				return;
 
 			auto perm = perm_init(_nnz);
-			std::sort(perm.begin(), perm.end(), [&](index_t a, index_t b) {
+			std::ranges::sort(perm, [&](index_t a, index_t b) {
 				return indices[a] < indices[b];
 				});
 
@@ -717,9 +717,7 @@ namespace SparseRREF {
 
 		// sort rows by nnz
 		void sort_rows_by_nnz() {
-			std::stable_sort(rows.begin(), rows.end(), [](const sparse_vec<T, index_t>& a, const sparse_vec<T, index_t>& b) {
-				return a.nnz() < b.nnz();
-				});
+			std::ranges::stable_sort(rows, std::less{}, &sparse_vec<T, index_t>::_nnz);
 		}
 
 		template <typename U = T> requires std::is_same_v<U, rat_t>
@@ -1491,8 +1489,10 @@ namespace SparseRREF {
 		inline auto& valptr() const { return data.valptr; }
 		inline auto& dims() const { return data.dims; }
 		inline size_t dim(size_t i) const { return data.dims[i]; }
-		index_p index(size_t i) const { return data.colptr + i * (rank() - 1); }
-		T& val(size_t i) const { return data.valptr[i]; }
+		index_p index(size_t i) { return data.colptr + i * (rank() - 1); }
+		const index_p index(size_t i) const { return data.colptr + i * (rank() - 1); }
+		T& val(size_t i) { return data.valptr[i]; }
+		const T& val(size_t i) const { return data.valptr[i]; }
 		inline void zero() { data.zero(); }
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(l, val, mode); }
 		inline void push_back(const index_v& l, const T& val) { data.push_back(l, val); }
