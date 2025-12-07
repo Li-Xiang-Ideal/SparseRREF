@@ -1252,35 +1252,27 @@ namespace SparseRREF {
 		if (tensor.alloc() == 0)
 			return std::vector<uint8_t>();
 
-		Encoder enc;
-		std::vector<uint8_t>& res = enc.buffer;
-		res.reserve(tensor.nnz() * 8);
-
-		if (include_head) {
-			res.push_back(56); // WXF head
-			res.push_back(58); // WXF head
-		}
-
-		enc.push_function("SparseArray", 4);
-		enc.push_symbol("Automatic");
+		std::string_view ff_template = "SparseArray[Automatic,#dims,0,{1,{#rowptr,#colindex},#vals}]";
 
 		auto rank = tensor.rank();
 		auto nnz = tensor.nnz();
 		std::vector<int64_t> dims(tensor.dims().begin(), tensor.dims().end());
 
-		enc.push_packed_array({ rank }, std::span(dims));
+		std::unordered_map<std::string, std::function<void(Encoder&)>> func_map;
 
-		enc.push_integer(0); // imp_val = 0
-		enc.push_function("List", 3);
-		enc.push_integer(1);
-		enc.push_function("List", 2);
+		func_map["#dims"] = [&](Encoder& enc) {
+			enc.push_packed_array({ rank }, std::span(dims));
+			};
 
 		// important: we assume size_t fits into int64_t !!!!!!!!!
-		const auto& rowptr = tensor.data.rowptr;
-		enc.push_array_info({ rowptr.size() }, WXF_HEAD::array, 3);
-		enc.push_ustr(rowptr.data(), rowptr.size());
+		func_map["#rowptr"] = [&](Encoder& enc) {
+			const auto& rowptr = tensor.data.rowptr;
+			enc.push_array_info({ rowptr.size() }, WXF_HEAD::array, 3);
+			enc.push_ustr(rowptr.data(), rowptr.size());
+			};
+	
 
-		{
+		func_map["#colindex"] = [&](Encoder& enc) {
 			auto mz = minimal_pos_signed_bits(1 + *std::max_element(dims.begin() + 1, dims.end()));
 			enc.push_array_info({ nnz, rank - 1 }, WXF_HEAD::array, mz);
 
@@ -1299,41 +1291,45 @@ namespace SparseRREF {
 			case 4: std::cerr << "Error: sparse_tensor_write_wxf: too large dimension" << std::endl; break;
 			}
 #undef APPEND_COLIND_DATA
-		}
-
-		auto push_int = [&](const int_t& val) {
-			if (val.fits_si())
-				enc.push_integer(val.to_si());
-			else
-				enc.push_bigint(val.get_str());
 			};
 
-		if constexpr (std::is_same_v<T, rat_t>) {
-			enc.push_function("List", nnz);
-			for (size_t i = 0; i < nnz; i++) {
-				auto& rat_val = tensor.val(i);
-				if (rat_val.is_integer())
-					push_int(rat_val.num());
-				else {
-					// func,2,symbol,8,"Rational"
-					enc.push_ustr("f\x02s\x08Rational");
-					push_int(rat_val.num());
-					push_int(rat_val.den());
+		func_map["#vals"] = [&](Encoder& enc) {
+			auto push_int = [&](const int_t& val) {
+				if (val.fits_si())
+					enc.push_integer(val.to_si());
+				else
+					enc.push_bigint(val.get_str());
+				};
+
+			if constexpr (std::is_same_v<T, rat_t>) {
+				enc.push_function("List", nnz);
+				for (size_t i = 0; i < nnz; i++) {
+					auto& rat_val = tensor.val(i);
+					if (rat_val.is_integer())
+						push_int(rat_val.num());
+					else {
+						// func,2,symbol,8,"Rational"
+						enc.push_ustr("f\x02s\x08Rational");
+						push_int(rat_val.num());
+						push_int(rat_val.den());
+					}
 				}
 			}
-		}
-		else if constexpr (std::is_same_v<T, int_t>) {
-			enc.push_function("List", nnz);
-			for (size_t i = 0; i < nnz; i++) {
-				push_int(tensor.val(i));
+			else if constexpr (std::is_same_v<T, int_t>) {
+				enc.push_function("List", nnz);
+				for (size_t i = 0; i < nnz; i++) {
+					push_int(tensor.val(i));
+				}
 			}
-		}
-		else if constexpr (std::is_same_v<T, ulong>) {
-			enc.push_array_info({ nnz }, WXF_HEAD::narray, 19);
-			enc.push_ustr(tensor.data.valptr, tensor.data.valptr + nnz);
-		}
+			else if constexpr (std::is_same_v<T, ulong>) {
+				enc.push_array_info({ nnz }, WXF_HEAD::narray, 19);
+				enc.push_ustr(tensor.data.valptr, tensor.data.valptr + nnz);
+			}
+			};
 
-		return res;
+		Encoder enc = fullform_to_wxf(ff_template, func_map, include_head);
+
+		return enc.buffer;
 	}
 
 } // namespace SparseRREF

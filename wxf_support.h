@@ -1,4 +1,4 @@
-﻿/*
+/*
 	Copyright (C) 2025 Zhenjie Li (Li, Zhenjie)
 
 	You can redistribute it and/or modify it under the terms of the MIT
@@ -36,9 +36,90 @@
 	*		45			rule in association
 */
 
+/*
+	an example to test:
+		SparseArray[{{1, 1} -> 1/3.0, {1, 23133} ->
+		N[Pi, 100] + I N[E, 100], {44, 2} -> -(4/
+		 33333333333333444333333335), {_, _} -> 0}]
+
+	FullForm:
+		SparseArray[Automatic,List[44,23133],0,
+		List[1,List[List[0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+		2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3],
+		List[List[1],List[23133],List[2]]],
+		List[0.3333333333333333`,
+		Complex[3.1415926535897932384626433832795028841971693993751058209
+		749445923078164062862089986280348253421170679821480865191976`100.,
+		2.7182818284590452353602874713526624977572470936999595749669676277
+		240766303535475945713821785251664274274663919320031`100.],
+		Rational[-4,33333333333333444333333335]]]]
+
+	std::vector<uint8_t> test{ 56, 58, 102, 4, 115, 11, 83, 112, 97, 114, 115, 101, 65, 114, 114, \
+							97, 121, 115, 9, 65, 117, 116, 111, 109, 97, 116, 105, 99, 193, 1, 1, \
+							2, 44, 0, 93, 90, 67, 0, 102, 3, 115, 4, 76, 105, 115, 116, 67, 1, \
+							102, 2, 115, 4, 76, 105, 115, 116, 193, 0, 1, 45, 0, 2, 2, 2, 2, 2, \
+							2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, \
+							2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 193, 1, 2, 3, 1, 1, \
+							0, 93, 90, 2, 0, 102, 3, 115, 4, 76, 105, 115, 116, 114, 85, 85, 85, \
+							85, 85, 85, 213, 63, 102, 2, 115, 7, 67, 111, 109, 112, 108, 101, \
+							120, 82, 122, 51, 46, 49, 52, 49, 53, 57, 50, 54, 53, 51, 53, 56, 57, \
+							55, 57, 51, 50, 51, 56, 52, 54, 50, 54, 52, 51, 51, 56, 51, 50, 55, \
+							57, 53, 48, 50, 56, 56, 52, 49, 57, 55, 49, 54, 57, 51, 57, 57, 51, \
+							55, 53, 49, 48, 53, 56, 50, 48, 57, 55, 52, 57, 52, 52, 53, 57, 50, \
+							51, 48, 55, 56, 49, 54, 52, 48, 54, 50, 56, 54, 50, 48, 56, 57, 57, \
+							56, 54, 50, 56, 48, 51, 52, 56, 50, 53, 51, 52, 50, 49, 49, 55, 48, \
+							54, 55, 57, 56, 50, 49, 52, 56, 48, 56, 54, 53, 49, 57, 49, 57, 55, \
+							54, 96, 49, 48, 48, 46, 82, 122, 50, 46, 55, 49, 56, 50, 56, 49, 56, \
+							50, 56, 52, 53, 57, 48, 52, 53, 50, 51, 53, 51, 54, 48, 50, 56, 55, \
+							52, 55, 49, 51, 53, 50, 54, 54, 50, 52, 57, 55, 55, 53, 55, 50, 52, \
+							55, 48, 57, 51, 54, 57, 57, 57, 53, 57, 53, 55, 52, 57, 54, 54, 57, \
+							54, 55, 54, 50, 55, 55, 50, 52, 48, 55, 54, 54, 51, 48, 51, 53, 51, \
+							53, 52, 55, 53, 57, 52, 53, 55, 49, 51, 56, 50, 49, 55, 56, 53, 50, \
+							53, 49, 54, 54, 52, 50, 55, 52, 50, 55, 52, 54, 54, 51, 57, 49, 57, \
+							51, 50, 48, 48, 51, 49, 96, 49, 48, 48, 46, 102, 2, 115, 8, 82, 97, \
+							116, 105, 111, 110, 97, 108, 67, 252, 73, 26, 51, 51, 51, 51, 51, 51, \
+							51, 51, 51, 51, 51, 51, 51, 51, 52, 52, 52, 51, 51, 51, 51, 51, 51, \
+							51, 51, 53 };
+
+	auto tree = WXF_PARSER::MakeExprTree(test);
+	for (const auto& token : tree.tokens) {
+		token.print();
+	};
+
+	result:
+		func: 4 vars
+		symbol: SparseArray
+		symbol: Automatic
+		array: rank = 1, dimensions = 2
+		data: 44 23133
+		i8: 0
+		func: 3 vars
+		symbol: List
+		i8: 1
+		func: 2 vars
+		symbol: List
+		array: rank = 1, dimensions = 45
+		data: 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 3
+		array: rank = 2, dimensions = 3 1
+		data: 1 23133 2
+		func: 3 vars
+		symbol: List
+		f64: 0.333333
+		func: 2 vars
+		symbol: Complex
+		bigreal: 3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679821480865191976`100.
+		bigreal: 2.7182818284590452353602874713526624977572470936999595749669676277240766303535475945713821785251664274274663919320031`100.
+		func: 2 vars
+		symbol: Rational
+		i8: -4
+		bigint: 33333333333333444333333335
+*/
+
 #pragma once
 
 #include <complex>
+#include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
@@ -47,8 +128,7 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <cstdint>
-#include <cstring>
+#include <unordered_map>
 
 namespace WXF_PARSER {
 
@@ -95,7 +175,7 @@ namespace WXF_PARSER {
 		}
 	}
 
-	// numeric/packed array, rank, dimensions, data
+	// array: head(numeric/packed array), num_type, rank, dimensions, data
 	// for the num_type
 	// 0 is int8_t      1 is int16_t
 	// 2 is int32_t     3 is int64_t
@@ -168,10 +248,15 @@ namespace WXF_PARSER {
 	struct Encoder {
 		std::vector<uint8_t> buffer;
 
+
 		Encoder() = default;
 		~Encoder() = default;
+		Encoder(const Encoder&) = default;
+		Encoder& operator=(const Encoder&) = default;
+		Encoder(Encoder&&) = default;
+		Encoder& operator=(Encoder&&) = default;
+
 		void clear() { buffer.clear(); }
-		const std::vector<uint8_t>& get_buffer() const { return buffer; }
 
 		// move from existing buffer
 		Encoder(std::vector<uint8_t>&& buf) : buffer(std::move(buf)) {}
@@ -348,11 +433,11 @@ namespace WXF_PARSER {
 		union { // data
 			int64_t i;
 			double d;
-			int64_t* i_arr; 
+			int64_t* i_arr;
 			uint64_t* u_arr; // only for narray
-			double* d_arr; 
-			complex_float_t* cf_arr; 
-			complex_double_t* cd_arr; 
+			double* d_arr;
+			complex_float_t* cf_arr;
+			complex_double_t* cd_arr;
 			char* str;
 		};
 
@@ -998,7 +1083,6 @@ namespace WXF_PARSER {
 			other.type = WXF_HEAD::i8;
 		}
 
-
 		// move assignment operator
 		ExprNode& operator=(ExprNode&& other) noexcept {
 			if (this != &other) {
@@ -1024,21 +1108,10 @@ namespace WXF_PARSER {
 			}
 		}
 
-		~ExprNode() {
-			clear();
-		}
-
-		bool has_children() const {
-			return size > 0;
-		}
-
-		const ExprNode& operator[] (size_t i) const {
-			return children[i];
-		}
-
-		ExprNode& operator[] (size_t i) {
-			return children[i];
-		}
+		~ExprNode() { clear(); }
+		bool has_children() const { return size > 0; }
+		const ExprNode& operator[] (size_t i) const { return children[i]; }
+		ExprNode& operator[] (size_t i) { return children[i]; }
 	};
 
 	void node_to_ustr(Encoder& enc, const std::vector<TOKEN>& tokens, const ExprNode& node) {
@@ -1116,10 +1189,6 @@ namespace WXF_PARSER {
 			node_to_ustr(enc, tokens, root);
 			return enc.buffer;
 		}
-
-		//void plot() const {
-		//	printPrettyTree(root);
-		//}
 	};
 
 	ExprTree MakeExprTree(Parser& parser) {
@@ -1261,83 +1330,444 @@ namespace WXF_PARSER {
 		return MakeExprTree(buffer);
 	}
 
-	/*
-		an example to test:
-			SparseArray[{{1, 1} -> 1/3.0, {1, 23133} ->
-			N[Pi, 100] + I N[E, 100], {44, 2} -> -(4/
-			 33333333333333444333333335), {_, _} -> 0}]
+	/***********************************************************************************/
 
-		FullForm:
-			SparseArray[Automatic,List[44,23133],0,
-			List[1,List[List[0,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-			2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,3],
-			List[List[1],List[23133],List[2]]],
-			List[0.3333333333333333`,
-			Complex[3.1415926535897932384626433832795028841971693993751058209
-			749445923078164062862089986280348253421170679821480865191976`100.,
-			2.7182818284590452353602874713526624977572470936999595749669676277
-			240766303535475945713821785251664274274663919320031`100.],
-			Rational[-4,33333333333333444333333335]]]]
-
-		std::vector<uint8_t> test{ 56, 58, 102, 4, 115, 11, 83, 112, 97, 114, 115, 101, 65, 114, 114, \
-								97, 121, 115, 9, 65, 117, 116, 111, 109, 97, 116, 105, 99, 193, 1, 1, \
-								2, 44, 0, 93, 90, 67, 0, 102, 3, 115, 4, 76, 105, 115, 116, 67, 1, \
-								102, 2, 115, 4, 76, 105, 115, 116, 193, 0, 1, 45, 0, 2, 2, 2, 2, 2, \
-								2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, \
-								2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 193, 1, 2, 3, 1, 1, \
-								0, 93, 90, 2, 0, 102, 3, 115, 4, 76, 105, 115, 116, 114, 85, 85, 85, \
-								85, 85, 85, 213, 63, 102, 2, 115, 7, 67, 111, 109, 112, 108, 101, \
-								120, 82, 122, 51, 46, 49, 52, 49, 53, 57, 50, 54, 53, 51, 53, 56, 57, \
-								55, 57, 51, 50, 51, 56, 52, 54, 50, 54, 52, 51, 51, 56, 51, 50, 55, \
-								57, 53, 48, 50, 56, 56, 52, 49, 57, 55, 49, 54, 57, 51, 57, 57, 51, \
-								55, 53, 49, 48, 53, 56, 50, 48, 57, 55, 52, 57, 52, 52, 53, 57, 50, \
-								51, 48, 55, 56, 49, 54, 52, 48, 54, 50, 56, 54, 50, 48, 56, 57, 57, \
-								56, 54, 50, 56, 48, 51, 52, 56, 50, 53, 51, 52, 50, 49, 49, 55, 48, \
-								54, 55, 57, 56, 50, 49, 52, 56, 48, 56, 54, 53, 49, 57, 49, 57, 55, \
-								54, 96, 49, 48, 48, 46, 82, 122, 50, 46, 55, 49, 56, 50, 56, 49, 56, \
-								50, 56, 52, 53, 57, 48, 52, 53, 50, 51, 53, 51, 54, 48, 50, 56, 55, \
-								52, 55, 49, 51, 53, 50, 54, 54, 50, 52, 57, 55, 55, 53, 55, 50, 52, \
-								55, 48, 57, 51, 54, 57, 57, 57, 53, 57, 53, 55, 52, 57, 54, 54, 57, \
-								54, 55, 54, 50, 55, 55, 50, 52, 48, 55, 54, 54, 51, 48, 51, 53, 51, \
-								53, 52, 55, 53, 57, 52, 53, 55, 49, 51, 56, 50, 49, 55, 56, 53, 50, \
-								53, 49, 54, 54, 52, 50, 55, 52, 50, 55, 52, 54, 54, 51, 57, 49, 57, \
-								51, 50, 48, 48, 51, 49, 96, 49, 48, 48, 46, 102, 2, 115, 8, 82, 97, \
-								116, 105, 111, 110, 97, 108, 67, 252, 73, 26, 51, 51, 51, 51, 51, 51, \
-								51, 51, 51, 51, 51, 51, 51, 51, 52, 52, 52, 51, 51, 51, 51, 51, 51, \
-								51, 51, 53 };
-
-		auto tree = MakeExprTree(test);
-		for (const auto& token : tree.tokens) {
-			token.print();
+	// a simple FullForm parser, we only support [0-9,a-z,A-Z,$] in symbol names
+	// it is used to write a template engine to generate WXF files
+	// and we add a special expression type starting with # for subexpression labels
+	// e.g. #x for a integer x, e.g. #1, #2, ...
+	// and then we can replace these labels with actual expressions when generating WXF files
+	// do not use for a very complex FullForm parsing, it is not efficient and robust enough
+	namespace FullForm {
+		enum class atom_type {
+			Integer,
+			Real,
+			String,
+			Symbol,
+			Expression,
+			Null
 		};
 
-		result:
-			func: 4 vars
-			symbol: SparseArray
-			symbol: Automatic
-			array: rank = 1, dimensions = 2
-			data: 44 23133
-			i8: 0
-			func: 3 vars
-			symbol: List
-			i8: 1
-			func: 2 vars
-			symbol: List
-			array: rank = 1, dimensions = 45
-			data: 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 3
-			array: rank = 2, dimensions = 3 1
-			data: 1 23133 2
-			func: 3 vars
-			symbol: List
-			f64: 0.333333
-			func: 2 vars
-			symbol: Complex
-			bigreal: 3.1415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679821480865191976`100.
-			bigreal: 2.7182818284590452353602874713526624977572470936999595749669676277240766303535475945713821785251664274274663919320031`100.
-			func: 2 vars
-			symbol: Rational
-			i8: -4
-			bigint: 33333333333333444333333335
-	*/
+		struct atom_expression {
+			atom_type type_;
+			std::string value_;
+
+			atom_expression(atom_type type, const std::string_view value)
+				: type_(type), value_(value) {
+			}
+
+			const atom_type get_type() const { return type_; }
+			const std::string& get_value() const { return value_; }
+
+			std::string to_FullForm() const {
+				switch (type_) {
+				case atom_type::String:
+					return "\"" + value_ + "\"";
+				default:
+					return value_;
+				}
+			}
+		};
+
+		struct lexer {
+			std::string input_;
+			size_t position_;
+			size_t length_;
+
+			char current_char() const {
+				return position_ < length_ ? input_[position_] : '\0';
+			}
+
+			void advance() {
+				if (position_ < length_) position_++;
+			}
+
+			void skip_ws() {
+				while (position_ < length_ && std::isspace(static_cast<unsigned char>(current_char()))) {
+					advance();
+				}
+			}
+
+			enum token_type {
+				IDENTIFIER,    // 
+				EXPRESSION,    // start with #, use as a label of subexpression, it is not standard mathematica 
+				INTEGER,       // 
+				REAL,          // 
+				STRING,        // 
+				LBRACKET,      // [
+				RBRACKET,      // ]
+				COMMA,         // ,
+				END            // 
+			};
+
+			struct token {
+				token_type type;
+				std::string value;
+				size_t position;
+			};
+
+			lexer(const std::string_view input)
+				: input_(input), position_(0), length_(input.length()) {
+			}
+
+			token nextToken() {
+				skip_ws();
+
+				if (position_ >= length_) {
+					return { END, "", position_ };
+				}
+
+				size_t startPos = position_;
+				char ch = current_char();
+
+				// $ 
+				if (std::isalpha(ch) || ch == '$') {
+					std::string value;
+					while (position_ < length_ &&
+						(std::isalnum(static_cast<unsigned char>(current_char())) || current_char() == '$')) {
+						value += current_char();
+						advance();
+					}
+					return { IDENTIFIER, value, startPos };
+				}
+
+				// expression starting with #
+				if (ch == '#') {
+					std::string value;
+					value += ch;
+					advance();
+					while (position_ < length_ &&
+						(std::isalnum(static_cast<unsigned char>(current_char())) || current_char() == '$')) {
+						value += current_char();
+						advance();
+					}
+					return { EXPRESSION, value, startPos };
+				}
+
+				// number
+				if (std::isdigit(static_cast<unsigned char>(ch)) || ch == '.' || ch == '-') {
+					std::string value;
+					bool hasDot = false;
+					bool hasE = false;
+
+					// minus sign
+					if (ch == '-') {
+						value += ch;
+						advance();
+						if (position_ >= length_ || !std::isdigit(static_cast<unsigned char>(current_char()))) {
+							// single minus sign, return as IDENTIFIER
+							return { IDENTIFIER, value, startPos };
+						}
+						ch = current_char();
+					}
+
+					// integer part
+					while (position_ < length_ && std::isdigit(static_cast<unsigned char>(current_char()))) {
+						value += current_char();
+						advance();
+					}
+
+					// decimal part
+					if (position_ < length_ && current_char() == '.') {
+						hasDot = true;
+						value += '.';
+						advance();
+						while (position_ < length_ && std::isdigit(static_cast<unsigned char>(current_char()))) {
+							value += current_char();
+							advance();
+						}
+					}
+
+					// scientific notation
+					if (position_ < length_ && (current_char() == 'e' || current_char() == 'E')) {
+						hasE = true;
+						value += current_char();
+						advance();
+
+						if (position_ < length_ && (current_char() == '+' || current_char() == '-')) {
+							value += current_char();
+							advance();
+						}
+
+						if (position_ >= length_ || !std::isdigit(static_cast<unsigned char>(current_char()))) {
+							std::cerr << "Invalid scientific notation at position " << position_ << std::endl;
+							return { END, "", startPos};
+						}
+
+						while (position_ < length_ && std::isdigit(static_cast<unsigned char>(current_char()))) {
+							value += current_char();
+							advance();
+						}
+					}
+
+					if (hasDot || hasE) {
+						return { REAL, value, startPos };
+					}
+					else {
+						return { INTEGER, value, startPos };
+					}
+				}
+
+				// string
+				if (ch == '"') {
+					std::string value;
+					advance();
+
+					while (position_ < length_ && current_char() != '"') {
+						if (current_char() == '\\' && position_ + 1 < length_) {
+							advance();
+							char next = current_char();
+							switch (next) {
+							case 'n': value += '\n'; break;
+							case 't': value += '\t'; break;
+							case 'r': value += '\r'; break;
+							case '"': value += '"'; break;
+							case '\\': value += '\\'; break;
+							default: value += '\\'; value += next; break;
+							}
+						}
+						else {
+							value += current_char();
+						}
+						advance();
+					}
+
+					if (position_ >= length_ || current_char() != '"') {
+						std::cerr << "Unterminated string at position " << startPos << std::endl;
+						return { END, "", startPos };
+					}
+					advance();  // skip closing "
+
+					return { STRING, value, startPos };
+				}
+
+				// single-character tokens
+				switch (ch) {
+				case '[':
+					advance();
+					return { LBRACKET, "[", startPos };
+				case ']':
+					advance();
+					return { RBRACKET, "]", startPos };
+				case ',':
+					advance();
+					return { COMMA, ",", startPos };
+				}
+
+				std::cerr << "Unknown character '" << ch << "' at position " << position_ << std::endl;
+			}
+		};
+
+		struct expression {
+			atom_expression head_;
+			std::vector<expression> args_;
+
+			expression(const atom_expression& head) : head_(head), args_() {}
+			expression(const atom_expression& head, const std::vector<expression>& args) : head_(head), args_(args) {}
+			bool is_atom() const { return args_.size() == 0; }
+
+			std::string to_FullForm() const {
+				if (is_atom()) {
+					return head_.to_FullForm();
+				}
+				else {
+					std::string result = head_.to_FullForm() + "[";
+					for (size_t i = 0; i < args_.size(); ++i) {
+						result += args_[i].to_FullForm();
+						if (i + 1 < args_.size()) {
+							result += ", ";
+						}
+					}
+					result += "]";
+					return result;
+				}
+			}
+		};
+
+		struct parser {
+			lexer lexer_;
+			lexer::token currentToken_;
+
+			void consume(lexer::token_type expected) {
+				if (currentToken_.type == expected) {
+					currentToken_ = lexer_.nextToken();
+				}
+				else {
+					std::cerr << "Parse Error: Unexpected token '" << currentToken_.value
+						<< "', expected " << static_cast<int>(expected)
+						<< " at position " << currentToken_.position << std::endl;
+				}
+			}
+
+			atom_expression parse_atom() {
+				std::string value = currentToken_.value;
+
+				switch (currentToken_.type) {
+				case lexer::IDENTIFIER: {
+					consume(lexer::IDENTIFIER);
+					return atom_expression(atom_type::Symbol, value);
+				}
+				case lexer::EXPRESSION: {
+					consume(lexer::EXPRESSION);
+					return atom_expression(atom_type::Expression, value);
+				}
+				case lexer::INTEGER: {
+					consume(lexer::INTEGER);
+					return atom_expression(atom_type::Integer, value);
+				}
+				case lexer::REAL: {
+					consume(lexer::REAL);
+					return atom_expression(atom_type::Real, value);
+				}
+				case lexer::STRING: {
+					consume(lexer::STRING);
+					return atom_expression(atom_type::String, value);
+				}
+				default:
+					std::cerr << "Parse Error: Unexpected token '" << currentToken_.value
+						<< "' at position " << currentToken_.position << std::endl;
+					return atom_expression(atom_type::Null, "");
+				}
+			}
+
+			expression parse_expression() {
+				atom_expression head = parse_atom();
+
+				if (currentToken_.type == lexer::LBRACKET) {
+					consume(lexer::LBRACKET);
+					std::vector<expression> args;
+
+					if (currentToken_.type != lexer::RBRACKET) {
+						args.push_back(parse_expression());
+
+						while (currentToken_.type == lexer::COMMA) {
+							consume(lexer::COMMA);
+							args.push_back(parse_expression());
+						}
+					}
+
+					// if we meet expr like f[], we use a null atom as argument
+					if (args.size() == 0) {
+						args.push_back(expression(atom_expression(atom_type::Null, "")));
+					}
+
+					consume(lexer::RBRACKET);
+					return expression(head, args);
+				}
+
+				return head;
+			}
+
+			parser(const std::string_view input) : lexer_(input) {
+				currentToken_ = lexer_.nextToken();
+			}
+
+			expression parse() {
+				expression result = parse_expression();
+
+				if (currentToken_.type != lexer::END) {
+					std::cerr << "Parse Error: Unexpected token at end: " << currentToken_.value << std::endl;
+				}
+
+				return result;
+			}
+		};
+
+		// we allow use { }, so we need to convert { } to List[ ]
+		inline expression parse_FullForm(const std::string_view str) {
+			std::string mod_str;
+			mod_str.reserve(str.size() + 10);
+			for (auto c : str) {
+				if (c == '{') 
+					mod_str += "List[";
+				else if (c == '}') 
+					mod_str += "]";
+				else 
+					mod_str += c;
+			}
+
+			parser parser(mod_str);
+			return parser.parse();
+		}
+	}
+
+	// we allow use a map to store function that generating sub-expressions
+	void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr, 
+		const std::unordered_map<std::string, std::function<void(Encoder&)>>& map) {
+
+		if (expr.is_atom()) {
+				switch (expr.head_.get_type()) {
+				case FullForm::atom_type::Integer:
+					encoder.push_integer(std::stoll(expr.head_.get_value()));
+					break;
+				case FullForm::atom_type::Real:
+					encoder.push_real(std::stod(expr.head_.get_value()));
+					break;
+				case FullForm::atom_type::String:
+					encoder.push_string(expr.head_.get_value());
+					break;
+				case FullForm::atom_type::Symbol:
+					encoder.push_symbol(expr.head_.get_value());
+					break;
+				case FullForm::atom_type::Null:
+					break;
+				case FullForm::atom_type::Expression: {
+					auto& vv = expr.head_.get_value();
+					auto it = map.find(vv);
+					if (it != map.end())
+						it->second(encoder);
+					else
+						std::cerr << "Error: expression id " << vv << " not found in map." << std::endl;
+					break;
+				}
+				default:
+					std::cerr << "Error: unknown atom type." << std::endl;
+					break;
+				}
+			}
+		else {
+			size_t len = expr.args_.size();
+			if (expr.args_[0].is_atom() &&
+				expr.args_[0].head_.get_type() == FullForm::atom_type::Null) {
+				len = 0;
+			}
+			std::string_view name = expr.head_.get_value();
+
+			// rule is special, its length is always 2 and omited by WXF encoder
+			if (name == "Rule")
+				encoder.push_rule();
+			else if (name == "RuleDelayed")
+				encoder.push_delay_rule();
+			else
+				encoder.push_function(name, len);
+
+			for (size_t i = 0; i < len; i++) {
+				fullform_to_wxf(encoder, expr.args_[i], map);
+			}
+		}
+	}
+
+	void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr,
+		const std::unordered_map<std::string, Encoder>& map) {
+		std::unordered_map<std::string, std::function<void(Encoder&)>> func_map;
+		for (const auto& [key, value] : map) {
+			func_map[key] = [value](Encoder& enc) {
+				enc.push_ustr(value.buffer);
+			};
+		}
+		fullform_to_wxf(encoder, expr, func_map);
+	}
+
+	template<typename MapType>
+	Encoder fullform_to_wxf(const std::string_view ff_template, const MapType& map, bool include_head = true) {
+		Encoder encoder;
+		encoder.buffer.reserve(ff_template.size() * 32); // reserve some space
+		if (include_head) {
+			encoder.buffer.push_back(56); // WXF head
+			encoder.buffer.push_back(58); // WXF head
+		}
+		fullform_to_wxf(encoder, FullForm::parse_FullForm(ff_template), map);
+		return encoder;
+	}
 
 } // namespace WXF_PARSER
