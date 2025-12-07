@@ -15,6 +15,7 @@
 
 #include "argparse.hpp"
 #include "sparse_mat.h"
+#include "wxf_support.h"
 
 #ifdef _WIN32
 #include <conio.h>
