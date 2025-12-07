@@ -221,7 +221,8 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 	auto in_str = (uint8_t*)(naFuns->MNumericArray_getData(na_in));
 	auto length = naFuns->MNumericArray_getFlattenedLength(na_in);
 
-	std::vector<uint8_t> res_str;
+	WXF_PARSER::Encoder encoder;
+	auto& res_str = encoder.buffer;
 	uint8_t* out_str = nullptr;
 	mint out_len = 0;
 	auto err = LIBRARY_NO_ERROR;
@@ -229,9 +230,9 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 	{
 		field_t F(FIELD_QQ);
 
-		WXF_PARSER::ExprTree expr_tree;
-		expr_tree = WXF_PARSER::MakeExprTree(in_str, (size_t)length);
-		auto mat = sparse_mat_read_wxf<rat_t, int>(expr_tree, F);
+		WXF_PARSER::Parser parser(in_str, length);
+		parser.parse();
+		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.token_views, F);
 
 		rref_option_t opt;
 		opt->pool.reset(nthreads);
@@ -265,18 +266,11 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 			std::vector<uint8_t> m_str;
 			auto push_mat = [&](const auto& M) {
 				m_str = sparse_mat_write_wxf(M, false);
-				res_str.insert(res_str.end(), m_str.begin(), m_str.end());
-				};
-			auto push_null = [&]() {
-				res_str.push_back((uint8_t)WXF_PARSER::WXF_HEAD::symbol);
-				res_str.push_back(4); // length of Null
-				std::string null_str = "Null";
-				res_str.insert(res_str.end(), null_str.begin(), null_str.end());
+				encoder.push_ustr(m_str);
 				};
 			auto push_pivots = [&]() {
 				// rank 2, dimensions {pivots_vec.size(), 2}
-				TOKEN token(WXF_HEAD::array, { pivots_vec.size(), 2 }, 3, 2 * pivots_vec.size(), false);
-				token.to_ustr(res_str);
+				encoder.push_array_info({ pivots_vec.size(), 2 }, WXF_HEAD::array, 3);
 				uint8_t int64_buf[16];
 				for (auto& p : pivots_vec) {
 					// output the pivot position
@@ -287,39 +281,36 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 					res_str.insert(res_str.end(), int64_buf, int64_buf + sizeof(row) + sizeof(col));
 				}
 				};
-			auto push_list = [&](size_t n) {
-				res_str.push_back(56); res_str.push_back(58);
-				// function, List, n
-				TOKEN(WXF_HEAD::func, n).to_ustr(res_str);
-				TOKEN(WXF_HEAD::symbol, "List").to_ustr(res_str);
-				};
 			
 			switch (output_mode) {
 			case 0: // output the rref
 				res_str = sparse_mat_write_wxf(mat, true);
 				break;
 			case 1: {// output the rref and its kernel
-				push_list(2);
+				res_str.push_back(56); res_str.push_back(58);
+				encoder.push_function("List", 2);
 				push_mat(mat);
 				if (len > 0) 
 					push_mat(K);
 				else 
-					push_null();
+					encoder.push_symbol("Null");
 				break;
 			}
 			case 2: { // output the rref and its pivots
-				push_list(2);
+				res_str.push_back(56); res_str.push_back(58);
+				encoder.push_function("List", 2);
 				push_mat(mat);
 				push_pivots();
 				break;
 			}
 			case 3: { // output the rref, kernel and pivots
-				push_list(3);
+				res_str.push_back(56); res_str.push_back(58);
+				encoder.push_function("List", 3);
 				push_mat(mat);
 				if (len > 0)
 					push_mat(K);
 				else
-					push_null();
+					encoder.push_symbol("Null");
 				push_pivots();
 				break;
 			}
@@ -376,9 +367,9 @@ EXTERN_C DLLEXPORT int ratmat_inv(WolframLibraryData ld, mint Argc, MArgument* A
 	{
 		field_t F(FIELD_QQ);
 
-		WXF_PARSER::ExprTree expr_tree;
-		expr_tree = WXF_PARSER::MakeExprTree(in_str, (size_t)length);
-		auto mat = sparse_mat_read_wxf<rat_t, int>(expr_tree, F);
+		WXF_PARSER::Parser parser(in_str, length);
+		parser.parse();
+		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.token_views, F);
 
 		rref_option_t opt;
 		opt->pool.reset(nthreads);

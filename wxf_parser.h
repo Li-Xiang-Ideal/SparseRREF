@@ -79,7 +79,7 @@ namespace WXF_PARSER {
 		narray = 194
 	};
 
-	size_t size_of_head_num_type(const WXF_HEAD head) {
+	inline size_t size_of_head_num_type(const WXF_HEAD head) {
 		switch (head) {
 		case WXF_HEAD::i8:
 			return sizeof(int8_t);
@@ -106,7 +106,7 @@ namespace WXF_PARSER {
 	// 51 complex float 52 complex double
 
 	// only the last 3 bits are used to indicate the size
-	size_t size_of_arr_num_type(const int num_type) {
+	constexpr size_t size_of_arr_num_type(const int num_type) {
 		return size_t(1) << (num_type & 0b111);
 	}
 
@@ -1044,7 +1044,7 @@ namespace WXF_PARSER {
 		ExprNode& operator[] (size_t i) { return children[i]; }
 	};
 
-	void node_to_ustr(Encoder& enc, const std::vector<TOKEN>& tokens, const ExprNode& node) {
+	inline void node_to_ustr(Encoder& enc, const std::vector<TOKEN>& tokens, const ExprNode& node) {
 		auto& token = tokens[node.index];
 		auto& res = enc.buffer;
 
@@ -1121,7 +1121,7 @@ namespace WXF_PARSER {
 		}
 	};
 
-	ExprTree MakeExprTree(Parser& parser) {
+	inline ExprTree MakeExprTree(Parser& parser) {
 		ExprTree tree;
 		if (parser.err != 0)
 			return tree;
@@ -1223,25 +1223,25 @@ namespace WXF_PARSER {
 		return tree;
 	}
 
-	ExprTree MakeExprTree(const uint8_t* str, const size_t len) {
+	inline ExprTree MakeExprTree(const uint8_t* str, const size_t len) {
 		Parser parser(str, len, 1);
 		parser.parse();
 		return MakeExprTree(parser);
 	}
 
-	ExprTree MakeExprTree(const std::vector<uint8_t>& str) {
+	inline ExprTree MakeExprTree(const std::vector<uint8_t>& str) {
 		Parser parser(str, 1);
 		parser.parse();
 		return MakeExprTree(parser);
 	}
 
-	ExprTree MakeExprTree(const std::string_view str) {
+	inline ExprTree MakeExprTree(const std::string_view str) {
 		Parser parser(reinterpret_cast<const uint8_t*>(str.data()), str.size(), 1);
 		parser.parse();
 		return MakeExprTree(parser);
 	}
 
-	ExprTree MakeExprTree(const std::filesystem::path filename) {
+	inline ExprTree MakeExprTree(const std::filesystem::path filename) {
 		if (!std::filesystem::exists(filename)) {
 			std::cerr << "Error: File does not exist!" << std::endl;
 			return ExprTree();
@@ -1425,7 +1425,7 @@ namespace WXF_PARSER {
 
 						if (position_ >= length_ || !std::isdigit(static_cast<unsigned char>(current_char()))) {
 							std::cerr << "Invalid scientific notation at position " << position_ << std::endl;
-							return { END, "", startPos};
+							return { END, "", startPos };
 						}
 
 						while (position_ < length_ && std::isdigit(static_cast<unsigned char>(current_char()))) {
@@ -1489,6 +1489,7 @@ namespace WXF_PARSER {
 				}
 
 				std::cerr << "Unknown character '" << ch << "' at position " << position_ << std::endl;
+				return { END, "", position_ };
 			}
 		};
 
@@ -1612,11 +1613,11 @@ namespace WXF_PARSER {
 			std::string mod_str;
 			mod_str.reserve(str.size() + 10);
 			for (auto c : str) {
-				if (c == '{') 
+				if (c == '{')
 					mod_str += "List[";
-				else if (c == '}') 
+				else if (c == '}')
 					mod_str += "]";
-				else 
+				else
 					mod_str += c;
 			}
 
@@ -1626,39 +1627,39 @@ namespace WXF_PARSER {
 	}
 
 	// we allow use a map to store function that generating sub-expressions
-	void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr, 
+	inline void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr,
 		const std::unordered_map<std::string, std::function<void(Encoder&)>>& map) {
 
 		if (expr.is_atom()) {
-				switch (expr.head_.get_type()) {
-				case FullForm::atom_type::Integer:
-					encoder.push_integer(std::stoll(expr.head_.get_value()));
-					break;
-				case FullForm::atom_type::Real:
-					encoder.push_real(std::stod(expr.head_.get_value()));
-					break;
-				case FullForm::atom_type::String:
-					encoder.push_string(expr.head_.get_value());
-					break;
-				case FullForm::atom_type::Symbol:
-					encoder.push_symbol(expr.head_.get_value());
-					break;
-				case FullForm::atom_type::Null:
-					break;
-				case FullForm::atom_type::Expression: {
-					auto& vv = expr.head_.get_value();
-					auto it = map.find(vv);
-					if (it != map.end())
-						it->second(encoder);
-					else
-						std::cerr << "Error: expression id " << vv << " not found in map." << std::endl;
-					break;
-				}
-				default:
-					std::cerr << "Error: unknown atom type." << std::endl;
-					break;
-				}
+			switch (expr.head_.get_type()) {
+			case FullForm::atom_type::Integer:
+				encoder.push_integer(std::stoll(expr.head_.get_value()));
+				break;
+			case FullForm::atom_type::Real:
+				encoder.push_real(std::stod(expr.head_.get_value()));
+				break;
+			case FullForm::atom_type::String:
+				encoder.push_string(expr.head_.get_value());
+				break;
+			case FullForm::atom_type::Symbol:
+				encoder.push_symbol(expr.head_.get_value());
+				break;
+			case FullForm::atom_type::Null:
+				break;
+			case FullForm::atom_type::Expression: {
+				auto& vv = expr.head_.get_value();
+				auto it = map.find(vv);
+				if (it != map.end())
+					it->second(encoder);
+				else
+					std::cerr << "Error: expression id " << vv << " not found in map." << std::endl;
+				break;
 			}
+			default:
+				std::cerr << "Error: unknown atom type." << std::endl;
+				break;
+			}
+		}
 		else {
 			size_t len = expr.args_.size();
 			if (expr.args_[0].is_atom() &&
@@ -1681,13 +1682,13 @@ namespace WXF_PARSER {
 		}
 	}
 
-	void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr,
+	inline void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr,
 		const std::unordered_map<std::string, Encoder>& map) {
 		std::unordered_map<std::string, std::function<void(Encoder&)>> func_map;
 		for (const auto& [key, value] : map) {
 			func_map[key] = [value](Encoder& enc) {
 				enc.push_ustr(value.buffer);
-			};
+				};
 		}
 		fullform_to_wxf(encoder, expr, func_map);
 	}

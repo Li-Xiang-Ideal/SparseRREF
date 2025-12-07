@@ -13,8 +13,8 @@
 #include "sparse_type.h"
 
 namespace SparseRREF {
-	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
-	// TODO: more check!!!
+	// TODO: reuse the code for sparse_mat_read_wxf and sparse_tensor_read_wxf
+
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::vector<WXF_PARSER::TOKEN_VIEW>& tokens, const field_t& F) {
 		if (tokens.size() == 0)

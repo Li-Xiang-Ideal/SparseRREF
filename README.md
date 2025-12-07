@@ -17,7 +17,7 @@ Some algorithms are inspired by [Spasm](https://github.com/cbouilla/spasm), but 
 
 ### Dependence
 
-The code mainly depends on [FLINT](https://flintlib.org/) to support arithmetic, and [BS::thread_pool](https://github.com/bshoshany/thread-pool) and [argparse](https://github.com/p-ranav/argparse) (they are included) are also used to support thread pool and parse args.
+The code mainly depends on [FLINT](https://flintlib.org/) to support arithmetic, and [wxf_parser](https://github.com/munuxi/wxf_parser), [BS::thread_pool](https://github.com/bshoshany/thread-pool) and [argparse](https://github.com/p-ranav/argparse) (they are included) are also used to support thread pool and parse args.
 
 If one use functions on sparse_tensor, it also requires to link tbb (Threading Building Blocks) library (for GCC and CLANG), since the Parallel STL of C++20 is used there.
 
@@ -137,5 +137,4 @@ SparseRREF uses less memory than Spasm since its result has less non zero values
 * Improve the algorithms.
 * Add PLUQ decomposition.
 * Add more fields/rings.
-* Improve I/O.
 
