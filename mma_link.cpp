@@ -232,7 +232,7 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 
 		WXF_PARSER::Parser parser(in_str, length);
 		parser.parse();
-		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.token_views, F);
+		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.tokens, F);
 
 		rref_option_t opt;
 		opt->pool.reset(nthreads);
@@ -369,7 +369,7 @@ EXTERN_C DLLEXPORT int ratmat_inv(WolframLibraryData ld, mint Argc, MArgument* A
 
 		WXF_PARSER::Parser parser(in_str, length);
 		parser.parse();
-		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.token_views, F);
+		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.tokens, F);
 
 		rref_option_t opt;
 		opt->pool.reset(nthreads);

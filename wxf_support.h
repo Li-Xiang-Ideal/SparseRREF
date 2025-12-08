@@ -16,7 +16,7 @@ namespace SparseRREF {
 	// TODO: reuse the code for sparse_mat_read_wxf and sparse_tensor_read_wxf
 
 	template <typename T, typename index_t>
-	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::vector<WXF_PARSER::TOKEN_VIEW>& tokens, const field_t& F) {
+	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::vector<WXF_PARSER::Token>& tokens, const field_t& F) {
 		if (tokens.size() == 0)
 			return sparse_mat<T, index_t>();
 
@@ -48,7 +48,7 @@ namespace SparseRREF {
 		GENERATE_COPY_ARR(18, uint32_t, FUNC2) \
 		GENERATE_COPY_ARR(19, uint64_t, FUNC2)
 
-		auto copy_arr = [](const WXF_PARSER::TOKEN_VIEW& token, auto& out) {
+		auto copy_arr = [](const WXF_PARSER::Token& token, auto& out) {
 			int num_type = token.dimensions[0];
 			out.reserve(token.dimensions[1]);
 			switch (num_type) {
@@ -59,7 +59,7 @@ namespace SparseRREF {
 			}
 			};
 
-		auto copy_modify_arr = [](const WXF_PARSER::TOKEN_VIEW& token, auto& out, auto&& func) {
+		auto copy_modify_arr = [](const WXF_PARSER::Token& token, auto& out, auto&& func) {
 			int num_type = token.dimensions[0];
 			out.reserve(token.dimensions[1]);
 			switch (num_type) {
@@ -121,7 +121,7 @@ namespace SparseRREF {
 			return int_t(buffer.data());
 			};
 
-		auto get_int_from_tv = [&get_int_from_sv](const WXF_PARSER::TOKEN_VIEW& node) -> int_t {
+		auto get_int_from_tv = [&get_int_from_sv](const WXF_PARSER::Token& node) -> int_t {
 			switch (node.type) {
 			case WXF_PARSER::WXF_HEAD::i8:
 			case WXF_PARSER::WXF_HEAD::i16:
@@ -257,7 +257,7 @@ namespace SparseRREF {
 
 		wxf_parser.parse();
 
-		return sparse_mat_read_wxf<T, index_t>(wxf_parser.token_views, F);
+		return sparse_mat_read_wxf<T, index_t>(wxf_parser.tokens, F);
 	}
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
@@ -392,7 +392,7 @@ namespace SparseRREF {
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	template <typename T, typename index_t>
-	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const std::vector<WXF_PARSER::TOKEN_VIEW>& tokens, const field_t& F) {
+	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const std::vector<WXF_PARSER::Token>& tokens, const field_t& F) {
 		using st = sparse_tensor<T, index_t, SPARSE_CSR>;
 
 		if (tokens.size() == 0)
@@ -426,7 +426,7 @@ namespace SparseRREF {
 		GENERATE_COPY_ARR(18, uint32_t, FUNC2) \
 		GENERATE_COPY_ARR(19, uint64_t, FUNC2)
 
-		auto copy_arr = [](const WXF_PARSER::TOKEN_VIEW& token, auto out) {
+		auto copy_arr = [](const WXF_PARSER::Token& token, auto out) {
 			int num_type = token.dimensions[0];
 			switch (num_type) {
 				GENERATE_ALL_ARR(TMP_IDENTITY_FUNC);
@@ -436,7 +436,7 @@ namespace SparseRREF {
 			}
 			};
 
-		auto copy_modify_arr = [](const WXF_PARSER::TOKEN_VIEW& token, auto out, auto&& func) {
+		auto copy_modify_arr = [](const WXF_PARSER::Token& token, auto out, auto&& func) {
 			int num_type = token.dimensions[0];
 			switch (num_type) {
 				GENERATE_ALL_ARR(func);
@@ -501,7 +501,7 @@ namespace SparseRREF {
 			return int_t(buffer.data());
 			};
 
-		auto get_int_from_tv = [&get_int_from_sv](const WXF_PARSER::TOKEN_VIEW& node) -> int_t {
+		auto get_int_from_tv = [&get_int_from_sv](const WXF_PARSER::Token& node) -> int_t {
 			switch (node.type) {
 			case WXF_PARSER::WXF_HEAD::i8:
 			case WXF_PARSER::WXF_HEAD::i16:
@@ -627,7 +627,7 @@ namespace SparseRREF {
 
 		wxf_parser.parse();
 
-		return sparse_tensor_read_wxf<T, index_t>(wxf_parser.token_views, F);
+		return sparse_tensor_read_wxf<T, index_t>(wxf_parser.tokens, F);
 	}
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
