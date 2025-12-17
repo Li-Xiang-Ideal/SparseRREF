@@ -16,6 +16,7 @@
 #include "flint/fmpq.h"
 
 #ifdef USE_MIMALLOC
+#include "gmp.h"
 #include "mimalloc.h"
 #endif
 
@@ -44,9 +45,24 @@ namespace Flint {
 	template <typename T>
 	concept unsigned_builtin_integral = builtin_integral<T> && std::is_unsigned_v<T>;
 
+#ifdef USE_MIMALLOC
+	static void* mi_gmp_alloc(size_t size) {
+		void* ptr = mi_malloc(size);
+		return ptr;
+	}
+
+	static void* mi_gmp_realloc(void* ptr, size_t old_size, size_t new_size) {
+		void* new_ptr = mi_realloc(ptr, new_size);
+		return new_ptr;
+	}
+
+	static void mi_gmp_free(void* ptr, size_t size) { mi_free(ptr); }
+#endif
+
 	// set memory functions for flint
 	inline void set_memory_functions() {
 #ifdef USE_MIMALLOC
+		mp_set_memory_functions(&mi_gmp_alloc, &mi_gmp_realloc, &mi_gmp_free);
 		__flint_set_memory_functions(&mi_malloc, &mi_calloc, &mi_realloc, &mi_free);
 #endif
 	}

@@ -6,12 +6,12 @@
 	License.
 */
 
-#include <filesystem>
-#include <fstream>
-#include <iostream>
-
 // Use mimalloc for memory management or not
 // #define USE_MIMALLOC 1
+
+#ifdef USE_MIMALLOC
+#include "mimalloc-new-delete.h"
+#endif
 
 #include "argparse.hpp"
 #include "sparse_mat.h"
@@ -371,6 +371,16 @@ int main(int argc, char** argv) {
 	opt->abort = true; // stop the key listener
 
 	thread_listener.join();
+
+#ifdef USE_MIMALLOC
+	// print the memory usage statistics
+	auto minfo = get_memory_info();
+	std::cout << "-------------------" << std::endl;
+	std::cout << "Memory usage statistics: ";
+	std::cout << "peak commit: " << double(minfo.peak_commit) / 1024 / 1024 << " MB, ";
+	std::cout << "total time: " << minfo.elapsed_msecs / 1000.0 << " seconds, ";
+	std::cout << "total CPU time: " << (minfo.user_msecs + minfo.system_msecs) / 1000.0 << " seconds." << std::endl;
+#endif
 
 	Flint::clear_cache();
 	return 0;

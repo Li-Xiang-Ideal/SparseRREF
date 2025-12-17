@@ -9,8 +9,6 @@
 #ifndef SPARSE_VEC_H
 #define SPARSE_VEC_H
 
-#include "flint/nmod_vec.h"
-
 #include "scalar.h"
 #include "sparse_type.h"
 
@@ -229,21 +227,6 @@ namespace SparseRREF {
 	}
 
 	template <typename index_t>
-	inline int sfmpq_vec_add_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
-		return sfmpq_vec_addsub_mul<index_t, true>(vec, src, a);
-	}
-
-	template <typename index_t>
-	inline int sfmpq_vec_sub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a) {
-		return sfmpq_vec_addsub_mul<index_t, false>(vec, src, a);
-	}
-
-	template <typename index_t>
-	inline int snmod_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
-		return snmod_vec_add_mul(vec, src, F.mod.n - a, F);
-	}
-
-	template <typename index_t>
 	inline int sparse_vec_add(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const field_t& F) {
 		return snmod_vec_add_mul(vec, src, 1, F);
 	}
@@ -254,13 +237,23 @@ namespace SparseRREF {
 	}
 
 	template <typename index_t>
+	inline int sparse_vec_add_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
+		return snmod_vec_add_mul(vec, src, a, F);
+	}
+
+	template <typename index_t>
+	inline int sparse_vec_add_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a, const field_t& F) {
+		return sfmpq_vec_addsub_mul<index_t, true>(vec, src, a);
+	}
+
+	template <typename index_t>
 	inline int sparse_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
-		return snmod_vec_sub_mul(vec, src, a, F);
+		return snmod_vec_add_mul(vec, src, F.mod.n - a, F);
 	}
 
 	template <typename index_t>
 	inline int sparse_vec_sub_mul(sfmpq_vec<index_t>& vec, const sfmpq_vec<index_t>& src, const rat_t& a, const field_t& F) {
-		return sfmpq_vec_sub_mul(vec, src, a);
+		return sfmpq_vec_addsub_mul<index_t, false>(vec, src, a);
 	}
 
 	// dot product

@@ -1242,8 +1242,9 @@ namespace WXF_PARSER::FullForm {
 
 namespace WXF_PARSER {
 	// we allow use a map to store function that generating sub-expressions
-	inline void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr,
-		const std::unordered_map<std::string, std::function<void(Encoder&)>>& map) {
+	template<typename Callable>
+	void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr,
+		const std::unordered_map<std::string, Callable>& map) {
 
 		if (expr.is_atom()) {
 			switch (expr.head_.get_type()) {
@@ -1296,7 +1297,7 @@ namespace WXF_PARSER {
 		const std::unordered_map<std::string, Encoder>& map) {
 		std::unordered_map<std::string, std::function<void(Encoder&)>> func_map;
 		for (const auto& [key, value] : map) {
-			func_map[key] = [value](Encoder& enc) {
+			func_map[key] = [&value](Encoder& enc) {
 				enc.push_ustr(value.buffer);
 				};
 		}

@@ -112,6 +112,38 @@ namespace SparseRREF {
 	}
 #endif
 
+	// memory info
+#ifdef USE_MIMALLOC
+	struct memory_info_t {
+		size_t elapsed_msecs;
+		size_t user_msecs;
+		size_t system_msecs;
+		size_t current_rss;
+		size_t peak_rss;
+		size_t current_commit;
+		size_t peak_commit;
+		size_t page_faults;
+	};
+
+	inline memory_info_t get_memory_info() {
+		memory_info_t info;
+		mi_process_info(
+			&info.elapsed_msecs,
+			&info.user_msecs,
+			&info.system_msecs,
+			&info.current_rss,
+			&info.peak_rss,
+			&info.current_commit,
+			&info.peak_commit,
+			&info.page_faults);
+		return info;
+	}
+
+	inline void reset_memory_info() {
+		mi_stats_reset();
+	}
+#endif
+
 	template <typename T>
 	void s_copy(T* des, const T* ini, const size_t size) {
 		if (des == ini)
@@ -119,11 +151,9 @@ namespace SparseRREF {
 		std::copy(ini, ini + size, des);
 	}
 
-	// thread
-	using thread_pool = BS::thread_pool<>; // thread pool
-	inline size_t thread_id() {
-		return BS::this_thread::get_index().value();
-	}
+	// thread pool
+	using thread_pool = BS::thread_pool<>;
+	inline size_t thread_id() { return BS::this_thread::get_index().value(); }
 
 	// rref_option
 	// method 0: right and left search
@@ -142,15 +172,9 @@ namespace SparseRREF {
 	};
 	using rref_option_t = rref_option[1];
 
-	inline size_t ctz(uint64_t x) {
-		return std::countr_zero(x);
-	}
-	inline size_t clz(uint64_t x) {
-		return std::countl_zero(x);
-	}
-	inline size_t popcount(uint64_t x) {
-		return std::popcount(x);
-	}
+	inline size_t ctz(uint64_t x) { return std::countr_zero(x); }
+	inline size_t clz(uint64_t x) { return std::countl_zero(x); }
+	inline size_t popcount(uint64_t x) { return std::popcount(x); }
 
 	template <typename T>
 	inline uint8_t minimal_signed_bits(T x) noexcept {
@@ -179,13 +203,13 @@ namespace SparseRREF {
 	}
 
 	// string
-	inline void DeleteSpaces(std::string& str) {
+	inline void delete_space(std::string& str) {
 		str.erase(std::remove_if(str.begin(), str.end(),
 			[](unsigned char x) { return std::isspace(x); }),
 			str.end());
 	}
 
-	inline std::vector<std::string> SplitString(const std::string& s, const std::string delim) {
+	inline std::vector<std::string> split_string(const std::string& s, const std::string delim) {
 		size_t start = 0;
 		size_t end = s.find(delim);
 		std::vector<std::string> result;
@@ -231,7 +255,7 @@ namespace SparseRREF {
 	}
 
 	// some algorithms
-	template <typename T> std::vector<T> difference(std::vector<T> l) {
+	template <typename T> std::vector<T> difference(const std::vector<T>& l) {
 		std::vector<T> result;
 		for (size_t i = 1; i < l.size(); i++) {
 			result.push_back(l[i] - l[i - 1]);
@@ -267,10 +291,11 @@ namespace SparseRREF {
 	}
 
 	// mulit for
-	inline void multi_for(
+	template <typename Func>
+	void multi_for(
 		const std::vector<size_t>& start,
 		const std::vector<size_t>& end,
-		const std::function<void(std::vector<size_t>&)> func) {
+		Func&& func) {
 
 		if (start.size() != end.size()) {
 			std::cerr << "Error: start and end size not match." << std::endl;
