@@ -160,6 +160,11 @@ namespace SparseRREF {
 			}
 		}
 
+		if (!(A.check_sorted() && B.check_sorted())) {
+			std::cerr << "Error: tensor_sum_replace: Both tensors must be sorted." << std::endl;
+			exit(1);
+		}
+
 		// if one of the tensors is zero
 		if (A.nnz() == 0) {
 			A = B;
@@ -469,7 +474,7 @@ namespace SparseRREF {
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_contract_2(
 		const sparse_tensor<T, index_type, SPARSE_COO>& A,
 		const sparse_tensor<T, index_type, SPARSE_COO>& B,
-		const index_type a, const field_t& F, thread_pool* pool = nullptr) {
+		const index_type a, const field_t& F, thread_pool* pool = nullptr, const bool sort_ind = true) {
 
 		auto C = tensor_contract(A, B, a, 0, F, pool);
 		std::vector<size_t> perm;
@@ -478,7 +483,7 @@ namespace SparseRREF {
 		}
 		perm.erase(perm.begin() + A.rank() - 1);
 		perm.insert(perm.begin() + a, A.rank() - 1);
-		C.transpose_replace(perm, pool);
+		C.transpose_replace(perm, pool, sort_ind);
 
 		return C;
 	}
@@ -903,7 +908,7 @@ namespace SparseRREF {
 	// IO
 
 	template <typename ScalarType, typename IndexType, typename T>
-	sparse_tensor<ScalarType, IndexType, SPARSE_COO> sparse_tensor_read(T& st, const field_t& F) {
+	sparse_tensor<ScalarType, IndexType, SPARSE_COO> sparse_tensor_read(T& st, const field_t& F, thread_pool* pool = nullptr, const bool sort_ind = true) {
 		if (!st.is_open())
 			return sparse_tensor<ScalarType, IndexType, SPARSE_COO>();
 
@@ -966,6 +971,9 @@ namespace SparseRREF {
 
 			tensor.push_back(index, val);
 		}
+		
+		if (sort_ind && !tensor.check_sorted())
+			tensor.sort_indices(pool);
 
 		return tensor;
 	}

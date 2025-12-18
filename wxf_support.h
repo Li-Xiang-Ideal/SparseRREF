@@ -392,7 +392,7 @@ namespace SparseRREF {
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
 	template <typename T, typename index_t>
-	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const std::vector<WXF_PARSER::Token>& tokens, const field_t& F) {
+	sparse_tensor<T, index_t, SPARSE_CSR> sparse_tensor_read_wxf(const std::vector<WXF_PARSER::Token>& tokens, const field_t& F, thread_pool* pool = nullptr, bool sort_ind = true) {
 		using st = sparse_tensor<T, index_t, SPARSE_CSR>;
 
 		if (tokens.size() == 0)
@@ -597,12 +597,15 @@ namespace SparseRREF {
 				pos++;
 			}
 		}
+		
+		if (sort_ind && !tensor.check_sorted())
+			tensor.sort_indices(pool);
 
 		return tensor;
 	}
 
 	template <typename T, typename index_t>
-	auto sparse_tensor_read_wxf(const std::filesystem::path file, const field_t& F) {
+	auto sparse_tensor_read_wxf(const std::filesystem::path file, const field_t& F, thread_pool* pool = nullptr, bool sort_ind = true) {
 		auto fz = std::filesystem::file_size(file);
 
 		WXF_PARSER::Parser wxf_parser;
@@ -627,7 +630,7 @@ namespace SparseRREF {
 
 		wxf_parser.parse();
 
-		return sparse_tensor_read_wxf<T, index_t>(wxf_parser.tokens, F);
+		return sparse_tensor_read_wxf<T, index_t>(wxf_parser.tokens, F, pool, sort_ind);
 	}
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]

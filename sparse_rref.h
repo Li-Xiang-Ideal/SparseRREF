@@ -34,6 +34,7 @@
 #include <tuple>
 #include <unordered_set>
 #include <vector>
+#include <variant>
 
 #include "thread_pool.hpp"
 
