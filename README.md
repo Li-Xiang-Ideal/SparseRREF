@@ -17,7 +17,7 @@ Some algorithms are inspired by [Spasm](https://github.com/cbouilla/spasm), but 
 
 ### Dependence
 
-The code mainly depends on [FLINT](https://flintlib.org/) to support arithmetic, and [wxf_parser](https://github.com/munuxi/wxf_parser), [BS::thread_pool](https://github.com/bshoshany/thread-pool) and [argparse](https://github.com/p-ranav/argparse) (they are included) are also used to support thread pool and parse args.
+The code mainly depends on [FLINT](https://flintlib.org/) to support arithmetic, and [BS::thread_pool](https://github.com/bshoshany/thread-pool),  [wxf_parser](https://github.com/munuxi/wxf_parser) and [argparse](https://github.com/p-ranav/argparse) (they are included) are also used to support thread pool, WXF format and parse args.
 
 If one use functions on sparse_tensor, it also requires to link tbb (Threading Building Blocks) library (for GCC and CLANG), since the Parallel STL of C++20 is used there.
 
@@ -36,12 +36,14 @@ We also provide an example, see `mma_link.cpp`, by using the LibraryLink api of 
 Build it, e.g. (also add `-lpthread` if pthread is required by the compiler)
 
 ```bash
-g++ main.cpp -o sparserref -O3 -std=c++20 -Iincludepath -Llibpath -lflint -lgmp
+g++ main.cpp -o sparserref -O3 -std=c++20 -I$INCULDE -L$LIB -lflint -lgmp
 ```
 
 ```bash
-g++ mma_link.cpp -fPIC -shared -O3 -std=c++20 -o mathlink.dll -Iincludepath -Llibpath -lflint -lgmp
+g++ mma_link.cpp -fPIC -shared -O3 -std=c++20 -o mathlink.dll -I$MATHEMATICA_HOME/SystemFiles/IncludeFiles/C -I$INCLUDE -L$LIB -lflint -lgmp
 ```
+where we assume that the FLINT library and GMP library are installed in `$LIB`, the header files are in `$INCLUDE`,
+and `$MATHEMATICA_HOME/SystemFiles/IncludeFiles/C` is the path of Mathematica C header files.
 
 ### How to use the code
 

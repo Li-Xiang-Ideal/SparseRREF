@@ -7,8 +7,10 @@
 */
 
 /*
-	To compile the library, WolframLibrary.h and WolframSparseLibrary.h are required,
-	which are included in the Mathematica installation directory.
+	To compile the library, WolframLibrary.h, WolframSparseLibrary.h and 
+	WolframNumericArrayLibrary.h are required,
+	which are included in the Mathematica installation directory,
+	which is $MATHEMATICA_HOME/SystemFiles/IncludeFiles/C in most cases.
 
 	The output of modrref/ratrref is the join of the rref of A and its kernel.
 
@@ -44,9 +46,9 @@
 #include <string>
 #include "sparse_mat.h"
 #include "wxf_support.h"
-#include "mma/WolframLibrary.h"
-#include "mma/WolframSparseLibrary.h"
-#include "mma/WolframNumericArrayLibrary.h"
+#include "WolframLibrary.h"
+#include "WolframSparseLibrary.h"
+#include "WolframNumericArrayLibrary.h"
 
 using namespace SparseRREF;
 
