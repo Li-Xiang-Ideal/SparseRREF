@@ -17,7 +17,7 @@
     Needs["SparseRREF`", "/path/to/SparseRREF.m"];
     mat = SparseArray @ { {1, 0}, {1/2, 1/3} };
     rref = RationalRREF[mat];
-    {rref, kernel, pivots} = RationalRREF[mat, OutputMode -> 3, Threads -> $ProcessorCount];
+    {rref, kernel, pivots} = RationalRREF[mat, OutputMode -> 3, Method -> 1, Threads -> $ProcessorCount];
 *)
 
 BeginPackage["SparseRREF`"];
@@ -25,6 +25,13 @@ BeginPackage["SparseRREF`"];
 
 Options[RationalRREF] = {
   OutputMode -> 0,
+  (* Pivot search method:
+    0: right and left search
+    1: only right search
+    2: hybrid
+    NB: we don't define SparseRREF`Method to avoid collisions with System`Method
+  *)
+  Method -> 0,
   Threads -> 1
 };
 
@@ -62,6 +69,7 @@ $rationalRREFLibFunction =
     {
       {LibraryDataType[ByteArray], "Constant"},
       Integer,
+      Integer,
       Integer
     },
     {LibraryDataType[ByteArray], Automatic}
@@ -72,6 +80,7 @@ RationalRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
     $rationalRREFLibFunction[
       BinarySerialize[mat],
       OptionValue[OutputMode],
+      OptionValue[Method],
       OptionValue[Threads]
     ];
 

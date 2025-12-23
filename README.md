@@ -114,7 +114,7 @@ Example usage:
 Needs["SparseRREF`", "/path/to/SparseRREF.m"];
 mat = SparseArray @ { {1, 0}, {1/2, 1/3} };
 rref = RationalRREF[mat];
-{rref, kernel, pivots} = RationalRREF[mat, OutputMode -> 3, Threads -> $ProcessorCount];
+{rref, kernel, pivots} = RationalRREF[mat, OutputMode -> 3, Method -> 1, Threads -> $ProcessorCount];
 ```
 
 To use this package, you have to compile [mma_link.cpp](mma_link.cpp) to a shared library (`mathlink.dll` on Windows, `mathlink.so` on Linux, `mathlink.dylib` on macOS) in the same directory with [SparseRREF.m](SparseRREF.m).

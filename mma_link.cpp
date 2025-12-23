@@ -207,11 +207,12 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 // 2: output the rref and its pivots
 // 3: output the rref, kernel and pivots
 EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
-	if (Argc != 3)
+	if (Argc != 4)
 		return LIBRARY_FUNCTION_ERROR;
 	auto na_in = MArgument_getMNumericArray(Args[0]);
 	auto output_mode = MArgument_getInteger(Args[1]);
-	auto nthreads = MArgument_getInteger(Args[2]);
+	auto method = MArgument_getInteger(Args[2]);
+	auto nthreads = MArgument_getInteger(Args[3]);
 
 	numericarray_data_t type = MNumericArray_Type_Undef;
 	auto naFuns = ld->numericarrayLibraryFunctions;
@@ -237,6 +238,7 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.tokens, F);
 
 		rref_option_t opt;
+		opt->method = method;
 		opt->pool.reset(nthreads);
 
 		std::atomic<bool> cancel(false);
