@@ -595,15 +595,23 @@ namespace SparseRREF {
 			tmpvec[ind] = val;
 		}
 
+		std::vector<index_t> add_list;
+		std::vector<index_t> remove_list;
+
 		ulong e_pr;
 		for (auto [r, c] : pivots) {
 			if (!nonzero_c.test(c)) [[likely]]
 				continue;
+
 			T entry = tmpvec[c];
+			add_list.clear();
+			remove_list.clear();
+
 			if constexpr (std::is_same_v<T, ulong>) {
 				e_pr = n_mulmod_precomp_shoup(tmpvec[c], F.mod.n);
 			}
 			for (auto [ind, val] : mat[r]) {
+				bool old_c = tmpvec[ind] == 0;
 				if constexpr (std::is_same_v<T, ulong>) {
 					tmpvec[ind] = _nmod_sub(tmpvec[ind],
 						n_mulmod_shoup(entry, val, e_pr, F.mod.n), F.mod);
@@ -614,8 +622,16 @@ namespace SparseRREF {
 				else {
 					tmpvec[ind] = scalar_sub(tmpvec[ind], scalar_mul(entry, val, F), F);
 				}
-				nonzero_c.set(ind, tmpvec[ind] != 0);
+				if (tmpvec[ind] == 0) {
+					remove_list.push_back(ind);
+				}
+				else {
+					if (old_c)
+						add_list.push_back(ind);
+				}
 			}
+			for (auto ind : add_list) nonzero_c.insert(ind);
+			for (auto ind : remove_list) nonzero_c.erase(ind);
 		}
 
 		auto nnz = nonzero_c.nnz();
