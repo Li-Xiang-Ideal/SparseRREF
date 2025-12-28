@@ -13,68 +13,6 @@
 #include "sparse_vec.h"
 
 namespace SparseRREF {
-	template <typename T, typename S, typename index_t>
-	void sparse_mat_transpose_replace(
-		sparse_mat<S, index_t>& tranmat, const sparse_mat_subview<T, index_t> submat,
-		thread_pool* pool = nullptr) {
-		tranmat.zero();
-
-		const auto& mat = *submat.mat_ptr;
-
-		if (submat.rows.size() == 0 || mat.nrow == 0 || mat.ncol == 0)
-			return;
-
-		std::vector<size_t> rows;
-		if (submat.rows[0] > mat.nrow) // full view
-			rows = perm_init(mat.nrow);
-		else
-			rows = submat.rows;
-
-		if (pool == nullptr) {
-			for (size_t i = 0; i < rows.size(); i++) {
-				for (size_t j = 0; j < mat[rows[i]].nnz(); j++) {
-					auto col = mat[rows[i]](j);
-					if constexpr (std::is_same_v<S, T>) {
-						tranmat[col].push_back(rows[i], mat[rows[i]][j]);
-					}
-					else if constexpr (std::is_same_v<S, bool>) {
-						tranmat[col].push_back(rows[i], true);
-					}
-				}
-			}
-			return;
-		}
-
-		size_t mtx_size;
-		if (pool->get_thread_count() > 16)
-			mtx_size = 65536;
-		else
-			mtx_size = (size_t)1 << pool->get_thread_count();
-		std::vector<std::mutex> mtxes(mtx_size);
-
-		pool->detach_loop(0, rows.size(), [&](size_t i) {
-			for (size_t j = 0; j < mat[rows[i]].nnz(); j++) {
-				auto col = mat[rows[i]](j);
-				std::lock_guard<std::mutex> lock(mtxes[col % mtx_size]);
-				if constexpr (std::is_same_v<S, T>) {
-					tranmat[col].push_back(rows[i], mat[rows[i]][j]);
-				}
-				else if constexpr (std::is_same_v<S, bool>) {
-					tranmat[col].push_back(rows[i], true);
-				}
-			}
-			});
-		pool->wait();
-	}
-
-	template <typename T, typename S, typename index_t>
-	void sparse_mat_transpose_replace(
-		sparse_mat<S, index_t>& tranmat, const sparse_mat<T, index_t>& submat,
-		thread_pool* pool = nullptr) {
-
-		sparse_mat_transpose_replace(tranmat, sparse_mat_subview<T, index_t>(submat), pool);
-	}
-
 	// rref staffs
 
 	// first look for rows with only one nonzero value and eliminate them
@@ -838,15 +776,23 @@ namespace SparseRREF {
 		if (opt->abort)
 			return;
 
-		// we only need to compute the transpose of the submatrix involving pivots
-		sparse_mat_subview<T, index_t> submat;
-		submat.mat_ptr = &mat;
-		submat.rows.resize(pivots.size());
-		for (size_t i = 0; i < pivots.size(); i++)
-			submat.rows[i] = pivots[i].r;
+		size_t mtx_size;
+		if (nthreads > 16)
+			mtx_size = 65536;
+		else
+			mtx_size = (size_t)1 << nthreads;
+		std::vector<std::mutex> mtxes(mtx_size);
 
+		// we only need to compute the transpose of the submatrix involving pivots
 		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
-		sparse_mat_transpose_replace(tranmat, submat, &pool);
+		pool.detach_loop(0, pivots.size(), [&](size_t i) {
+			auto [r, c] = pivots[i];
+			for (auto [ind, val] : mat[r]) {
+				std::lock_guard<std::mutex> lock(mtxes[ind % mtx_size]);
+				tranmat[ind].push_back(r);
+			}
+			});
+		pool.wait();
 
 		size_t process = 0;
 		// TODO: better split strategy
