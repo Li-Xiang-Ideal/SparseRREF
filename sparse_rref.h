@@ -341,41 +341,47 @@ namespace SparseRREF {
 			std::fill(data.begin(), data.end(), 0);
 		}
 
-		void resize(size_t size) {
+		void resize(const size_t size) {
 			data.resize(size / 64 + 1);
 			clear();
 		}
 
-		bit_array(size_t size) {
+		bit_array(const size_t size) {
 			resize(size);
 			clear();
 		}
 
-		void insert(size_t val) {
+		void insert(const size_t val) {
 			auto idx = val >> 6;
 			auto pos = val & 63;
 			data[idx] |= mask_table[pos];
 		}
 
-		bool test(size_t val) const {
+		bool test(const size_t val) const {
 			auto idx = val >> 6;
 			auto pos = val & 63;
 			return data[idx] & mask_table[pos];
 		}
 
-		void erase(size_t val) {
+		void erase(const size_t val) {
 			auto idx = val >> 6;
 			auto pos = val & 63;
 			data[idx] &= ~mask_table[pos];
 		}
 
-		void xor_insert(size_t val) {
+		void xor_insert(const size_t val) {
 			auto idx = val >> 6;
 			auto pos = val & 63;
 			data[idx] ^= mask_table[pos];
 		}
 
-		bool operator[](size_t idx) const {
+		void set(const size_t val, const bool b) {
+			auto idx = val >> 6;
+			auto pos = val & 63;
+			data[idx] = (data[idx] & ~mask_table[pos]) | (uint64_t(b) << pos);
+		}
+
+		bool operator[](const size_t idx) const {
 			return test(idx);
 		}
 
