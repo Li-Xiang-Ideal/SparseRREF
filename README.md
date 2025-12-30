@@ -57,7 +57,7 @@ Usage: SparseRREF [--help] [--version] [--output VAR]
                   [--no-backward-substitution]
                   input_file
 
-(exact) Sparse Reduced Row Echelon Form v0.3.5
+(exact) Sparse Reduced Row Echelon Form v0.3.6
 
 Positional arguments:
   input_file                       input file in the Matrix Market exchange formats (MTX) or
@@ -122,13 +122,13 @@ First two test matrices come from https://hpac.imag.fr, bs comes from symbol boo
 
 | Matrix   | (#row, #col, #non-zero-values, rank)   | Spasm (echelonize + rref)    | SparseRREF |
 | -------- | -------------------------------------- | ---------------------------- | ---------- |
-| GL7d24   | (21074, 105054, 593892, 18549)         | 20.8001s + 38.2s             | 2.98s      |
-| M0,6-D10 | (1274688, 616320, 5342400, 493432)     | 49.9s + 19.3s                | 48.26s     |
-| bs-1     | (202552, 64350, 11690309, 62130)       | 4.19241s + 1.1s              | 1.13s      |
-| bs-2     | (709620, 732600, 48819232, 709620)     | too slow                     | 157.57s    |
+| GL7d24   | (21074, 105054, 593892, 18549)         | 20.8001s + 38.2s             | 2.93s      |
+| M0,6-D10 | (1274688, 616320, 5342400, 493432)     | 49.9s + 19.3s                | 49.39s     |
+| bs-1     | (202552, 64350, 11690309, 62130)       | 4.19241s + 1.1s              | 0.68s      |
+| bs-2     | (709620, 732600, 48819232, 709620)     | too slow                     | 149.68s    |
 | bs-3     | (10011551, 2958306, 33896262, 2867955) | 484s + 327.1s                | 34.00s     |
-| ibp-1    | (69153, 73316, 1117324, 58252)         | (rank is wrong) 2543.92s + ? | 4.97s      |
-| ibp-2    | (169323, 161970, 2801475, 135009)      | too slow                     | 23.32s     |
+| ibp-1    | (69153, 73316, 1117324, 58252)         | (rank is wrong) 2543.92s + ? | 2.96s      |
+| ibp-2    | (169323, 161970, 2801475, 135009)      | too slow                     | 15.27s     |
 
 Some tests for Spasm are slow since the physical memory is not enough, and it uses swap. In the most of cases,
 SparseRREF uses less memory than Spasm since its result has less non zero values.
