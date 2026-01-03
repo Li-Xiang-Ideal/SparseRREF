@@ -1,0 +1,42 @@
+services:
+    # ==============================
+    # Service 1: Development
+    # ==============================
+    # Run command: docker compose run --rm dev
+    dev:
+        build:
+            context: .
+            dockerfile: Dockerfile
+            target: dev
+        
+        image: sparserref-dev:v0.3.5
+        
+        volumes:
+            - .:/app
+        
+        working_dir: /app
+        
+        stdin_open: true
+        tty: true
+        command: /bin/bash
+
+    # ==============================
+    # Service 2: Release
+    # ==============================
+    # Run command: docker compose run --rm release
+    release:
+        build:
+            context: .
+            dockerfile: Dockerfile
+            target: release
+        
+        image: sparserref:v0.3.5
+        
+        volumes:
+            - .:/app
+        
+        working_dir: /app
+        
+        stdin_open: true
+        tty: true
+        command: /bin/bash
