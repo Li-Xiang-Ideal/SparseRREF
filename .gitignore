@@ -411,6 +411,9 @@ FodyWeavers.xsd
 *.bat
 *.cmd
 
+# Linux Shared Libraried
+*.so
+
 # VS Code settings
 .vscode/
 
