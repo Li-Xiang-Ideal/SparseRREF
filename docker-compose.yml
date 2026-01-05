@@ -9,7 +9,7 @@ services:
             dockerfile: Dockerfile
             target: dev
         
-        image: sparserref-dev:v0.3.5
+        image: sparserref-dev:0.3.5
         
         volumes:
             - .:/app
@@ -30,7 +30,7 @@ services:
             dockerfile: Dockerfile
             target: release
         
-        image: sparserref:v0.3.5
+        image: sparserref:0.3.5
         
         volumes:
             - .:/app
