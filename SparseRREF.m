@@ -1,7 +1,7 @@
 (* ::Package:: *)
 
 $SpaseRREFDirectory=DirectoryName[$InputFileName];
-$SpaseRREFLibrary=With[{ext=Switch[$OperatingSystem,"Windows","dll","MacOSX","dylib","Unix","so"]},SortBy[FileNames[$SpaseRREFDirectory<>"mathlink.*"],If[StringExtract[#,"."->-1]===ext,0,1]&][[1]]]
+$SpaseRREFLibrary=With[{ext=Switch[$OperatingSystem,"Windows","dll","MacOSX","dylib","Unix","so"]},SortBy[FileNames[{$SpaseRREFDirectory<>"mathlink.*",If[FileNames["/.dockerenv"]=!={},"/usr/local/lib/mathlink.*",Nothing]}],If[StringExtract[#,"."->-1]===ext,0,1]&][[1]]]
 
 
 Print["Sparse Reduced Row Echelon Form v0.3.5"]
