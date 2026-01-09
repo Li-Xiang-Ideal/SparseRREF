@@ -871,7 +871,7 @@ namespace SparseRREF {
 				std::fill(rowptr.begin(), rowptr.end(), 0);
 		}
 
-		inline size_t nnz() {
+		inline size_t nnz() const {
 			return rowptr[dims[0]];
 		}
 
@@ -2205,7 +2205,7 @@ namespace SparseRREF {
 		using const_index_p = const index_t*;
 
 		template <typename S, typename U = S> requires std::convertible_to<U, S>
-		std::vector<S> prepend_num(const std::vector<S>& l, U num = 0) {
+		std::vector<S> prepend_num(const std::vector<S>& l, U num = 0) const {
 			std::vector<S> lp;
 			lp.reserve(l.size() + 1);
 			lp.push_back(static_cast<S>(num));
