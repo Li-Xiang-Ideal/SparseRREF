@@ -600,7 +600,7 @@ namespace SparseRREF {
 
 		ulong e_pr;
 		for (auto [r, c] : pivots) {
-			if (!nonzero_c.test(c)) [[likely]]
+			if (!nonzero_c.test(c))
 				continue;
 
 			T entry = tmpvec[c];
@@ -646,6 +646,82 @@ namespace SparseRREF {
 		}
 	}
 
+	// add a buffer to speed up of testing a position is zero or not
+	// it would be helpful when the matrix is very sparse
+	template <typename T, typename index_t>
+	void schur_complete_buffer(sparse_mat<T, index_t>& mat, size_t k,
+		const std::vector<pivot_t<index_t>>& pivots,
+		const field_t& F, T* tmpvec, SparseRREF::bit_array& nonzero_c) {
+
+		if (mat[k].nnz() == 0)
+			return;
+
+		std::array<size_t, 1024> buffer = { 0 };
+		for (auto [ind, val] : mat[k]) {
+			nonzero_c.insert(ind);
+			tmpvec[ind] = val;
+			buffer[ind % 1024]++;
+		}
+
+		std::vector<index_t> add_list;
+		std::vector<index_t> remove_list;
+		
+		ulong e_pr;
+		for (auto [r, c] : pivots) {
+			if (buffer[c % 1024] == 0)
+				continue;
+			if (!nonzero_c.test(c))
+				continue;
+
+			T entry = tmpvec[c];
+			add_list.clear();
+			remove_list.clear();
+
+			if constexpr (std::is_same_v<T, ulong>) {
+				e_pr = n_mulmod_precomp_shoup(tmpvec[c], F.mod.n);
+			}
+			for (auto [ind, val] : mat[r]) {
+				bool old_c = tmpvec[ind] == 0;
+				if constexpr (std::is_same_v<T, ulong>) {
+					tmpvec[ind] = _nmod_sub(tmpvec[ind],
+						n_mulmod_shoup(entry, val, e_pr, F.mod.n), F.mod);
+				}
+				else if constexpr (std::is_same_v<T, rat_t>) {
+					tmpvec[ind] -= entry * val;
+				}
+				else {
+					tmpvec[ind] = scalar_sub(tmpvec[ind], scalar_mul(entry, val, F), F);
+				}
+				if (tmpvec[ind] == 0) {
+					remove_list.push_back(ind);
+				}
+				else {
+					if (old_c)
+						add_list.push_back(ind);
+				}
+			}
+			for (auto ind : add_list) {
+				nonzero_c.insert(ind);
+				buffer[ind % 1024]++;
+			}
+			for (auto ind : remove_list) {
+				nonzero_c.erase(ind);
+				buffer[ind % 1024]--;
+			}
+		}
+
+		auto nnz = nonzero_c.nnz();
+		if (mat[k].alloc() < nnz) {
+			mat[k].reserve(nnz, false);
+		}
+		mat[k].resize(nnz);
+		nonzero_c.nonzero_and_clear(mat[k].indices);
+		for (size_t i = 0; i < nnz; i++) {
+			mat[k][i] = tmpvec[mat[k](i)];
+			tmpvec[mat[k](i)] = 0; // clear tmpvec for next use
+		}
+	}
+
 	// tempvec is of useless, only nonzero_c is used
 	template <typename index_t>
 	void schur_complete(sparse_mat<bool, index_t>& mat, size_t k,
@@ -674,29 +750,6 @@ namespace SparseRREF {
 		}
 		mat[k].resize(nnz);
 		nonzero_c.nonzero_and_clear(mat[k].indices);
-	}
-
-	template <typename T, typename index_t>
-	void schur_complete(sparse_mat<T, index_t>& mat, const std::vector<size_t>& rows,
-		const std::vector<pivot_t<index_t>>& pivots,
-		const field_t& F, T* tmpvec, bit_array* nonzero_c,
-		thread_pool* pool = nullptr) {
-
-		if (pool) {
-			auto nthreads = pool->get_thread_count();
-			pool->detach_blocks<size_t>(0, rows.size(), [&](const size_t s, const size_t e) {
-				auto id = SparseRREF::thread_id();
-				for (size_t i = s; i < e; i++) {
-					schur_complete(mat, rows[i], pivots, F, tmpvec + id * mat.ncol, nonzero_c[id]);
-				}
-				}, (rows.size() < 20 * nthreads ? 0 : rows.size() / 10));
-			pool->wait();
-			return;
-		}
-
-		for (size_t i = 0; i < rows.size(); i++) {
-			schur_complete(mat, rows[i], pivots, F, tmpvec, nonzero_c[0]);
-		}
 	}
 
 	// TODO: CHECK!!!
@@ -738,12 +791,17 @@ namespace SparseRREF {
 		int bitlen_nnz = (int)std::floor(std::log(now_nnz) / std::log(10)) + 2;
 		int bitlen_nrow = (int)std::floor(std::log(rank) / std::log(10)) + 1;
 
+		double density = (double)now_nnz / (mat.nrow * mat.ncol);
+		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		if (100 * density > 0.01)
+			schur_complete_func = &schur_complete<T, index_t>;
+
 		auto clock_begin = SparseRREF::clocknow();
 		std::atomic<size_t> cc = 0;
 		pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 			auto id = SparseRREF::thread_id();
 			for (size_t i = s; i < e; i++) {
-				schur_complete(mat, leftrows[i], sub_pivots, F, cachedensedmat + id * mat.ncol, nonzero_c[id]);
+				schur_complete_func(mat, leftrows[i], sub_pivots, F, cachedensedmat + id * mat.ncol, nonzero_c[id]);
 				cc++;
 			}
 			}, ((n_split < 20 * pool.get_thread_count()) ? 0 : leftrows.size() / 10));
@@ -887,6 +945,11 @@ namespace SparseRREF {
 
 		size_t rank = pivots[0].size();
 
+		double density = (double)mat.nnz() / (rank * mat.ncol);
+		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		if (100 * density > 0.01)
+			schur_complete_func = &schur_complete<T, index_t>;
+
 		for (size_t i = 1; i < pivots.size(); i++) {
 			if (pivots[i].size() == 0)
 				continue;
@@ -914,7 +977,7 @@ namespace SparseRREF {
 			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 				auto id = SparseRREF::thread_id();
 				for (size_t j = s; j < e; j++) {
-					schur_complete(mat, leftrows[j], pivots[i], F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+					schur_complete_func(mat, leftrows[j], pivots[i], F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 					cc++;
 					if (opt->abort)
 						return;
@@ -965,6 +1028,10 @@ namespace SparseRREF {
 		pool.detach_loop(0, mat.nrow, [&](auto i) { mat[i].compress(); });
 
 		size_t now_nnz = mat.nnz();
+		double density = (double)now_nnz / (mat.nrow * mat.ncol);
+		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		if (100 * density > 0.01)
+			schur_complete_func = &schur_complete<T, index_t>;
 
 		// store the pivots that have been used
 		// sv is not used
@@ -1123,7 +1190,7 @@ namespace SparseRREF {
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 					auto id = thread_id();
 					for (size_t i = s; i < e; i++) {
-						schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+						schur_complete_func(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 						done_count++;
 						if (opt->abort)
 							break;
@@ -1162,7 +1229,7 @@ namespace SparseRREF {
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 					auto id = thread_id();
 					for (size_t i = s; i < e; i++) {
-						schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+						schur_complete_func(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 						flags[i] = 1;
 						if (opt->abort)
 							break;
@@ -1290,6 +1357,10 @@ namespace SparseRREF {
 		bool verbose = opt->verbose;
 
 		size_t now_nnz = mat.nnz();
+		double density = (double)now_nnz / (mat.nrow * mat.ncol);
+		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		if (100 * density > 0.01)
+			schur_complete_func = &schur_complete<T, index_t>;
 
 		// store the pivots that have been used
 		// sv is not used
@@ -1457,7 +1528,7 @@ namespace SparseRREF {
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 					auto id = SparseRREF::thread_id();
 					for (size_t i = s; i < e; i++) {
-						schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+						schur_complete_func(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 						done_count++;
 						if (opt->abort)
 							break;
@@ -1496,7 +1567,7 @@ namespace SparseRREF {
 				pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 					auto id = SparseRREF::thread_id();
 					for (size_t i = s; i < e; i++) {
-						schur_complete(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+						schur_complete_func(mat, leftrows[i], n_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 						flags[i] = 1;
 						if (opt->abort)
 							break;
