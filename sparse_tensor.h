@@ -46,13 +46,6 @@ namespace SparseRREF {
 		return C;
 	}
 
-	// only for debug
-	template<typename T>
-	void print_p(T* a, size_t t) {
-		for (size_t i = 0; i < t; i++)
-			std::cout << (ulong)(a[i]) << " ";
-	}
-
 	// returned tensor is sorted
 	template <typename index_type, typename T>
 	sparse_tensor<T, index_type, SPARSE_COO> tensor_add(
