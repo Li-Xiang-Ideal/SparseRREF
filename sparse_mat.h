@@ -1688,11 +1688,56 @@ namespace SparseRREF {
 	// TODO: check!!! 
 	// checkrank only used for sparse_mat_inverse
 
-	// TODO: if the height of initial matrix is too large, the result may be wrong,
-	// since it need to more primes to reconstruct the matrix. 
-	// The correct condition: H(d*E)*H(mat)*ncol < product of primes
-	// where H is the height of a matrix, E is the reconstracted rref matrix
-	// d the denominartor of E such that d*E is a integer matrix
+	template <typename index_t>
+	int_t sparse_vec_denominator_lcm(const sparse_vec<rat_t, index_t>& vec) {
+		int_t d = 1;
+		for (size_t i = 0; i < vec.nnz(); i++) {
+			d = Flint::LCM(d, vec[i].den());
+		}
+		return d;
+	}
+
+	template <typename index_t>
+	int_t sparse_mat_denominator_lcm(const sparse_mat<rat_t, index_t>& mat) {
+		int_t d = 1;
+		for (size_t i = 0; i < mat.nrow; i++) {
+			d = Flint::LCM(d, sparse_vec_denominator_lcm(mat[i]));
+		}
+		return d;
+	}
+
+	template <typename index_t>
+	int_t sparse_vec_height(const sparse_vec<rat_t, index_t>& vec) {
+		if (vec.nnz() == 0)
+			return 0;
+		int_t d = sparse_vec_denominator_lcm(vec);
+		int_t h = (vec[0] * d).height();
+		for (size_t i = 1; i < vec.nnz(); i++) {
+			int_t hi = (vec[i] * d).height();
+			if (hi > h)
+				h = hi;
+		}
+		return h;
+	}
+
+	template <typename index_t>
+	int_t sparse_mat_height(const sparse_mat<rat_t, index_t>& mat) {
+		if (mat.nrow == 0)
+			return 0;
+
+		int_t h = sparse_vec_height(mat[0]);
+		for (size_t i = 1; i < mat.nrow; i++) {
+			int_t hi = sparse_vec_height(mat[i]);
+			if (hi > h)
+				h = hi;
+		}
+		return h;
+	}
+
+	// The condition to stop reconstruct: H(d*E)*H(mat)*ncol < product of primes
+	// where H is the height of a matrix (the maximal height of each entry), 
+	// E is the reconstracted rref matrix
+	// d is an integer such that d*E is a integer matrix
 	template <typename index_t>
 	std::vector<std::vector<pivot_t<index_t>>> sparse_mat_rref_reconstruct(
 		sparse_mat<rat_t, index_t>& mat, rref_option_t opt, const bool checkrank = false) {
@@ -1715,7 +1760,7 @@ namespace SparseRREF {
 			});
 		pool.wait();
 
-		ulong mat_height_bits = mat.height_bits() + 64 - std::countl_zero(mat.ncol);
+		int_t m_height = sparse_mat_height(mat);
 
 		pivots = sparse_mat_rref_forward(matul, F, opt);
 
@@ -1756,7 +1801,23 @@ namespace SparseRREF {
 		}
 
 		sparse_mat<int_t, index_t> matz(mat.nrow, mat.ncol);
-		if (!isok || mod.bits() < mat_height_bits) {
+
+		auto check_height_condition = [](const sparse_mat<rat_t, index_t>& matq,
+			const int_t& mod, const int_t& m_height) -> bool {
+			int_t d = sparse_mat_denominator_lcm(matq);
+			int_t h = 1;
+			for (size_t i = 0; i < matq.nrow; i++) {
+				for (size_t j = 0; j < matq[i].nnz(); j++) {
+					int_t hi = (matq[i][j] * d).num().abs(); // since denominator is 1, height() = num().abs()
+					if (hi > h)
+						h = hi;
+				}
+			}
+			return m_height * matq.ncol * h < mod;
+			};
+
+		if (!isok || !check_height_condition(matq, mod, m_height)) {
+			isok = false;
 			for (size_t i = 0; i < mat.nrow; i++)
 				matz[i] = matul[i];
 		}
@@ -1770,10 +1831,8 @@ namespace SparseRREF {
 		if (opt->abort)
 			return pivots;
 
-		ulong old_height = matq.height_bits();
-
 		// set rows not in pivots to zero
-		if (!isok || mod.bits() < mat_height_bits) {
+		if (!isok) {
 			std::vector<index_t> rowset(mat.nrow, sv);
 			for (auto p : pivots)
 				for (auto [r, c] : p)
@@ -1784,7 +1843,7 @@ namespace SparseRREF {
 				}
 		}
 
-		while (!isok || mod.bits() < mat_height_bits) {
+		while (!isok) {
 			isok = true;
 			prime = n_nextprime(prime, 0);
 			if (verbose)
@@ -1818,10 +1877,9 @@ namespace SparseRREF {
 
 			mod = mod1;
 
-			if (matq.height_bits() > old_height) {
-				isok = false;
-				old_height = matq.height_bits();
-			}
+			// if ok, check height condition
+			if (isok)
+				isok = check_height_condition(matq, mod, m_height);
 		}
 		opt->verbose = verbose;
 

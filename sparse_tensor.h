@@ -359,7 +359,7 @@ namespace SparseRREF {
 								ptrB = pB - index_B_cache.data();
 							}
 							else {
-								entry = scalar_add(std::move(entry), scalar_mul(A.val(permA[ptrA]), B.val(permB[ptrB]), F), F);
+								entry = scalar_add(entry, scalar_mul(A.val(permA[ptrA]), B.val(permB[ptrB]), F), F);
 								ptrA++; pA++;
 								ptrB++; pB++;
 							}
@@ -377,7 +377,7 @@ namespace SparseRREF {
 								ptrB = ((pB - index_B_cache.data()) / i1i2_size);
 							}
 							else {
-								entry = scalar_add(std::move(entry), scalar_mul(A.val(permA[ptrA]), B.val(permB[ptrB]), F), F);
+								entry = scalar_add(entry, scalar_mul(A.val(permA[ptrA]), B.val(permB[ptrB]), F), F);
 								ptrA++; pA += i1i2_size;
 								ptrB++; pB += i1i2_size;
 							}

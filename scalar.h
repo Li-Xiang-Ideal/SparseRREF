@@ -332,6 +332,11 @@ namespace Flint {
 		void operator++() { fmpq_add_ui(&_data, &_data, 1); }
 		void operator--() { fmpq_sub_ui(&_data, &_data, 1); }
 
+		int_t height() const {
+			int_t num_abs = num().abs();
+			int_t den_abs = den().abs();
+			return (num_abs > den_abs) ? num_abs : den_abs;
+		}
 		rat_t pow(const int_t& n) const { rat_t result; fmpq_pow_fmpz(&result._data, &_data, &n._data); return result; }
 		template <signed_builtin_integral T>
 		rat_t pow(const T n) const { rat_t result; fmpq_pow_si(&result._data, &_data, n); return result; }
@@ -507,31 +512,24 @@ namespace SparseRREF {
 		return _nmod_add(b, c, field.mod);
 	}
 	static inline int_t scalar_add(const int_t& b, const int_t& c, const field_t& field) { return b + c; }
-	static inline int_t scalar_add(int_t&& b, const int_t& c, const field_t& field) { b += c; return b; }
 	static inline rat_t scalar_add(const rat_t& b, const rat_t& c, const field_t& field) { return b + c; }
-	static inline rat_t scalar_add(rat_t&& b, const rat_t& c, const field_t& field) { b += c; return b; }
 
 	static inline ulong scalar_sub(const ulong b, const ulong c, const field_t& field) {
 		return _nmod_sub(b, c, field.mod);
 	}
 	static inline int_t scalar_sub(const int_t& b, const int_t& c, const field_t& field) { return b - c; }
-	static inline int_t scalar_sub(int_t&& b, const int_t& c, const field_t& field) { b -= c; return b; }
 	static inline rat_t scalar_sub(const rat_t& b, const rat_t& c, const field_t& field) { return b - c; }
-	static inline rat_t scalar_sub(rat_t&& b, const rat_t& c, const field_t& field) { b -= c; return b; }
 
 	static inline ulong scalar_mul(const ulong b, const ulong c, const field_t& field) {
 		return nmod_mul(b, c, field.mod);
 	}
 	static inline int_t scalar_mul(const int_t& b, const int_t& c, const field_t& field) { return b * c; }
-	static inline int_t scalar_mul(int_t&& b, const int_t& c, const field_t& field) { b *= c; return b; }
 	static inline rat_t scalar_mul(const rat_t& b, const rat_t& c, const field_t& field) { return b * c; }
-	static inline rat_t scalar_mul(rat_t&& b, const rat_t& c, const field_t& field) { b *= c; return b; }
 
 	static inline ulong scalar_div(const ulong b, const ulong c, const field_t& field) {
 		return nmod_div(b, c, field.mod);
 	}
 	static inline rat_t scalar_div(const rat_t& b, const rat_t& c, const field_t& field) { return b / c; }
-	static inline rat_t scalar_div(rat_t&& b, const rat_t& c, const field_t& field) { b /= c; return b; }
 
 } // namespace SparseRREF
 
