@@ -263,6 +263,11 @@ namespace SparseRREF {
 			_nnz++;
 		}
 
+		void pop_back() {
+			if (_nnz != 0)
+				_nnz--;
+		}
+
 		// take a span of elements
 		// sparse_vec.take({start, end}) returns a sparse_vec with elements indexed in [start, end)
 		// elements in the resulting sparse_vec are reindexed in [0, end - start)
@@ -469,6 +474,11 @@ namespace SparseRREF {
 				reserve((1 + _alloc) * 2); // +1 to avoid _alloc = 0
 			indices[_nnz] = index;
 			_nnz++;
+		}
+
+		void pop_back() {
+			if (_nnz != 0)
+				_nnz--;
 		}
 
 		index_t& operator()(const size_t pos) { return indices[pos]; }
@@ -871,7 +881,7 @@ namespace SparseRREF {
 				std::fill(rowptr.begin(), rowptr.end(), 0);
 		}
 
-		inline size_t nnz() {
+		inline size_t nnz() const {
 			return rowptr[dims[0]];
 		}
 
@@ -2205,7 +2215,7 @@ namespace SparseRREF {
 		using const_index_p = const index_t*;
 
 		template <typename S, typename U = S> requires std::convertible_to<U, S>
-		std::vector<S> prepend_num(const std::vector<S>& l, U num = 0) {
+		std::vector<S> prepend_num(const std::vector<S>& l, U num = 0) const {
 			std::vector<S> lp;
 			lp.reserve(l.size() + 1);
 			lp.push_back(static_cast<S>(num));
@@ -2347,6 +2357,7 @@ namespace SparseRREF {
 			data.rowptr[1]++; // increase the nnz
 		}
 		void push_back(const index_v& l, const T& new_val) { push_back(l.data(), new_val); }
+		void pop_back() { if (data.rowptr[1] != 0) data.rowptr[1]--; }
 		inline void canonicalize() { data.canonicalize(); }
 		inline void sort_indices(thread_pool* pool = nullptr) { data.sort_indices(pool); }
 		inline sparse_tensor transpose(const std::vector<size_t>& perm, thread_pool* pool = nullptr, const bool sort_ind = true) const {

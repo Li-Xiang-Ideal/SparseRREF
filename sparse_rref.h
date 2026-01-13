@@ -57,10 +57,10 @@
 
 namespace SparseRREF {
 	// version
-	static const char version[] = "v0.3.5";
+	static const char version[] = "v0.3.6";
 	static const int version_major = 0;
 	static const int version_minor = 3;
-	static const int version_patch = 5;
+	static const int version_patch = 6;
 
 	enum SPARSE_FILE_TYPE {
 		SPARSE_FILE_TYPE_PLAIN,
@@ -341,41 +341,47 @@ namespace SparseRREF {
 			std::fill(data.begin(), data.end(), 0);
 		}
 
-		void resize(size_t size) {
+		void resize(const size_t size) {
 			data.resize(size / 64 + 1);
 			clear();
 		}
 
-		bit_array(size_t size) {
+		bit_array(const size_t size) {
 			resize(size);
 			clear();
 		}
 
-		void insert(size_t val) {
+		void insert(const size_t val) {
 			auto idx = val >> 6;
 			auto pos = val & 63;
 			data[idx] |= mask_table[pos];
 		}
 
-		bool test(size_t val) const {
+		bool test(const size_t val) const {
 			auto idx = val >> 6;
 			auto pos = val & 63;
 			return data[idx] & mask_table[pos];
 		}
 
-		void erase(size_t val) {
+		void erase(const size_t val) {
 			auto idx = val >> 6;
 			auto pos = val & 63;
 			data[idx] &= ~mask_table[pos];
 		}
 
-		void xor_insert(size_t val) {
+		void xor_insert(const size_t val) {
 			auto idx = val >> 6;
 			auto pos = val & 63;
 			data[idx] ^= mask_table[pos];
 		}
 
-		bool operator[](size_t idx) const {
+		void set(const size_t val, const bool b) {
+			auto idx = val >> 6;
+			auto pos = val & 63;
+			data[idx] = (data[idx] & ~mask_table[pos]) | (uint64_t(b) << pos);
+		}
+
+		bool operator[](const size_t idx) const {
 			return test(idx);
 		}
 
