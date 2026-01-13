@@ -1709,7 +1709,7 @@ namespace SparseRREF {
 	template <typename index_t>
 	int_t sparse_vec_height(const sparse_vec<rat_t, index_t>& vec) {
 		if (vec.nnz() == 0)
-			return 0;
+			return 1;
 		int_t d = sparse_vec_denominator_lcm(vec);
 		int_t h = (vec[0] * d).height();
 		for (size_t i = 1; i < vec.nnz(); i++) {
@@ -1723,7 +1723,7 @@ namespace SparseRREF {
 	template <typename index_t>
 	int_t sparse_mat_height(const sparse_mat<rat_t, index_t>& mat) {
 		if (mat.nrow == 0)
-			return 0;
+			return 1;
 
 		int_t h = sparse_vec_height(mat[0]);
 		for (size_t i = 1; i < mat.nrow; i++) {
