@@ -653,6 +653,11 @@ namespace SparseRREF {
 		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, T* tmpvec, SparseRREF::bit_array& nonzero_c) {
 
+		if constexpr (std::is_same_v<T, bool>) {
+			schur_complete(mat, k, pivots, F, tmpvec, nonzero_c);
+			return;
+		}
+
 		if (mat[k].nnz() == 0)
 			return;
 
@@ -891,8 +896,98 @@ namespace SparseRREF {
 		triangular_solver_2(mat, n_pivots, F, opt);
 	}
 
-	// TODO: TEST!!! 
-	// TODO: add ordering
+	template <typename T, typename index_t>
+	std::vector<pivot_t<index_t>> sparse_mat_direct_rref_part(sparse_mat<T, index_t>& mat,
+		const std::vector<std::vector<pivot_t<index_t>>>& sub_pivots,
+		const field_t& F, rref_option_t opt,
+		std::vector<T>& cachedensedmat, std::vector<SparseRREF::bit_array>& nonzero_c) {
+
+		if (sub_pivots.size() <= 1)
+			return std::vector<pivot_t<index_t>>();
+
+		auto& pool = opt->pool;
+		auto nthreads = pool.get_thread_count();
+		
+		std::vector<pivot_t<index_t>> combined_pivots;
+		size_t nnz = 0;
+		size_t total_rank = 0;
+		for (auto& p : sub_pivots) {
+			combined_pivots.insert(combined_pivots.end(), p.begin(), p.end());
+			for (auto [r, c] : p) {
+				nnz += mat[r].nnz();
+				total_rank++;
+			}
+		}
+
+		double density = (double)(nnz) / (total_rank * mat.ncol);
+		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		if (100 * density > 0.01)
+			schur_complete_func = &schur_complete<T, index_t>;
+
+		std::vector<size_t> leftrows;
+		leftrows.reserve(total_rank);
+		for (auto rp = sub_pivots.rbegin(); rp != sub_pivots.rend(); rp++) {
+			for (auto p = rp->rbegin(); p != rp->rend(); p++) {
+				leftrows.push_back(p->r);
+			}
+		}
+
+		size_t rank = 0;
+		for (const auto& pivs : sub_pivots) {
+			if (pivs.size() == 0)
+				continue;
+
+			// rescale the pivots
+			pool.detach_loop(0, pivs.size(), [&](size_t j) {
+				auto [r, c] = pivs[j];
+				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
+				sparse_vec_rescale(mat[r], scalar, F);
+				mat[r].reserve(mat[r].nnz());
+				});
+
+			// remove the used rows
+			leftrows.resize(leftrows.size() - pivs.size());
+			pool.wait();
+
+			// upper solver
+			std::atomic<size_t> cc = 0;
+			size_t old_cc = cc;
+			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
+				auto id = SparseRREF::thread_id();
+				for (size_t j = s; j < e; j++) {
+					schur_complete_func(mat, leftrows[j], pivs, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+					cc++;
+					if (opt->abort)
+						return;
+				}
+				}, ((leftrows.size() < 20 * nthreads) ? 0 : leftrows.size() / 10));
+
+			if (opt->verbose) {
+				auto cn = clocknow();
+				while (cc < leftrows.size()) {
+					if (opt->abort) {
+						pool.purge();
+						return combined_pivots;
+					}
+					if (cc - old_cc > opt->print_step) {
+						std::cout << "\r-- Row: "
+							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * pivs.size())
+							<< "/" << total_rank << "  nnz: " << mat.nnz()
+							<< "  alloc: " << mat.alloc()
+							<< "  speed: " << (((cc - old_cc) * 1.0 / leftrows.size()) * pivs.size() / usedtime(cn, clocknow()))
+							<< " row/s          " << std::flush;
+						old_cc = cc;
+						cn = clocknow();
+					}
+				}
+			}
+			pool.wait();
+			rank += pivs.size();
+		}
+
+		return combined_pivots;
+	}
+
 	// if already know the pivots, we can directly do the rref
 	// if the pivots are of submatrix, it is dangerous to set clear_zero_row to true
 	template <typename T, typename index_t>
@@ -900,7 +995,6 @@ namespace SparseRREF {
 		const std::vector<std::vector<pivot_t<index_t>>>& pivots,
 		const field_t& F, rref_option_t opt, const bool clear_zero_row = true) {
 		auto& pool = opt->pool;
-
 		constexpr index_t sv = index_sval<index_t>();
 
 		// first set rows not in pivots to zero
@@ -924,7 +1018,6 @@ namespace SparseRREF {
 		for (auto [r, c] : pivots[0]) {
 			mat[r].zero();
 			mat[r].push_back(c, 1);
-			rowset[r] = sv;
 		}
 
 		for (size_t i = 0; i < mat.nrow; i++) {
@@ -936,8 +1029,6 @@ namespace SparseRREF {
 			eliminate_row_with_one_nnz(mat, donelist, opt);
 		}
 
-		std::vector<size_t> leftrows;
-
 		// then do the elimination parallelly
 		auto nthreads = pool.get_thread_count();
 		std::vector<T> cachedensedmat(mat.ncol * nthreads);
@@ -945,30 +1036,55 @@ namespace SparseRREF {
 
 		size_t rank = pivots[0].size();
 
-		double density = (double)mat.nnz() / (rank * mat.ncol);
+		double density = (double)mat.nnz() / (total_rank * mat.ncol);
 		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
 		if (100 * density > 0.01)
 			schur_complete_func = &schur_complete<T, index_t>;
 
+		std::vector<size_t> leftrows;
+		leftrows.reserve(total_rank);
+		for (auto rp = pivots.rbegin(); rp != pivots.rend(); rp++) {
+			for (auto p = rp->rbegin(); p != rp->rend(); p++) {
+				leftrows.push_back(p->r);
+			}
+		}
+		leftrows.resize(leftrows.size() - pivots[0].size());
+
+		std::vector<pivot_t<index_t>> used_pivots;
 		for (size_t i = 1; i < pivots.size(); i++) {
 			if (pivots[i].size() == 0)
 				continue;
 
-			// rescale the pivots
-			pool.detach_loop(0, pivots[i].size(), [&](size_t j) {
-				auto [r, c] = pivots[i][j];
-				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
-				sparse_vec_rescale(mat[r], scalar, F);
-				mat[r].reserve(mat[r].nnz());
-				rowset[r] = sv;
-				});
-			pool.wait();
-
-			leftrows.clear();
-			for (size_t j = 0; j < mat.nrow; j++) {
-				if (rowset[j] != sv && mat[j].nnz() > 0)
-					leftrows.push_back(j);
+			used_pivots.clear();
+			if (pivots[i].size() < 512) {
+				size_t trank = 0;
+				std::vector<std::vector<pivot_t<index_t>>> sub_pivots;
+				for (size_t ni = i; ni < pivots.size(); ni++) {
+					trank += pivots[ni].size();
+					sub_pivots.push_back(pivots[ni]);
+					if (trank > 4096) {
+						i = ni;
+						break;
+					}	
+				}
+				used_pivots = sparse_mat_direct_rref_part(mat, sub_pivots, F, opt, cachedensedmat, nonzero_c);
 			}
+
+			if (used_pivots.size() == 0) {
+				used_pivots = pivots[i];
+				// rescale the pivots
+				pool.detach_loop(0, used_pivots.size(), [&](size_t j) {
+					auto [r, c] = used_pivots[j];
+					T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
+					sparse_vec_rescale(mat[r], scalar, F);
+					mat[r].reserve(mat[r].nnz());
+					});
+				pool.wait();
+			}
+
+			leftrows.resize(leftrows.size() - used_pivots.size());
+			if (leftrows.size() == 0) // done
+				break;
 
 			// upper solver
 			// TODO: check mode
@@ -977,7 +1093,7 @@ namespace SparseRREF {
 			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 				auto id = SparseRREF::thread_id();
 				for (size_t j = s; j < e; j++) {
-					schur_complete_func(mat, leftrows[j], pivots[i], F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
+					schur_complete_func(mat, leftrows[j], used_pivots, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
 					cc++;
 					if (opt->abort)
 						return;
@@ -993,10 +1109,10 @@ namespace SparseRREF {
 					}
 					if (cc - old_cc > opt->print_step) {
 						std::cout << "\r-- Row: "
-							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * pivots[i].size())
+							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * used_pivots.size())
 							<< "/" << total_rank << "  nnz: " << mat.nnz()
 							<< "  alloc: " << mat.alloc()
-							<< "  speed: " << (((cc - old_cc) * 1.0 / leftrows.size()) * pivots[i].size() / usedtime(cn, clocknow()))
+							<< "  speed: " << (((cc - old_cc) * 1.0 / leftrows.size()) * used_pivots.size() / usedtime(cn, clocknow()))
 							<< " row/s          " << std::flush;
 						old_cc = cc;
 						cn = clocknow();
@@ -1004,7 +1120,7 @@ namespace SparseRREF {
 				}
 			}
 			pool.wait();
-			rank += pivots[i].size();
+			rank += used_pivots.size();
 		}
 		if (opt->verbose) {
 			std::cout << std::endl;
