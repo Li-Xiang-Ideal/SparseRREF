@@ -111,17 +111,23 @@ The Mathematica package [SparseRREF.m](SparseRREF.m) allows to call functions ex
 
 Example usage:
 ```mathematica
+(* Needs["SparseRREF`"]; *)
 Needs["SparseRREF`", "/path/to/SparseRREF.m"];
-mat = SparseArray @ { {1, 0}, {1/2, 1/3} };
+
+mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
 rref = RationalRREF[mat];
 {rref, kernel, pivots} = RationalRREF[mat, OutputMode -> 3, Method -> 1, Threads -> $ProcessorCount];
+
+mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
+p = 7;
+{rref, kernel} = ModRREF[mat, p, OutputMode -> 1, Threads -> $ProcessorCount];
 ```
 
 To use this package, you have to compile [mma_link.cpp](mma_link.cpp) to a shared library (`mathlink.dll` on Windows, `mathlink.so` on Linux, `mathlink.dylib` on macOS) in the same directory with [SparseRREF.m](SparseRREF.m).
 
 See comments in [SparseRREF.m](SparseRREF.m) for more details.
 
-**TODO**: Currently, the package contains only the function `RationalRREF[]`.
+**TODO**: Currently, the package contains only the functions `RationalRREF[]` and `ModRREF[]`.
 
 ### BenchMark
 
