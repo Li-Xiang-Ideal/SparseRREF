@@ -28,6 +28,8 @@
 
 BeginPackage["SparseRREF`"];
 
+Unprotect["SparseRREF`*"];
+
 
 Options[RationalRREF] = {
   OutputMode -> 0,
@@ -135,8 +137,10 @@ ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] :=
     ]
   ];
 
-End[];
+With[{syms = Names["SparseRREF`*"]},
+  SetAttributes[syms, {Protected, ReadProtected}]
+];  
 
-Protect[RationalRREF, ModRREF, OutputMode, Threads];
+End[];
 
 EndPackage[];
