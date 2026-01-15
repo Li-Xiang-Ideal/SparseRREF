@@ -13,38 +13,47 @@
   - RationalRREF
   - ModRREF
 
+  Options:
+  - "OutputMode":
+    0: rref
+    1: {rref, kernel}
+    2: {rref, pivots}
+    3: {rref, kernel, pivots}
+  - "Method":
+    0: right and left search
+    1: only right search (chooses the leftmost independent columns as pivots)
+    2: hybrid
+  - "Threads": number of threads (integer).
+
+  ModRREF supports only "OutputMode" -> 0 and 1, and does not support "Method".
+
+
   Example usage:
-    (* Needs["SparseRREF`"]; *)
-    Needs["SparseRREF`", "/path/to/SparseRREF.m"];
+    Needs["SparseRREF`"];
+    (* or: Needs["SparseRREF`", "/path/to/SparseRREF.m"]; *)
     
     mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
     rref = RationalRREF[mat];
-    {rref, kernel, pivots} = RationalRREF[mat, OutputMode -> 3, Method -> 1, Threads -> $ProcessorCount];
+    {rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> 3, "Method" -> 1, "Threads" -> $ProcessorCount];
 
     mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
     p = 7;
-    {rref, kernel} = ModRREF[mat, p, OutputMode -> 1, Threads -> $ProcessorCount];
+    {rref, kernel} = ModRREF[mat, p, "OutputMode" -> 1, "Threads" -> $ProcessorCount];
 *)
 
 BeginPackage["SparseRREF`"];
 
 Unprotect["SparseRREF`*"];
 
-
+(* TODO: use meaningful names instead of integers for OutputMode and Method *)
 Options[RationalRREF] = {
-  OutputMode -> 0,
-  (* Pivot search method:
-    0: right and left search
-    1: only right search
-    2: hybrid
-    NB: we don't define SparseRREF`Method to avoid collisions with System`Method
-  *)
-  Method -> 0,
-  Threads -> 1
+  "OutputMode" -> 0,
+  "Method" -> 0,
+  "Threads" -> 1
 };
 Options[ModRREF] = {
-  OutputMode -> 0,
-  Threads -> 1
+  "OutputMode" -> 0,
+  "Threads" -> 1
 }
 
 RationalRREF::usage =
@@ -56,16 +65,6 @@ ModRREF::usage =
 
 SyntaxInformation[RationalRREF] = {"ArgumentsPattern" -> {_, OptionsPattern[]}}
 SyntaxInformation[ModRREF] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}}
-
-(* TODO: use meaningful names instead of integers*)
-OutputMode::usage =
-  "Output mode for RationalRREF and ModRREF:
-  0: rref
-  1: {rref, kernel}
-  2: {rref, pivots}
-  3: {rref, kernel, pivots}";
-
-Threads::usage = "Number of threads used by SparseRREF functions.";
 
 
 Begin["`Private`"];
@@ -95,9 +94,9 @@ RationalRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
   BinaryDeserialize @
     $rationalRREFLibFunction[
       BinarySerialize[mat],
-      OptionValue[OutputMode],
-      OptionValue[Method],
-      OptionValue[Threads]
+      OptionValue["OutputMode"],
+      OptionValue["Method"],
+      OptionValue["Threads"]
     ];
 
 $modRREFLibFunction = 
@@ -119,11 +118,11 @@ ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] :=
       joinedmat = $modRREFLibFunction[
         mat,
         p,
-        OptionValue[OutputMode],
-        OptionValue[Threads]
+        OptionValue["OutputMode"],
+        OptionValue["Threads"]
       ]
     },
-    Switch[OptionValue[OutputMode],
+    Switch[OptionValue["OutputMode"],
       0,
       joinedmat,
       1,
@@ -131,7 +130,7 @@ ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] :=
         joinedmat[[;; Length @ mat]],
         Transpose[joinedmat[[Length @ mat + 1;;]]]
       },
-      (* TODO: support OutputMode -> 2 and 3 (pivots), similar to RationalRREF *)
+      (* TODO: support "OutputMode" -> 2 and 3 (pivots), similar to RationalRREF *)
       _,
       $Failed
     ]
