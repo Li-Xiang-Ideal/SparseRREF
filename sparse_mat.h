@@ -932,7 +932,6 @@ namespace SparseRREF {
 			}
 		}
 
-		size_t rank = 0;
 		for (const auto& pivs : sub_pivots) {
 			if (pivs.size() == 0)
 				continue;
@@ -950,39 +949,16 @@ namespace SparseRREF {
 			pool.wait();
 
 			// upper solver
-			std::atomic<size_t> cc = 0;
-			size_t old_cc = cc;
 			pool.detach_blocks<size_t>(0, leftrows.size(), [&](const size_t s, const size_t e) {
 				auto id = SparseRREF::thread_id();
 				for (size_t j = s; j < e; j++) {
 					schur_complete_func(mat, leftrows[j], pivs, F, cachedensedmat.data() + id * mat.ncol, nonzero_c[id]);
-					cc++;
 					if (opt->abort)
 						return;
 				}
 				}, ((leftrows.size() < 20 * nthreads) ? 0 : leftrows.size() / 10));
 
-			if (opt->verbose) {
-				auto cn = clocknow();
-				while (cc < leftrows.size()) {
-					if (opt->abort) {
-						pool.purge();
-						return combined_pivots;
-					}
-					if (cc - old_cc > opt->print_step) {
-						std::cout << "\r-- Row: "
-							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * pivs.size())
-							<< "/" << total_rank << "  nnz: " << mat.nnz()
-							<< "  alloc: " << mat.alloc()
-							<< "  speed: " << (((cc - old_cc) * 1.0 / leftrows.size()) * pivs.size() / usedtime(cn, clocknow()))
-							<< " row/s          " << std::flush;
-						old_cc = cc;
-						cn = clocknow();
-					}
-				}
-			}
 			pool.wait();
-			rank += pivs.size();
 		}
 
 		return combined_pivots;
@@ -1049,6 +1025,9 @@ namespace SparseRREF {
 			}
 		}
 		leftrows.resize(leftrows.size() - pivots[0].size());
+		
+		int bitlen_nrow = (int)std::floor(std::log(total_rank) / std::log(10)) + 1;
+		int bitlen_nnz = (int)std::floor(std::log(mat.nnz()) / std::log(10)) + 2;
 
 		std::vector<pivot_t<index_t>> used_pivots;
 		for (size_t i = 1; i < pivots.size(); i++) {
@@ -1108,9 +1087,9 @@ namespace SparseRREF {
 						return;
 					}
 					if (cc - old_cc > opt->print_step) {
-						std::cout << "\r-- Row: "
+						std::cout << "\r-- Row: " << std::setw(bitlen_nrow)
 							<< (int)std::floor(rank + (cc * 1.0 / leftrows.size()) * used_pivots.size())
-							<< "/" << total_rank << "  nnz: " << mat.nnz()
+							<< "/" << total_rank << "  nnz: " << std::setw(bitlen_nnz) << mat.nnz()
 							<< "  alloc: " << mat.alloc()
 							<< "  speed: " << (((cc - old_cc) * 1.0 / leftrows.size()) * used_pivots.size() / usedtime(cn, clocknow()))
 							<< " row/s          " << std::flush;
