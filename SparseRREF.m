@@ -90,15 +90,6 @@ $rationalRREFLibFunction =
     {LibraryDataType[ByteArray], Automatic}
   ];
 
-RationalRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
-  BinaryDeserialize @
-    $rationalRREFLibFunction[
-      BinarySerialize[mat],
-      OptionValue["OutputMode"],
-      OptionValue["Method"],
-      OptionValue["Threads"]
-    ];
-
 $modRREFLibFunction = 
   LibraryFunctionLoad[
     $sparseRREFLib,
@@ -111,6 +102,15 @@ $modRREFLibFunction =
     },
     {LibraryDataType[SparseArray], Automatic}
   ];
+
+RationalRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
+  BinaryDeserialize @
+    $rationalRREFLibFunction[
+      BinarySerialize[mat],
+      OptionValue["OutputMode"],
+      OptionValue["Method"],
+      OptionValue["Threads"]
+    ];
 
 ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] := 
   With[
