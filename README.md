@@ -116,7 +116,7 @@ Needs["SparseRREF`"];
 
 mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
 rref = RationalRREF[mat];
-{rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> 3, "Method" -> 1, "Threads" -> $ProcessorCount];
+{rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> 3, "Method" -> "Right", "Threads" -> $ProcessorCount];
 
 mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
 p = 7;

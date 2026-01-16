@@ -20,9 +20,9 @@
     2: {rref, pivots}
     3: {rref, kernel, pivots}
   - "Method":
-    0: right and left search
-    1: only right search (chooses the leftmost independent columns as pivots)
-    2: hybrid
+    0, "RightAndLeft": right and left search
+    1, "Right": only right search (chooses the leftmost independent columns as pivots)
+    2, "Hybrid": hybrid
   - "Threads": number of threads (integer).
 
   ModRREF supports only "OutputMode" -> 0 and 1, and does not support "Method".
@@ -34,7 +34,7 @@
     
     mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
     rref = RationalRREF[mat];
-    {rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> 3, "Method" -> 1, "Threads" -> $ProcessorCount];
+    {rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> 3, "Method" -> "Right", "Threads" -> $ProcessorCount];
 
     mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
     p = 7;
@@ -48,7 +48,7 @@ Unprotect["SparseRREF`*"];
 (* TODO: use meaningful names instead of integers for OutputMode and Method *)
 Options[RationalRREF] = {
   "OutputMode" -> 0,
-  "Method" -> 0,
+  "Method" -> "RightAndLeft",
   "Threads" -> 1
 };
 Options[ModRREF] = {
@@ -68,6 +68,8 @@ SyntaxInformation[ModRREF] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}}
 
 
 Begin["`Private`"];
+
+(* Load SparseRREF library *)
 
 $sparseRREFDirectory = DirectoryName[$InputFileName];
 
@@ -103,14 +105,45 @@ $modRREFLibFunction =
     {LibraryDataType[SparseArray], Automatic}
   ];
 
+(* Helper functions *)
+
+option::value = "Invalid `1` option value: `2` -> `3`. Allowed values: `4`";
+
+methodToInteger = <|
+  0 -> 0,
+  1 -> 1,
+  2 -> 2,
+  "RightAndLeft" -> 0,
+  "Right" -> 1,
+  "Hybrid" -> 2
+|>;
+
+(* Public functions *)
+
 RationalRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
-  BinaryDeserialize @
-    $rationalRREFLibFunction[
-      BinarySerialize[mat],
-      OptionValue["OutputMode"],
-      OptionValue["Method"],
-      OptionValue["Threads"]
+  With[
+    {
+      $outputMode = OptionValue["OutputMode"],
+      $method = methodToInteger @ OptionValue["Method"],
+      $threads = OptionValue["Threads"]
+    },
+    If[MissingQ[$method],
+      Message[
+        option::value,
+        "RationalRREF", 
+        InputForm["Method"], 
+        InputForm @ OptionValue["Method"],
+        InputForm @ Keys[methodToInteger]
+      ];
+      Return[$Failed];
     ];
+    BinaryDeserialize @ $rationalRREFLibFunction[
+      BinarySerialize[mat],
+      $outputMode,
+      $method,
+      $threads
+    ]
+  ];
 
 ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] := 
   With[
