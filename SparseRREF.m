@@ -17,16 +17,13 @@
   - "OutputMode" - return value of a function:
     0, "RREF": rref
     1, "RREF,Kernel": {rref, kernel}
-    2, "RREF,Pivots": {rref, pivots}
-    3, "RREF,Kernel,Pivots": {rref, kernel, pivots}
+    2, "RREF,Pivots": {rref, pivots} (only RationalRREF)
+    3, "RREF,Kernel,Pivots": {rref, kernel, pivots} (only RationalRREF)
   - "Method":
     0, "RightAndLeft": right and left search
     1, "Right": only right search (chooses the leftmost independent columns as pivots)
     2, "Hybrid": hybrid
   - "Threads": number of threads (nonnegative integer).
-
-  ModRREF supports only "OutputMode" -> 0 and 1, and does not support "Method".
-
 
   Example usage:
     Needs["SparseRREF`"];
@@ -34,26 +31,22 @@
     
     mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
     rref = RationalRREF[mat];
-    {rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> 3, "Method" -> "Right", "Threads" -> $ProcessorCount];
+    {rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "Threads" -> $ProcessorCount];
 
     mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
     p = 7;
-    {rref, kernel} = ModRREF[mat, p, "OutputMode" -> 1, "Threads" -> $ProcessorCount];
+    {rref, kernel} = ModRREF[mat, p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
 *)
 
 BeginPackage["SparseRREF`"];
 
 Unprotect["SparseRREF`*"];
 
-Options[RationalRREF] = {
+Options[RationalRREF] = Options[ModRREF] = {
   "OutputMode" -> "RREF",
   "Method" -> "RightAndLeft",
   "Threads" -> 1
 };
-Options[ModRREF] = {
-  "OutputMode" -> "RREF",
-  "Threads" -> 1
-}
 
 RationalRREF::usage =
   "RationalRREF[mat, opts] computes the exact RREF of a sparse rational matrix. " <>
@@ -97,6 +90,7 @@ $modRREFLibFunction =
     "modrref",
     {
       {LibraryDataType[SparseArray], "Constant"},
+      {Integer},
       {Integer},
       {Integer},
       {Integer}
@@ -193,6 +187,7 @@ ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] :=
   Catch @ With[
     {
       $outputMode = parseOutputMode[ModRREF] @ OptionValue["OutputMode"],
+      $method = parseMethod[ModRREF] @ OptionValue["Method"],
       $threads = parseThreads[ModRREF] @ OptionValue["Threads"]
     },
     With[
@@ -201,6 +196,7 @@ ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] :=
           mat,
           p,
           $outputMode,
+          $method,
           $threads
         ]
       },

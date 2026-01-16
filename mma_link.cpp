@@ -157,12 +157,13 @@ EXTERN_C DLLEXPORT int modpmatmul(WolframLibraryData ld, mint Argc, MArgument* A
 }
 
 EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args, MArgument Res) {
-	if (Argc != 4)
+	if (Argc != 5)
 		return LIBRARY_FUNCTION_ERROR;
 	auto mat = MArgument_getMSparseArray(Args[0]);
 	auto p = MArgument_getInteger(Args[1]);
 	auto output_kernel = MArgument_getInteger(Args[2]);
-	auto nthreads = MArgument_getInteger(Args[3]);
+	auto method = MArgument_getInteger(Args[3]);
+	auto nthreads = MArgument_getInteger(Args[4]);
 
 	auto sf = ld->sparseLibraryFunctions;
 
@@ -176,6 +177,7 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 	field_t F(FIELD_Fp, p);
 
 	rref_option_t opt;
+	opt->method = method;
 	opt->pool.reset(nthreads);
 
 	auto pivots = sparse_mat_rref(A, F, opt);

@@ -120,7 +120,7 @@ rref = RationalRREF[mat];
 
 mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
 p = 7;
-{rref, kernel} = ModRREF[mat, p, "OutputMode" -> "RREF,Kernel", "Threads" -> $ProcessorCount];
+{rref, kernel} = ModRREF[mat, p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
 ```
 
 To use this package, you have to compile [mma_link.cpp](mma_link.cpp) to a shared library (`mathlink.dll` on Windows, `mathlink.so` on Linux, `mathlink.dylib` on macOS) in the same directory with [SparseRREF.m](SparseRREF.m).
