@@ -14,16 +14,16 @@
   - ModRREF
 
   Options:
-  - "OutputMode":
-    0: rref
-    1: {rref, kernel}
-    2: {rref, pivots}
-    3: {rref, kernel, pivots}
+  - "OutputMode" - return value of a function:
+    0, "RREF": rref
+    1, "RREF,Kernel": {rref, kernel}
+    2, "RREF,Pivots": {rref, pivots}
+    3, "RREF,Kernel,Pivots": {rref, kernel, pivots}
   - "Method":
     0, "RightAndLeft": right and left search
     1, "Right": only right search (chooses the leftmost independent columns as pivots)
     2, "Hybrid": hybrid
-  - "Threads": number of threads (integer).
+  - "Threads": number of threads (nonnegative integer).
 
   ModRREF supports only "OutputMode" -> 0 and 1, and does not support "Method".
 
@@ -45,14 +45,13 @@ BeginPackage["SparseRREF`"];
 
 Unprotect["SparseRREF`*"];
 
-(* TODO: use meaningful names instead of integers for OutputMode and Method *)
 Options[RationalRREF] = {
-  "OutputMode" -> 0,
+  "OutputMode" -> "RREF",
   "Method" -> "RightAndLeft",
   "Threads" -> 1
 };
 Options[ModRREF] = {
-  "OutputMode" -> 0,
+  "OutputMode" -> "RREF",
   "Threads" -> 1
 }
 
@@ -109,6 +108,17 @@ $modRREFLibFunction =
 
 option::value = "Invalid `1` option value: `2` -> `3`. Allowed values: `4`";
 
+throwOptionError[f_, optionName_?StringQ, optionValue_, allowedValues_] := (
+  Message[
+    option::value,
+    f,
+    InputForm[optionName], 
+    InputForm @ optionValue,
+    allowedValues
+  ];
+  Throw[$Failed];
+);
+
 methodToInteger = <|
   0 -> 0,
   1 -> 1,
@@ -118,25 +128,59 @@ methodToInteger = <|
   "Hybrid" -> 2
 |>;
 
+(* TODO: maybe allow arbitrary lists, e.g. {"Pivots", "RREF", "Kernel"}? *)
+outputModeToInteger[RationalRREF] = <|
+  0 -> 0,
+  1 -> 1,
+  2 -> 2,
+  3 -> 3,
+  "RREF" -> 0,
+  "RREF,Kernel" -> 1,
+  "RREF,Pivots" -> 2,
+  "RREF,Kernel,Pivots" -> 3
+|>;
+
+(* TODO: modrref cannot return pivots, so only 0 and 1 are allowed. *)
+outputModeToInteger[ModRREF] =
+  Select[
+    outputModeToInteger[RationalRREF], 
+    MemberQ[{0, 1}, #] &
+  ];
+
+parseMethod[f_][method_] :=
+  With[
+    {$res = methodToInteger[method]},
+    If[MissingQ[$res],
+      throwOptionError[f, "Method", method, InputForm @ Keys @ methodToInteger],
+      $res
+    ]
+  ];
+
+parseOutputMode[f_][outputMode_] :=
+  With[
+    {$res = outputModeToInteger[f][outputMode]},
+    If[MissingQ[$res],
+      throwOptionError[f, "OutputMode", outputMode, InputForm @ Keys @ outputModeToInteger @ f],
+      $res
+    ]
+  ];
+
+parseThreads[f_][threads_] :=
+  If[IntegerQ[threads] && threads >= 0,
+    threads,
+    throwOptionError[f, "Threads", threads, "0,1,2..." ]
+  ];
+
+
 (* Public functions *)
 
 RationalRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
-  With[
+  Catch @ With[
     {
-      $outputMode = OptionValue["OutputMode"],
-      $method = methodToInteger @ OptionValue["Method"],
-      $threads = OptionValue["Threads"]
+      $outputMode = parseOutputMode[RationalRREF] @ OptionValue["OutputMode"],
+      $method = parseMethod[RationalRREF] @ OptionValue["Method"],
+      $threads = parseThreads[RationalRREF] @ OptionValue["Threads"]
     },
-    If[MissingQ[$method],
-      Message[
-        option::value,
-        "RationalRREF", 
-        InputForm["Method"], 
-        InputForm @ OptionValue["Method"],
-        InputForm @ Keys[methodToInteger]
-      ];
-      Return[$Failed];
-    ];
     BinaryDeserialize @ $rationalRREFLibFunction[
       BinarySerialize[mat],
       $outputMode,
@@ -146,26 +190,32 @@ RationalRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
   ];
 
 ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] := 
-  With[
+  Catch @ With[
     {
-      joinedmat = $modRREFLibFunction[
-        mat,
-        p,
-        OptionValue["OutputMode"],
-        OptionValue["Threads"]
-      ]
+      $outputMode = parseOutputMode[ModRREF] @ OptionValue["OutputMode"],
+      $threads = parseThreads[ModRREF] @ OptionValue["Threads"]
     },
-    Switch[OptionValue["OutputMode"],
-      0,
-      joinedmat,
-      1,
+    With[
       {
-        joinedmat[[;; Length @ mat]],
-        Transpose[joinedmat[[Length @ mat + 1;;]]]
+        joinedmat = $modRREFLibFunction[
+          mat,
+          p,
+          $outputMode,
+          $threads
+        ]
       },
-      (* TODO: support "OutputMode" -> 2 and 3 (pivots), similar to RationalRREF *)
-      _,
-      $Failed
+      Switch[$outputMode,
+        0,
+        joinedmat,
+        1,
+        {
+          joinedmat[[;; Length @ mat]],
+          Transpose @ joinedmat[[Length @ mat + 1;;]]
+        },
+        (* TODO: support "OutputMode" -> 2 and 3 (pivots), similar to RationalRREF *)
+        _,
+        $Failed
+      ]
     ]
   ];
 
