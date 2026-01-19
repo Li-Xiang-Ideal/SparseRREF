@@ -7,7 +7,7 @@
   
   Prerequisites:
   - Compile mma_link.cpp to shared library mathlink.$EXT ($EXT = "dll" on Windows, "so" on Linux, "dylib" on macOS)
-  - Store SparseRREF.m in the same directory.
+  - Store SparseRREF.wl in the same directory.
 
   Available functions:
   - SparseRREF
@@ -29,7 +29,7 @@
 
   Example usage:
     Needs["SparseRREF`"];
-    (* or: Needs["SparseRREF`", "/path/to/SparseRREF.m"]; *)
+    (* or: Needs["SparseRREF`", "/path/to/SparseRREF.wl"]; *)
     
     mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
     rref = SparseRREF[mat];

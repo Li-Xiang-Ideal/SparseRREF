@@ -38,7 +38,7 @@ Standalone executable:
 g++ main.cpp -o sparserref -O3 -std=c++20 -I$INCULDE -L$LIB -lflint -lgmp
 ```
 
-Shared library for [Wolfram LibraryLink](https://reference.wolfram.com/language/guide/LibraryLink.html) API (used by Mathematica package [SparseRREF.m](SparseRREF.m), see below):
+Shared library for [Wolfram LibraryLink](https://reference.wolfram.com/language/guide/LibraryLink.html) API (used by Mathematica package [SparseRREF.wl](SparseRREF.wl), see below):
 ```bash
 g++ mma_link.cpp -fPIC -shared -O3 -std=c++20 -o mathlink.dll -I$MATHEMATICA_HOME/SystemFiles/IncludeFiles/C -I$INCLUDE -L$LIB -lflint -lgmp
 ```
@@ -107,12 +107,12 @@ The main function is `sparse_mat_rref`, its output is its pivots, and it modifie
 
 #### Mathematica API
 
-The Mathematica package [SparseRREF.m](SparseRREF.m) allows to call functions exported in [mma_link.cpp](mma_link.cpp):
+The Mathematica package [SparseRREF.wl](SparseRREF.wl) allows to call functions exported in [mma_link.cpp](mma_link.cpp):
 
 Example usage:
 ```mathematica
 Needs["SparseRREF`"];
-(* or: Needs["SparseRREF`", "/path/to/SparseRREF.m"]; *)
+(* or: Needs["SparseRREF`", "/path/to/SparseRREF.wl"]; *)
 
 mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
 rref = SparseRREF[mat];
@@ -123,9 +123,9 @@ p = 7;
 {rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
 ```
 
-To use this package, you have to compile [mma_link.cpp](mma_link.cpp) to a shared library (`mathlink.dll` on Windows, `mathlink.so` on Linux, `mathlink.dylib` on macOS) in the same directory with [SparseRREF.m](SparseRREF.m).
+To use this package, you have to compile [mma_link.cpp](mma_link.cpp) to a shared library (`mathlink.dll` on Windows, `mathlink.so` on Linux, `mathlink.dylib` on macOS) in the same directory with [SparseRREF.wl](SparseRREF.wl).
 
-See comments in [SparseRREF.m](SparseRREF.m) for more details.
+See comments in [SparseRREF.wl](SparseRREF.wl) for more details.
 
 ### BenchMark
 
