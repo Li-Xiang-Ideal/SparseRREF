@@ -368,61 +368,52 @@ namespace SparseRREF {
 
 	// upper solver : ordering = -1
 	// lower solver : ordering = 1
+	// tranmat in this version is precomputed
 	template <typename T, typename index_t>
 	void triangular_solver(sparse_mat<T, index_t>& mat,
+		const sparse_mat<bool, index_t>& tranmat,
 		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, rref_option_t opt, int ordering) {
 		bool verbose = opt->verbose;
 		auto printstep = opt->print_step;
 		auto& pool = opt->pool;
 
-		std::vector<std::vector<index_t>> tranmat(mat.ncol);
-
-		// we only need to compute the transpose of the submatrix involving pivots
-
-		for (auto& [r, c] : pivots) {
-			for (auto [ind, val] : mat[r]) {
-				if (val == 0)
-					continue;
-				tranmat[ind].push_back(r);
-			}
-		}
+		bit_array rowlist(mat.nrow);
+		for (auto [r, c] : pivots)
+			rowlist.insert(r);
 
 		size_t count = 0;
 		size_t nthreads = pool.get_thread_count();
+		std::vector<index_t> thecol;
 		for (size_t i = 0; i < pivots.size(); i++) {
 			size_t index = i;
 			if (ordering < 0)
 				index = pivots.size() - 1 - i;
 			auto [row, col] = pivots[index];
-			auto& thecol = tranmat[col];
-			auto start = SparseRREF::clocknow();
+			thecol.clear();
+			for (size_t j = 0; j < tranmat[col].nnz(); j++) {
+				auto r = tranmat[col](j);
+				if (rowlist[r] && r != row)
+					thecol.push_back(r);
+			}
 
+			auto start = SparseRREF::clocknow();
 			if constexpr (std::is_same_v<T, bool>) {
-				if (thecol.size() > 1) {
-					pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
-						auto r = thecol[j];
-						if (r == row)
-							return;
-						sparse_vec_add(mat[r], mat[row], F);
-						},
-						((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
-				}
-				pool.wait();
+				pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
+					auto r = thecol[j];
+					sparse_vec_add(mat[r], mat[row], F);
+					},
+					((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
 			}
 			else {
-				if (thecol.size() > 1) {
-					pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
-						auto r = thecol[j];
-						if (r == row)
-							return;
-						auto entry = *sparse_mat_entry(mat, r, col);
-						sparse_vec_sub_mul(mat[r], mat[row], entry, F);
-						},
-						((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
-				}
-				pool.wait();
+				pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
+					auto r = thecol[j];
+					auto entry = *sparse_mat_entry(mat, r, col);
+					sparse_vec_sub_mul(mat[r], mat[row], entry, F);
+					},
+					((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
 			}
+			pool.wait();
 
 			if (verbose && (i % printstep == 0 || i == pivots.size() - 1) && thecol.size() > 1) {
 				count++;
@@ -440,6 +431,39 @@ namespace SparseRREF {
 		}
 		if (opt->verbose)
 			std::cout << std::endl;
+	}
+	
+	// in this version, we compute the transpose inside
+	template <typename T, typename index_t>
+	void triangular_solver(sparse_mat<T, index_t>& mat,
+		const std::vector<pivot_t<index_t>>& pivots,
+		const field_t& F, rref_option_t opt, int ordering) {
+
+		auto& pool = opt->pool;
+		auto nthreads = pool.get_thread_count();
+
+		if (opt->abort)
+			return;
+
+		size_t mtx_size;
+		if (nthreads > 16)
+			mtx_size = 65536;
+		else
+			mtx_size = (size_t)1 << nthreads;
+		std::vector<std::mutex> mtxes(mtx_size);
+
+		// we only need to compute the transpose of the submatrix involving pivots
+		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
+		pool.detach_loop(0, pivots.size(), [&](size_t i) {
+			auto [r, c] = pivots[i];
+			for (auto [ind, val] : mat[r]) {
+				std::lock_guard<std::mutex> lock(mtxes[ind % mtx_size]);
+				tranmat[ind].push_back(r);
+			}
+			});
+		pool.wait();
+		
+		triangular_solver(mat, tranmat, pivots, F, opt, ordering);
 	}
 
 	template <typename T, typename index_t>
@@ -771,7 +795,7 @@ namespace SparseRREF {
 		auto& pool = opt->pool;
 		opt->verbose = false;
 		if (pivots.size() < n_split) {
-			triangular_solver(mat, pivots, F, opt, -1);
+			triangular_solver(mat, tranmat, pivots, F, opt, -1);
 			opt->verbose = verbose;
 			process += pivots.size();
 			return;
@@ -833,7 +857,7 @@ namespace SparseRREF {
 
 		pool.wait();
 
-		triangular_solver(mat, sub_pivots, F, opt, -1);
+		triangular_solver(mat, tranmat, sub_pivots, F, opt, -1);
 		opt->verbose = verbose;
 		process += sub_pivots.size();
 
