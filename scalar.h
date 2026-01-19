@@ -415,6 +415,15 @@ namespace Flint {
 		return result;
 	}
 
+	// Reconstructs a rational number from its residue a modulo m
+	// The function returns 1 if successful, and 0 to indicate that no solution exists.
+	// N is the bound of the abs of the numerator, D is the bound of the abs of the denominator,
+	// which satisfies 2*N*D < mod
+	inline int rational_reconstruct_modular(rat_t& q, const int_t& a, const int_t& mod, const int_t& N, const int_t& D) {
+		return fmpq_reconstruct_fmpz_2(&q._data, &a._data, &mod._data, &N._data, &D._data);
+	}
+
+	// using N = D = floor(sqrt((mod-1)/2))
 	inline int rational_reconstruct(rat_t& q, const int_t& a, const int_t& mod) {
 		return  fmpq_reconstruct_fmpz(&q._data, &a._data, &mod._data);
 	}

@@ -193,6 +193,7 @@ namespace SparseRREF {
 		return 3; // for uint64_t
 	}
 
+	// define a special sval for index types, used for flags
 	template <typename T> requires (std::is_integral_v<T>)
 		constexpr T index_sval() {
 		if constexpr (std::is_signed_v<T>) {

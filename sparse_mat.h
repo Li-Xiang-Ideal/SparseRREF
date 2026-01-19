@@ -13,7 +13,6 @@
 #include "sparse_vec.h"
 
 namespace SparseRREF {
-	// rref staffs
 
 	// first look for rows with only one nonzero value and eliminate them
 	// we assume that mat is canonical, i.e. each index is sorted
@@ -55,7 +54,6 @@ namespace SparseRREF {
 			}
 			if (is_changed) {
 				mat[i].canonicalize();
-				mat[i].reserve(mat[i].nnz());
 			}
 			});
 
@@ -112,7 +110,6 @@ namespace SparseRREF {
 					}
 				}
 				mat[i].resize(new_nnz);
-				mat[i].reserve(mat[i].nnz());
 			}
 			});
 
@@ -163,7 +160,7 @@ namespace SparseRREF {
 			if (opt->abort)
 				return count;
 
-		} while (localcounter > 0 && depth < max_depth && localcounter > 10);
+		} while (localcounter > 0 && depth < max_depth && localcounter * 1000 > count);
 		return count;
 	}
 
@@ -646,9 +643,39 @@ namespace SparseRREF {
 		}
 	}
 
+	// tempvec is of useless, only nonzero_c is used
+	template <typename index_t>
+	void schur_complete(sparse_mat<bool, index_t>& mat, size_t k,
+		const std::vector<pivot_t<index_t>>& pivots,
+		const field_t& F, bool* tmpvec, SparseRREF::bit_array& nonzero_c) {
+
+		auto nk = mat[k].nnz();
+		if (nk == 0)
+			return;
+
+		for (size_t i = 0; i < nk; i++)
+			nonzero_c.insert(mat[k](i));
+
+		for (auto [r, c] : pivots) {
+			if (!nonzero_c.test(c))
+				continue;
+
+			auto nr = mat[r].nnz();
+			for (size_t i = 0; i < nr; i++)
+				nonzero_c.xor_insert(mat[r](i));
+		}
+
+		auto nnz = nonzero_c.nnz();
+		if (mat[k].alloc() < nnz) {
+			mat[k].reserve(nnz, false);
+		}
+		mat[k].resize(nnz);
+		nonzero_c.nonzero_and_clear(mat[k].indices);
+	}
+
 	// add a buffer to speed up of testing a position is zero or not
 	// it would be helpful when the matrix is very sparse
-	template <typename T, typename index_t>
+	template <typename T, typename index_t, size_t buffer_bit>
 	void schur_complete_buffer(sparse_mat<T, index_t>& mat, size_t k,
 		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, T* tmpvec, SparseRREF::bit_array& nonzero_c) {
@@ -661,11 +688,13 @@ namespace SparseRREF {
 		if (mat[k].nnz() == 0)
 			return;
 
-		std::array<size_t, 1024> buffer = { 0 };
+		constexpr size_t buffer_size = (size_t)1 << buffer_bit;
+
+		std::array<size_t, buffer_size> buffer = { 0 };
 		for (auto [ind, val] : mat[k]) {
 			nonzero_c.insert(ind);
 			tmpvec[ind] = val;
-			buffer[ind % 1024]++;
+			buffer[ind % buffer_size]++;
 		}
 
 		std::vector<index_t> add_list;
@@ -673,7 +702,7 @@ namespace SparseRREF {
 		
 		ulong e_pr;
 		for (auto [r, c] : pivots) {
-			if (buffer[c % 1024] == 0)
+			if (buffer[c % buffer_size] == 0)
 				continue;
 			if (!nonzero_c.test(c))
 				continue;
@@ -707,11 +736,11 @@ namespace SparseRREF {
 			}
 			for (auto ind : add_list) {
 				nonzero_c.insert(ind);
-				buffer[ind % 1024]++;
+				buffer[ind % buffer_size]++;
 			}
 			for (auto ind : remove_list) {
 				nonzero_c.erase(ind);
-				buffer[ind % 1024]--;
+				buffer[ind % buffer_size]--;
 			}
 		}
 
@@ -727,37 +756,6 @@ namespace SparseRREF {
 		}
 	}
 
-	// tempvec is of useless, only nonzero_c is used
-	template <typename index_t>
-	void schur_complete(sparse_mat<bool, index_t>& mat, size_t k,
-		const std::vector<pivot_t<index_t>>& pivots,
-		const field_t& F, bool* tmpvec, SparseRREF::bit_array& nonzero_c) {
-
-		auto nk = mat[k].nnz();
-		if (nk == 0)
-			return;
-
-		for (size_t i = 0; i < nk; i++)
-			nonzero_c.insert(mat[k](i));
-
-		for (auto [r, c] : pivots) {
-			if (!nonzero_c.test(c))
-				continue;
-
-			auto nr = mat[r].nnz();
-			for (size_t i = 0; i < nr; i++)
-				nonzero_c.xor_insert(mat[r](i));
-		}
-
-		auto nnz = nonzero_c.nnz();
-		if (mat[k].alloc() < nnz) {
-			mat[k].reserve(nnz, false);
-		}
-		mat[k].resize(nnz);
-		nonzero_c.nonzero_and_clear(mat[k].indices);
-	}
-
-	// TODO: CHECK!!!
 	template <typename T, typename index_t>
 	void triangular_solver_2_rec(sparse_mat<T, index_t>& mat,
 		const sparse_mat<bool, index_t>& tranmat,
@@ -797,7 +795,7 @@ namespace SparseRREF {
 		int bitlen_nrow = (int)std::floor(std::log(rank) / std::log(10)) + 1;
 
 		double density = (double)now_nnz / (mat.nrow * mat.ncol);
-		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		auto schur_complete_func = &schur_complete_buffer<T, index_t, 10>;
 		if (100 * density > 0.01)
 			schur_complete_func = &schur_complete<T, index_t>;
 
@@ -920,7 +918,7 @@ namespace SparseRREF {
 		}
 
 		double density = (double)(nnz) / (total_rank * mat.ncol);
-		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		auto schur_complete_func = &schur_complete_buffer<T, index_t, 10>;
 		if (100 * density > 0.01)
 			schur_complete_func = &schur_complete<T, index_t>;
 
@@ -1013,7 +1011,7 @@ namespace SparseRREF {
 		size_t rank = pivots[0].size();
 
 		double density = (double)mat.nnz() / (total_rank * mat.ncol);
-		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		auto schur_complete_func = &schur_complete_buffer<T, index_t, 10>;
 		if (100 * density > 0.01)
 			schur_complete_func = &schur_complete<T, index_t>;
 
@@ -1124,7 +1122,7 @@ namespace SparseRREF {
 
 		size_t now_nnz = mat.nnz();
 		double density = (double)now_nnz / (mat.nrow * mat.ncol);
-		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		auto schur_complete_func = &schur_complete_buffer<T, index_t, 10>;
 		if (100 * density > 0.01)
 			schur_complete_func = &schur_complete<T, index_t>;
 
@@ -1453,7 +1451,7 @@ namespace SparseRREF {
 
 		size_t now_nnz = mat.nnz();
 		double density = (double)now_nnz / (mat.nrow * mat.ncol);
-		auto schur_complete_func = &schur_complete_buffer<T, index_t>;
+		auto schur_complete_func = &schur_complete_buffer<T, index_t, 10>;
 		if (100 * density > 0.01)
 			schur_complete_func = &schur_complete<T, index_t>;
 
@@ -1739,7 +1737,7 @@ namespace SparseRREF {
 			// if the number of new pivots is less than 1% of the total columns, 
 			// it is very expansive to compute the transpose of the matrix
 			// so we only search the right columns
-			if (opt->method == 2 && !only_right_search && ps.size() < mat.ncol / 100) {
+			if (opt->method == 2 && !only_right_search && ps.size() * 100 < mat.ncol) {
 				only_right_search = true;
 				for (auto& tranmat : tranmat_vec)
 					tranmat.clear();
@@ -1758,8 +1756,7 @@ namespace SparseRREF {
 	std::vector<std::vector<pivot_t<index_t>>>
 		sparse_mat_rref(sparse_mat<T, index_t>& mat, const field_t& F, rref_option_t opt) {
 
-		std::vector<std::vector<pivot_t<index_t>>> pivots;
-		pivots = sparse_mat_rref_forward(mat, F, opt);
+		auto pivots = sparse_mat_rref_forward(mat, F, opt);
 
 		if (opt->shrink_memory) {
 			opt->pool.detach_loop(0, mat.nrow, [&](auto i) {
@@ -1780,18 +1777,6 @@ namespace SparseRREF {
 		return pivots;
 	}
 
-	// TODO: check!!! 
-	// checkrank only used for sparse_mat_inverse
-
-	template <typename index_t>
-	int_t sparse_vec_denominator_lcm(const sparse_vec<rat_t, index_t>& vec) {
-		int_t d = 1;
-		for (size_t i = 0; i < vec.nnz(); i++) {
-			d = Flint::LCM(d, vec[i].den());
-		}
-		return d;
-	}
-
 	template <typename index_t>
 	int_t sparse_mat_denominator_lcm(const sparse_mat<rat_t, index_t>& mat) {
 		int_t d = 1;
@@ -1799,20 +1784,6 @@ namespace SparseRREF {
 			d = Flint::LCM(d, sparse_vec_denominator_lcm(mat[i]));
 		}
 		return d;
-	}
-
-	template <typename index_t>
-	int_t sparse_vec_height(const sparse_vec<rat_t, index_t>& vec) {
-		if (vec.nnz() == 0)
-			return 1;
-		int_t d = sparse_vec_denominator_lcm(vec);
-		int_t h = (vec[0] * d).height();
-		for (size_t i = 1; i < vec.nnz(); i++) {
-			int_t hi = (vec[i] * d).height();
-			if (hi > h)
-				h = hi;
-		}
-		return h;
 	}
 
 	template <typename index_t>
@@ -1833,10 +1804,10 @@ namespace SparseRREF {
 	// where H is the height of a matrix (the maximal height of each entry), 
 	// E is the reconstracted rref matrix
 	// d is an integer such that d*E is a integer matrix
+	// checkrank is only used for sparse_mat_inverse
 	template <typename index_t>
 	std::vector<std::vector<pivot_t<index_t>>> sparse_mat_rref_reconstruct(
 		sparse_mat<rat_t, index_t>& mat, rref_option_t opt, const bool checkrank = false) {
-		std::vector<std::vector<pivot_t<index_t>>> pivots;
 
 		constexpr index_t sv = index_sval<index_t>();
 
@@ -1857,7 +1828,8 @@ namespace SparseRREF {
 
 		int_t m_height = sparse_mat_height(mat);
 
-		pivots = sparse_mat_rref_forward(matul, F, opt);
+		auto cs = clocknow();
+		auto pivots = sparse_mat_rref_forward(matul, F, opt);
 
 		if (opt->abort)
 			return pivots;
@@ -1941,8 +1913,13 @@ namespace SparseRREF {
 		while (!isok) {
 			isok = true;
 			prime = n_nextprime(prime, 0);
-			if (verbose)
-				std::cout << ">> Reconstruct failed, try next prime: " << prime << std::endl;
+			auto ce = clocknow();
+			
+			if (verbose) {
+				std::cout << ">> Reconstruct failed, now mod ~ " << "2^" << mod.bits();
+				std::cout << ", used time: " << usedtime(cs, ce) << " s" << std::endl;
+			}
+			cs = ce;
 			int_t mod1 = mod * prime;
 			F = field_t(FIELD_Fp, prime);
 			pool.detach_loop(0, mat.nrow, [&](auto i) {
@@ -2075,6 +2052,9 @@ namespace SparseRREF {
 			pivots = sparse_mat_rref_reconstruct(M1, opt, true);
 		else {
 			std::cerr << "Error: sparse_mat_inverse: field not supported" << std::endl;
+			// restore the option
+			opt->col_weight = old_col_weight;
+			opt->is_back_sub = is_back_sub;
 			return sparse_mat<T, index_t>();
 		}
 
@@ -2087,6 +2067,9 @@ namespace SparseRREF {
 
 		if (rank != M.nrow) {
 			std::cerr << "Error: sparse_mat_inverse: matrix is not invertible" << std::endl;
+			// restore the option
+			opt->col_weight = old_col_weight;
+			opt->is_back_sub = is_back_sub;
 			return sparse_mat<T, index_t>();
 		}
 
