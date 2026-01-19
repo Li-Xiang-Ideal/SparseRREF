@@ -10,15 +10,17 @@
   - Store SparseRREF.m in the same directory.
 
   Available functions:
-  - RationalRREF
-  - ModRREF
+  - SparseRREF
 
   Options:
+  - "Modulus":
+    0: compute RREF over rational field.
+    prime number p: compute RREF over finite field Z/p (integers modulo p).
   - "OutputMode" - return value of a function:
     0, "RREF": rref
     1, "RREF,Kernel": {rref, kernel}
-    2, "RREF,Pivots": {rref, pivots} (only RationalRREF)
-    3, "RREF,Kernel,Pivots": {rref, kernel, pivots} (only RationalRREF)
+    2, "RREF,Pivots": {rref, pivots} (only for Modulus -> 0)
+    3, "RREF,Kernel,Pivots": {rref, kernel, pivots} (only for Modulus -> 0)
   - "Method":
     0, "RightAndLeft": right and left search
     1, "Right": only right search (chooses the leftmost independent columns as pivots)
@@ -30,34 +32,34 @@
     (* or: Needs["SparseRREF`", "/path/to/SparseRREF.m"]; *)
     
     mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
-    rref = RationalRREF[mat];
-    {rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "Threads" -> $ProcessorCount];
+    rref = SparseRREF[mat];
+    {rref, kernel, pivots} = SparseRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "Threads" -> $ProcessorCount];
 
     mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
     p = 7;
-    {rref, kernel} = ModRREF[mat, p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
+    {rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
 *)
 
 BeginPackage["SparseRREF`"];
 
 Unprotect["SparseRREF`*"];
 
-Options[RationalRREF] = Options[ModRREF] = {
+Options[SparseRREF] = {
+  Modulus -> 0,
   "OutputMode" -> "RREF",
   "Method" -> "RightAndLeft",
   "Threads" -> 1
 };
 
-RationalRREF::usage =
-  "RationalRREF[mat, opts] computes the exact RREF of a sparse rational matrix. " <>
-  "Default options: " <> ToString @ Options @ RationalRREF;
-ModRREF::usage =
-  "ModRREF[mat, p, opts] computes the exact RREF of a sparse integer matrix module prime p. " <>
-  "Default options: " <> ToString @ Options @ ModRREF;
+SparseRREF::usage =
+  "SparseRREF[mat, opts] computes the exact RREF of a sparse rational matrix " <>
+  "or a sparse integer matrix modulo prime p (if Modulus -> p is specified). " <>
+  "Default options: " <> ToString @ Options @ SparseRREF;
 
-SyntaxInformation[RationalRREF] = {"ArgumentsPattern" -> {_, OptionsPattern[]}}
-SyntaxInformation[ModRREF] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}}
+SyntaxInformation[SparseRREF] = {"ArgumentsPattern" -> {_, OptionsPattern[]}}
 
+SparseRREF::optionvalue = "Invalid SparseRREF option value: `1` -> `2`. Allowed values: `3`";
+SparseRREF::rettype = "SparseRREF should return SparseArray or List, but returned: `1`"
 
 Begin["`Private`"];
 
@@ -71,7 +73,7 @@ $sparseRREFLib = FindLibrary @ FileNameJoin @ {$sparseRREFDirectory, "mathlink"}
 
 (* TODO: load other exported functions: modpmatmul, ratmat_inv *)
 
-$rationalRREFLibFunction =
+rationalRREFLibFunction =
   LibraryFunctionLoad[
     $sparseRREFLib,
     "rational_rref",
@@ -84,7 +86,7 @@ $rationalRREFLibFunction =
     {LibraryDataType[ByteArray], Automatic}
   ];
 
-$modRREFLibFunction = 
+modRREFLibFunction = 
   LibraryFunctionLoad[
     $sparseRREFLib,
     "modrref",
@@ -98,16 +100,13 @@ $modRREFLibFunction =
     {LibraryDataType[SparseArray], Automatic}
   ];
 
-(* Helper functions *)
+(* Helper functions: parse options, validate etc. *)
 
-option::value = "Invalid `1` option value: `2` -> `3`. Allowed values: `4`";
-
-throwOptionError[f_, optionName_?StringQ, optionValue_, allowedValues_] := (
+throwOptionError[optionName_?StringQ, optionValue_, allowedValues_] := (
   Message[
-    option::value,
-    f,
+    SparseRREF::optionvalue,
     InputForm[optionName], 
-    InputForm @ optionValue,
+    InputForm[optionValue],
     allowedValues
   ];
   Throw[$Failed];
@@ -123,7 +122,7 @@ methodToInteger = <|
 |>;
 
 (* TODO: maybe allow arbitrary lists, e.g. {"Pivots", "RREF", "Kernel"}? *)
-outputModeToInteger[RationalRREF] = <|
+outputModeToInteger = <|
   0 -> 0,
   1 -> 1,
   2 -> 2,
@@ -134,83 +133,99 @@ outputModeToInteger[RationalRREF] = <|
   "RREF,Kernel,Pivots" -> 3
 |>;
 
-(* TODO: modrref cannot return pivots, so only 0 and 1 are allowed. *)
-outputModeToInteger[ModRREF] =
-  Select[
-    outputModeToInteger[RationalRREF], 
-    MemberQ[{0, 1}, #] &
-  ];
+parseModulus[0] := 0;
+parseModulus[p_?PrimeQ] /; p > 0 := p;
+parseModulus[p_] := throwOptionError["Modulus", p, "0 or prime number"];
 
-parseMethod[f_][method_] :=
+parseMethod[method_] :=
   With[
     {$res = methodToInteger[method]},
     If[MissingQ[$res],
-      throwOptionError[f, "Method", method, InputForm @ Keys @ methodToInteger],
+      throwOptionError["Method", method, InputForm @ Keys @ methodToInteger],
       $res
     ]
   ];
 
-parseOutputMode[f_][outputMode_] :=
+parseOutputMode[outputMode_] :=
   With[
-    {$res = outputModeToInteger[f][outputMode]},
+    {$res = outputModeToInteger[outputMode]},
     If[MissingQ[$res],
-      throwOptionError[f, "OutputMode", outputMode, InputForm @ Keys @ outputModeToInteger @ f],
+      throwOptionError["OutputMode", outputMode, InputForm @ Keys @ outputModeToInteger],
       $res
     ]
   ];
 
-parseThreads[f_][threads_] :=
+parseThreads[threads_] :=
   If[IntegerQ[threads] && threads >= 0,
     threads,
-    throwOptionError[f, "Threads", threads, "0,1,2..." ]
+    throwOptionError["Threads", threads, "0,1,2..." ]
   ];
 
 
-(* Public functions *)
+checkResult[res_SparseArray] := res;
+checkResult[res_List] := res;
+checkResult[res_] :=
+  (
+    Message[SparseRREF::rettype, res];
+    Throw[$Failed]
+  );
 
-RationalRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
+(* Define public function SparseRREF[] *)
+
+SparseRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
   Catch @ With[
     {
-      $outputMode = parseOutputMode[RationalRREF] @ OptionValue["OutputMode"],
-      $method = parseMethod[RationalRREF] @ OptionValue["Method"],
-      $threads = parseThreads[RationalRREF] @ OptionValue["Threads"]
+      $modulus = parseModulus @ OptionValue["Modulus"],
+      $outputMode = parseOutputMode @ OptionValue["OutputMode"],
+      $method = parseMethod @ OptionValue["Method"],
+      $threads = parseThreads @ OptionValue["Threads"]
     },
-    BinaryDeserialize @ $rationalRREFLibFunction[
-      BinarySerialize[mat],
-      $outputMode,
-      $method,
-      $threads
+    checkResult @ If[$modulus == 0,
+      rationalRREF[mat, $outputMode, $method, $threads],
+      modRREF[mat, $modulus, $outputMode, $method, $threads]
     ]
   ];
 
-ModRREF[mat_SparseArray, p_?IntegerQ, opts : OptionsPattern[] ] := 
-  Catch @ With[
+rationalRREF[mat_SparseArray, outputMode_?IntegerQ, method_?IntegerQ, threads_?IntegerQ] :=
+  BinaryDeserialize @ rationalRREFLibFunction[
+    BinarySerialize[mat],
+    outputMode,
+    method,
+    threads
+  ];
+
+modRREF[mat_SparseArray, p_?PrimeQ, outputMode_?IntegerQ, method_?IntegerQ, threads_?IntegerQ] :=
+  With[
     {
-      $outputMode = parseOutputMode[ModRREF] @ OptionValue["OutputMode"],
-      $method = parseMethod[ModRREF] @ OptionValue["Method"],
-      $threads = parseThreads[ModRREF] @ OptionValue["Threads"]
+      joinedmat = modRREFLibFunction[
+        mat,
+        p,
+        outputMode,
+        method,
+        threads
+      ]
     },
-    With[
+    If[!MatchQ[joinedmat, _SparseArray],
+      (* SparseRREF will print error message and return $Failed *)
+      Return[joinedmat];
+    ];
+    Switch[outputMode,
+      0,
+      joinedmat,
+      1,
       {
-        joinedmat = $modRREFLibFunction[
-          mat,
-          p,
-          $outputMode,
-          $method,
-          $threads
-        ]
+        joinedmat[[;; Length @ mat]],
+        Transpose @ joinedmat[[Length @ mat + 1;;]]
       },
-      Switch[$outputMode,
-        0,
-        joinedmat,
-        1,
-        {
-          joinedmat[[;; Length @ mat]],
-          Transpose @ joinedmat[[Length @ mat + 1;;]]
-        },
-        (* TODO: support "OutputMode" -> 2 and 3 (pivots), similar to RationalRREF *)
-        _,
-        $Failed
+      (* TODO: support "OutputMode" -> 2 and 3 (pivots), similar to rationalRREF *)
+      _,
+      throwOptionError[
+        "OutputMode",
+        outputMode,
+        InputForm @ Keys @ Select[
+          outputModeToInteger, 
+          MemberQ[{0, 1}, #] &
+        ]
       ]
     ]
   ];

@@ -115,19 +115,17 @@ Needs["SparseRREF`"];
 (* or: Needs["SparseRREF`", "/path/to/SparseRREF.m"]; *)
 
 mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
-rref = RationalRREF[mat];
-{rref, kernel, pivots} = RationalRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "Threads" -> $ProcessorCount];
+rref = SparseRREF[mat];
+{rref, kernel, pivots} = SparseRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "Threads" -> $ProcessorCount];
 
 mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
 p = 7;
-{rref, kernel} = ModRREF[mat, p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
+{rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
 ```
 
 To use this package, you have to compile [mma_link.cpp](mma_link.cpp) to a shared library (`mathlink.dll` on Windows, `mathlink.so` on Linux, `mathlink.dylib` on macOS) in the same directory with [SparseRREF.m](SparseRREF.m).
 
 See comments in [SparseRREF.m](SparseRREF.m) for more details.
-
-**TODO**: Currently, the package contains only the functions `RationalRREF[]` and `ModRREF[]`.
 
 ### BenchMark
 
