@@ -295,6 +295,19 @@ namespace SparseRREF {
 		T& operator[](const size_t pos) { return entries[pos]; }
 		const T& operator[](const size_t pos) const { return entries[pos]; }
 
+		T* find(const index_t index, const bool isbinary = true) const {
+			if (_nnz == 0)
+				return nullptr;
+			index_t* ptr;
+			if (isbinary)
+				ptr = SparseRREF::binary_search(indices, indices + _nnz, index);
+			else
+				ptr = std::find(indices, indices + _nnz, index);
+			if (ptr == indices + _nnz)
+				return nullptr;
+			return entries + (ptr - indices);
+		}
+
 		// conversion functions
 		template <typename U = T> requires std::is_integral_v<U> || std::is_same_v<U, int_t>
 		operator sparse_vec<rat_t, index_t>() {
@@ -506,6 +519,10 @@ namespace SparseRREF {
 
 		sparse_vec<T, index_t>& operator[](size_t i) { return rows[i]; }
 		const sparse_vec<T, index_t>& operator[](size_t i) const { return rows[i]; }
+
+		T* find(const size_t row, const index_t col, const bool isbinary = true) const {
+			return rows[row].find(col, isbinary);
+		}
 
 		sparse_mat(const sparse_mat& l) {
 			init(l.nrow, l.ncol);
@@ -2642,25 +2659,6 @@ namespace SparseRREF {
 	};
 
 	// some other functions
-
-	template <typename T, typename index_t>
-	inline T* sparse_vec_entry(const sparse_vec<T, index_t>& vec, const index_t index, const bool isbinary = true) {
-		if (vec.nnz() == 0)
-			return nullptr;
-		index_t* ptr;
-		if (isbinary)
-			ptr = SparseRREF::binary_search(vec.indices, vec.indices + vec.nnz(), index);
-		else
-			ptr = std::find(vec.indices, vec.indices + vec.nnz(), index);
-		if (ptr == vec.indices + vec.nnz())
-			return nullptr;
-		return vec.entries + (ptr - vec.indices);
-	}
-
-	template <typename T, typename index_t>
-	inline T* sparse_mat_entry(sparse_mat<T, index_t>& mat, size_t r, index_t c, bool isbinary = true) {
-		return sparse_vec_entry(mat[r], c, isbinary);
-	}
 
 	// join two sparse matrices
 	template <typename T, typename index_t>

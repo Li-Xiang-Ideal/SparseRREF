@@ -408,8 +408,7 @@ namespace SparseRREF {
 			else {
 				pool.detach_loop<index_t>(0, thecol.size(), [&](index_t j) {
 					auto r = thecol[j];
-					auto entry = *sparse_mat_entry(mat, r, col);
-					sparse_vec_sub_mul(mat[r], mat[row], entry, F);
+					sparse_vec_sub_mul(mat[r], mat[row], *mat.find(r, col), F);
 					},
 					((thecol.size() < 20 * nthreads) ? 0 : thecol.size() / 10));
 			}
@@ -961,7 +960,7 @@ namespace SparseRREF {
 			// rescale the pivots
 			pool.detach_loop(0, pivs.size(), [&](size_t j) {
 				auto [r, c] = pivs[j];
-				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
+				T scalar = scalar_inv(*mat.find(r, c), F);
 				sparse_vec_rescale(mat[r], scalar, F);
 				mat[r].reserve(mat[r].nnz());
 				});
@@ -1076,7 +1075,7 @@ namespace SparseRREF {
 				// rescale the pivots
 				pool.detach_loop(0, used_pivots.size(), [&](size_t j) {
 					auto [r, c] = used_pivots[j];
-					T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
+					T scalar = scalar_inv(*mat.find(r, c), F);
 					sparse_vec_rescale(mat[r], scalar, F);
 					mat[r].reserve(mat[r].nnz());
 					});
@@ -1257,7 +1256,7 @@ namespace SparseRREF {
 
 			pool.detach_loop(0, n_pivots.size(), [&](size_t i) {
 				auto [r, c] = n_pivots[i];
-				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
+				T scalar = scalar_inv(*mat.find(r, c), F);
 				sparse_vec_rescale(mat[r], scalar, F);
 				mat[r].reserve(mat[r].nnz());
 				});
@@ -1595,7 +1594,7 @@ namespace SparseRREF {
 
 			pool.detach_loop(0, n_pivots.size(), [&](size_t i) {
 				auto [r, c] = n_pivots[i];
-				T scalar = scalar_inv(*sparse_mat_entry(mat, r, c), F);
+				T scalar = scalar_inv(*mat.find(r, c), F);
 				sparse_vec_rescale(mat[r], scalar, F);
 				mat[r].reserve(mat[r].nnz());
 				});
@@ -2007,7 +2006,7 @@ namespace SparseRREF {
 
 		for (auto [r, c] : pivots) {
 			K[c] = M[r];
-			*sparse_vec_entry(K[c], c) = (T)0;
+			*K[c].find(c) = (T)0;
 			K[c].canonicalize();
 			nonpivs[c] = sv;
 		}
