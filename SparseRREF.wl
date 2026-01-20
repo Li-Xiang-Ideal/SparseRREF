@@ -58,6 +58,7 @@ SparseRREF::usage =
 
 SyntaxInformation[SparseRREF] = {"ArgumentsPattern" -> {_, OptionsPattern[]}}
 
+SparseRREF::findlib = "SparseRREF library \"`1`\" not found at `2`";
 SparseRREF::optionvalue = "Invalid SparseRREF option value: `1` -> `2`. Allowed values: `3`";
 SparseRREF::rettype = "SparseRREF should return SparseArray or List, but returned: `1`"
 
@@ -66,12 +67,17 @@ Begin["`Private`"];
 (* Load SparseRREF library *)
 
 $sparseRREFDirectory = DirectoryName[$InputFileName];
+(* TODO rename e.g. to SparseRREF_MMA or SparseRREF_LibraryLink *)
+$sparseRREFLibName = "mathlink";
 
-$sparseRREFLib = FindLibrary @ FileNameJoin @ {$sparseRREFDirectory, "mathlink"};
+(* TODO: shall we search in all directories from $LibraryPath? *)
+$sparseRREFLib = FindLibrary @ FileNameJoin @ {$sparseRREFDirectory, $sparseRREFLibName};
 
-(* TODO: error message if $sparseRREFLib == $Failed *)
+If[FailureQ[$sparseRREFLib],
+  Message[SparseRREF::findlib, $sparseRREFLibName, $sparseRREFDirectory];
+];
 
-(* TODO: load other exported functions: modpmatmul, ratmat_inv *)
+(* TODO: provide API for other exported functions: modpmatmul, ratmat_inv *)
 
 rationalRREFLibFunction =
   LibraryFunctionLoad[
