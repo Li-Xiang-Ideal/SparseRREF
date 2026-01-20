@@ -12,33 +12,54 @@
 	which are included in the Mathematica installation directory,
 	which is $MATHEMATICA_HOME/SystemFiles/IncludeFiles/C in most cases.
 
-	The output of modrref/ratrref is the join of the rref of A and its kernel.
+	To use the library, load the package SparseRREF.wl, e.g.:
+	```mathematica
+	Needs["SparseRREF`"];
+	mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
+	p = 7;
+	{rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
+	```
+	See detailed instructions in SparseRREF.wl and in Readme.md.
 
-	To load it in Mathematica, use the following code (as an example):
+	To load the functions in Mathematica manually, use the following code (as an example):
 
 	```mathematica
 
-	modrreflib = 
-	LibraryFunctionLoad[
-		"rreflib.dll",
-		"modrref", {{LibraryDataType[SparseArray], 
-		  "Constant"}, {Integer}, {Integer}, {Integer}}, {LibraryDataType[
-		  SparseArray], Automatic}];
+	rationalRREFLibFunction =
+	  LibraryFunctionLoad[
+		"mathlink.dll",
+		"rational_rref",
+		{
+		  {LibraryDataType[ByteArray], "Constant"},
+		  Integer,
+		  Integer,
+		  Integer
+		},
+		{LibraryDataType[ByteArray], Automatic}
+	  ];
 
-	ratrreflib = LibraryFunctionLoad[
-		"rreflib.dll",
-		"rational_rref", {{LibraryDataType[ByteArray],
-		  "Constant"}, {Integer}, {Integer}}, {LibraryDataType[ByteArray],
-		 Automatic}];
+	modRREFLibFunction =
+	  LibraryFunctionLoad[
+		"mathlink.dll",
+		"modrref",
+		{
+		  {LibraryDataType[SparseArray], "Constant"},
+		  Integer,
+		  Integer,
+		  Integer,
+		  Integer
+		},
+		{LibraryDataType[SparseArray], Automatic}
+	  ];
 	
 	(* the first matrix is the result of rref, and the second is its kernel *)
-	modprref[mat_SparseArray, p_Integer, method_ : 1, nthread_ : 1] := 
-		With[{joinedmat = modrreflib[mat, p, method, nthread]},
-		 If[method =!= 0, {joinedmat[[;; Length@mat]], 
+	modprref[mat_SparseArray, p_Integer, outputMode_ : 0, method : 0, nthread_ : 1] :=
+		With[{joinedmat = modRREFLibFunction[mat, p, outputMode, method, nthread]},
+		 If[outputMode =!= 0, {joinedmat[[;; Length@mat]],
 		   Transpose[joinedmat[[Length@mat + 1 ;;]]]}, joinedmat]];
 
-	ratrref[mat_SparseArray, mode_ : 1, nthread_ : 1] := 
-		BinaryDeserialize[ratrreflib[BinarySerialize[mat], mode, nthread]];
+	ratrref[mat_SparseArray, outputMode_ : 0, method : 0, nthread_ : 1] :=
+		BinaryDeserialize[rationalRREFLibFunction[BinarySerialize[mat], outputMode, method, nthread]];
 
 	```
 */
