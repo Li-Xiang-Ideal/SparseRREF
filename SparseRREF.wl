@@ -98,10 +98,10 @@ modRREFLibFunction =
     "modrref",
     {
       {LibraryDataType[SparseArray], "Constant"},
-      {Integer},
-      {Integer},
-      {Integer},
-      {Integer}
+      Integer,
+      Integer,
+      Integer,
+      Integer
     },
     {LibraryDataType[SparseArray], Automatic}
   ];
