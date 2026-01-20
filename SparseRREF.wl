@@ -25,16 +25,23 @@
     0, "RightAndLeft": right and left search
     1, "Right": only right search (chooses the leftmost independent columns as pivots)
     2, "Hybrid": hybrid
+  - "BackwardSubstitution":
+    True (default): submatrix rref[[ pivots[[All,1]], pivots[[All,2]] ]]$ is an identity matrix.
+    False: submatrix is upper triangular.
   - "Threads": number of threads (nonnegative integer).
+  - "Verbose" (True | False): print steps.
+  - "PrintStep" (Integer): print each i-th step.
 
   Example usage:
     Needs["SparseRREF`"];
     (* or: Needs["SparseRREF`", "/path/to/SparseRREF.wl"]; *)
-    
+
+    (* rationals *)
     mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
     rref = SparseRREF[mat];
-    {rref, kernel, pivots} = SparseRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "Threads" -> $ProcessorCount];
+    {rref, kernel, pivots} = SparseRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "BackwardSubstitution" -> True, "Threads" -> $ProcessorCount, "Verbose" -> True, "PrintStep" -> 10];
 
+    (* integers mod p *)
     mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
     p = 7;
     {rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
@@ -48,7 +55,10 @@ Options[SparseRREF] = {
   Modulus -> 0,
   "OutputMode" -> "RREF",
   "Method" -> "RightAndLeft",
-  "Threads" -> 1
+  "BackwardSubstitution" -> True,
+  "Threads" -> 1,
+  "Verbose" -> False,
+  "PrintStep" -> 100
 };
 
 SparseRREF::usage =
@@ -87,12 +97,15 @@ rationalRREFLibFunction =
       {LibraryDataType[ByteArray], "Constant"},
       Integer,
       Integer,
+      True | False,
+      Integer,
+      True | False,
       Integer
     },
     {LibraryDataType[ByteArray], Automatic}
   ];
 
-modRREFLibFunction = 
+modRREFLibFunction =
   LibraryFunctionLoad[
     $sparseRREFLib,
     "modrref",
@@ -101,6 +114,9 @@ modRREFLibFunction =
       Integer,
       Integer,
       Integer,
+      True | False,
+      Integer,
+      True | False,
       Integer
     },
     {LibraryDataType[SparseArray], Automatic}
@@ -161,12 +177,17 @@ parseOutputMode[outputMode_] :=
     ]
   ];
 
-parseThreads[threads_] :=
-  If[IntegerQ[threads] && threads >= 0,
-    threads,
-    throwOptionError["Threads", threads, "0,1,2..." ]
-  ];
+parseBackwardSubstitution[b_?BooleanQ] := b;
+parseBackwardSubstitution[b_] := throwOptionError["BackwardSubstitution", b, {True, False}];
 
+parseThreads[threads_?IntegerQ] /; threads >= 0 := threads;
+parseThreads[threads_] := throwOptionError["Threads", threads, "0,1,2..." ];
+
+parseVerbose[b_?BooleanQ] := b;
+parseVerbose[b_] := throwOptionError["Verbose", b, {True, False}];
+
+parsePrintStep[ps_?IntegerQ] /; ps > 0 := ps;
+parsePrintStep[ps_] := throwOptionError["PrintStep", ps, "1,2,3..."];
 
 checkResult[res_SparseArray] := res;
 checkResult[res_List] := res;
@@ -184,23 +205,46 @@ SparseRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
       $modulus = parseModulus @ OptionValue["Modulus"],
       $outputMode = parseOutputMode @ OptionValue["OutputMode"],
       $method = parseMethod @ OptionValue["Method"],
-      $threads = parseThreads @ OptionValue["Threads"]
+      $backwardSubstitution = parseBackwardSubstitution @ OptionValue["BackwardSubstitution"],
+      $threads = parseThreads @ OptionValue["Threads"],
+      $verbose = parseVerbose @ OptionValue["Verbose"],
+      $printStep = parsePrintStep @ OptionValue["PrintStep"]
     },
     checkResult @ If[$modulus == 0,
-      rationalRREF[mat, $outputMode, $method, $threads],
-      modRREF[mat, $modulus, $outputMode, $method, $threads]
+      rationalRREF[mat, $outputMode, $method, $backwardSubstitution, $threads, $verbose, $printStep],
+      modRREF[mat, $modulus, $outputMode, $method, $backwardSubstitution, $threads, $verbose, $printStep]
     ]
   ];
 
-rationalRREF[mat_SparseArray, outputMode_?IntegerQ, method_?IntegerQ, threads_?IntegerQ] :=
+rationalRREF[
+    mat_SparseArray,
+    outputMode_?IntegerQ,
+    method_?IntegerQ,
+    backwardSubstitution_?BooleanQ,
+    threads_?IntegerQ,
+    verbose_?BooleanQ,
+    printStep_?IntegerQ
+  ] :=
   BinaryDeserialize @ rationalRREFLibFunction[
     BinarySerialize[mat],
     outputMode,
     method,
-    threads
+    backwardSubstitution,
+    threads,
+    verbose,
+    printStep
   ];
 
-modRREF[mat_SparseArray, p_?PrimeQ, outputMode_?IntegerQ, method_?IntegerQ, threads_?IntegerQ] :=
+modRREF[
+    mat_SparseArray,
+    p_?PrimeQ,
+    outputMode_?IntegerQ,
+    method_?IntegerQ,
+    backwardSubstitution_?BooleanQ,
+    threads_?IntegerQ,
+    verbose_?BooleanQ,
+    printStep_?IntegerQ
+  ] :=
   With[
     {
       joinedmat = modRREFLibFunction[
@@ -208,7 +252,10 @@ modRREF[mat_SparseArray, p_?PrimeQ, outputMode_?IntegerQ, method_?IntegerQ, thre
         p,
         outputMode,
         method,
-        threads
+        backwardSubstitution,
+        threads,
+        verbose,
+        printStep
       ]
     },
     If[!MatchQ[joinedmat, _SparseArray],

@@ -114,10 +114,12 @@ Example usage:
 Needs["SparseRREF`"];
 (* or: Needs["SparseRREF`", "/path/to/SparseRREF.wl"]; *)
 
+(* rationals *)
 mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
 rref = SparseRREF[mat];
-{rref, kernel, pivots} = SparseRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "Threads" -> $ProcessorCount];
+{rref, kernel, pivots} = SparseRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "BackwardSubstitution" -> True, "Threads" -> $ProcessorCount, "Verbose" -> True, "PrintStep" -> 10];
 
+(* integers mod p *)
 mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
 p = 7;
 {rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
