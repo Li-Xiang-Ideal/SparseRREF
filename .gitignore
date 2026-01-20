@@ -405,7 +405,11 @@ FodyWeavers.xsd
 
 # Windows Executable files
 *.exe
+
+# Shared libraries
 *.dll
+*.so
+*.dylib
 
 # Windows Batch files
 *.bat
@@ -414,5 +418,5 @@ FodyWeavers.xsd
 # VS Code settings
 .vscode/
 
-# Mathematica Header files
-mma/
+# JetBrains CLion settings
+.idea/
