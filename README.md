@@ -7,7 +7,7 @@
 
 ----
 
-This head only library intends to compute the exact RREF with row and column permutations of a sparse matrix over finite field or rational field, which is a common problem in linear algebra, and is widely used for number theory, cryptography, theoretical physics, etc.. The code is based on the FLINT library, which is a C library for number theory. 
+This header-only library intends to compute the exact RREF with row and column permutations of a sparse matrix over finite field or rational field, which is a common problem in linear algebra, and is widely used for number theory, cryptography, theoretical physics, etc.. The code is based on the FLINT library, which is a C library for number theory. 
 
 Some algorithms are inspired by [Spasm](https://github.com/cbouilla/spasm), but we do not depend on it. The algorithm here is definite (Spasm is random), so once the parameters are given, the result is stable, which is important for some purposes. 
 
@@ -25,20 +25,20 @@ If one use functions on sparse_tensor, it also requires to link tbb (Threading B
 
 For a sparse matrix $M$, the code computes its RREF $\Lambda$ with row and column permutations. Instead of permute the row and column directly, we keep the row and column ordering of the matrix, i.e. the i-th row/column of $\Lambda$ is the i-th row/column of $M$, and the row and column permutation of this RREF is implicitly given by its pivots, which is a list of pairs of (row,col). In the ordering of pivots, the submatrix $\Lambda[\text{rows in pivots},\text{cols in pivots}]$ of $\Lambda$ is an identity matrix (if `--no-backward-substitution` is enabled, it is upper triangular). 
 
-### How to use compile code
+### How to compile the code
 
 We now only support the rational field $\mathbb Q$ and the $\mathbb Z/p\mathbb Z$, where $p$ is a prime less than $2^{\texttt{BIT}-1}$ (it's $2^{63}$ on a 64-bit machine), but it is possible to generalize to other fields/rings by some small modification.
 
 It is recommended to use [mimalloc](https://github.com/microsoft/mimalloc) (or other similar library) to dynamically override the standard malloc, especially on Windows.
 
-We also provide an example, see `mma_link.cpp`, by using the LibraryLink api of Mathematica to compile a library which can used by Mathematica.
+Example build commands (also add `-lpthread` if pthread is required by the compiler):
 
-Build it, e.g. (also add `-lpthread` if pthread is required by the compiler)
-
+Standalone executable:
 ```bash
 g++ main.cpp -o sparserref -O3 -std=c++20 -I$INCULDE -L$LIB -lflint -lgmp
 ```
 
+Shared library for [Wolfram LibraryLink](https://reference.wolfram.com/language/guide/LibraryLink.html) API (used by Mathematica package [SparseRREF.wl](SparseRREF.wl), see below):
 ```bash
 g++ mma_link.cpp -fPIC -shared -O3 -std=c++20 -o mathlink.dll -I$MATHEMATICA_HOME/SystemFiles/IncludeFiles/C -I$INCLUDE -L$LIB -lflint -lgmp
 ```
@@ -47,7 +47,9 @@ and `$MATHEMATICA_HOME/SystemFiles/IncludeFiles/C` is the path of Mathematica C 
 
 ### How to use the code
 
-The `main.cpp` is an example to use the head only library, the help is
+#### Standalone executable
+
+The file [main.cpp](main.cpp) is an example to use the header-only library, the help is
 
 ```
 Usage: SparseRREF [--help] [--version] [--output VAR]
@@ -103,6 +105,30 @@ The last line is a dummy line, which is used to indicate the end of the matrix.
 
 The main function is `sparse_mat_rref`, its output is its pivots, and it modifies the input matrix $M$ to its RREF $\Lambda$.
 
+#### Mathematica API
+
+The Mathematica package [SparseRREF.wl](SparseRREF.wl) allows to call functions exported in [mma_link.cpp](mma_link.cpp):
+
+Example usage:
+```mathematica
+Needs["SparseRREF`"];
+(* or: Needs["SparseRREF`", "/path/to/SparseRREF.wl"]; *)
+
+(* rationals *)
+mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
+rref = SparseRREF[mat];
+{rref, kernel, pivots} = SparseRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "BackwardSubstitution" -> True, "Threads" -> $ProcessorCount, "Verbose" -> True, "PrintStep" -> 10];
+
+(* integers mod p *)
+mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
+p = 7;
+{rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
+```
+
+To use this package, you have to compile [mma_link.cpp](mma_link.cpp) to a shared library (`mathlink.dll` on Windows, `mathlink.so` on Linux, `mathlink.dylib` on macOS) in the same directory with [SparseRREF.wl](SparseRREF.wl).
+
+See comments in [SparseRREF.wl](SparseRREF.wl) for more details.
+
 ### BenchMark
 
 We compare it with [Spasm](https://github.com/cbouilla/spasm). Platform and Configuration: 
@@ -139,4 +165,5 @@ SparseRREF uses less memory than Spasm since its result has less non zero values
 * Improve the algorithms.
 * Add PLUQ decomposition.
 * Add more fields/rings.
+* Add more functions and parameters to Mathematica API
 
