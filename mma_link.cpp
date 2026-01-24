@@ -12,33 +12,60 @@
 	which are included in the Mathematica installation directory,
 	which is $MATHEMATICA_HOME/SystemFiles/IncludeFiles/C in most cases.
 
-	The output of modrref/ratrref is the join of the rref of A and its kernel.
+	To use the library, load the package SparseRREF.wl, e.g.:
+	```mathematica
+	Needs["SparseRREF`"];
+	mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
+	p = 7;
+	{rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
+	```
+	See detailed instructions in SparseRREF.wl and in Readme.md.
 
-	To load it in Mathematica, use the following code (as an example):
+	To load the functions in Mathematica manually, use the following code (as an example):
 
 	```mathematica
 
-	modrreflib = 
-	LibraryFunctionLoad[
-		"rreflib.dll",
-		"modrref", {{LibraryDataType[SparseArray], 
-		  "Constant"}, {Integer}, {Integer}, {Integer}}, {LibraryDataType[
-		  SparseArray], Automatic}];
+	rationalRREFLibFunction =
+	  LibraryFunctionLoad[
+		"mathlink.dll",
+		"rational_rref",
+		{
+		  {LibraryDataType[ByteArray], "Constant"},
+		  Integer,
+		  Integer,
+		  True | False,
+		  Integer,
+		  True | False,
+		  Integer
+		},
+		{LibraryDataType[ByteArray], Automatic}
+	  ];
 
-	ratrreflib = LibraryFunctionLoad[
-		"rreflib.dll",
-		"rational_rref", {{LibraryDataType[ByteArray],
-		  "Constant"}, {Integer}, {Integer}}, {LibraryDataType[ByteArray],
-		 Automatic}];
-	
+	modRREFLibFunction =
+	  LibraryFunctionLoad[
+		"mathlink.dll",
+		"modrref",
+		{
+		  {LibraryDataType[SparseArray], "Constant"},
+		  Integer,
+		  Integer,
+		  Integer,
+		  True | False,
+		  Integer,
+		  True | False,
+		  Integer
+		},
+		{LibraryDataType[SparseArray], Automatic}
+	  ];
+
 	(* the first matrix is the result of rref, and the second is its kernel *)
-	modprref[mat_SparseArray, p_Integer, method_ : 1, nthread_ : 1] := 
-		With[{joinedmat = modrreflib[mat, p, method, nthread]},
-		 If[method =!= 0, {joinedmat[[;; Length@mat]], 
+	modprref[mat_SparseArray, p_?IntegerQ, outputMode_ : 0, method : 0, backSub : True, nthread_ : 1, verbose : False, printStep : 100] :=
+		With[{joinedmat = modRREFLibFunction[mat, p, outputMode, method, backSub, nthread, verbose, printStep]},
+		 If[outputMode =!= 0, {joinedmat[[;; Length@mat]],
 		   Transpose[joinedmat[[Length@mat + 1 ;;]]]}, joinedmat]];
 
-	ratrref[mat_SparseArray, mode_ : 1, nthread_ : 1] := 
-		BinaryDeserialize[ratrreflib[BinarySerialize[mat], mode, nthread]];
+	ratrref[mat_SparseArray, outputMode_ : 0, method : 0, backSub : True, nthread_ : 1, verbose : False, printStep : 100] :=
+		BinaryDeserialize[rationalRREFLibFunction[BinarySerialize[mat], outputMode, method, backSub, nthread, verbose, printStep]];
 
 	```
 */
@@ -157,12 +184,16 @@ EXTERN_C DLLEXPORT int modpmatmul(WolframLibraryData ld, mint Argc, MArgument* A
 }
 
 EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args, MArgument Res) {
-	if (Argc != 4)
+	if (Argc != 8)
 		return LIBRARY_FUNCTION_ERROR;
 	auto mat = MArgument_getMSparseArray(Args[0]);
 	auto p = MArgument_getInteger(Args[1]);
 	auto output_kernel = MArgument_getInteger(Args[2]);
-	auto nthreads = MArgument_getInteger(Args[3]);
+	auto method = MArgument_getInteger(Args[3]);
+	auto is_back_sub = MArgument_getBoolean(Args[4]);
+	auto nthreads = MArgument_getInteger(Args[5]);
+	auto verbose = MArgument_getBoolean(Args[6]);
+	auto print_step = MArgument_getInteger(Args[7]);
 
 	auto sf = ld->sparseLibraryFunctions;
 
@@ -176,7 +207,11 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 	field_t F(FIELD_Fp, p);
 
 	rref_option_t opt;
+	opt->method = method;
+	opt->is_back_sub = is_back_sub;
 	opt->pool.reset(nthreads);
+	opt->verbose = verbose;
+	opt->print_step = print_step;
 
 	auto pivots = sparse_mat_rref(A, F, opt);
 	sparse_mat<ulong> K;
@@ -207,11 +242,15 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 // 2: output the rref and its pivots
 // 3: output the rref, kernel and pivots
 EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
-	if (Argc != 3)
+	if (Argc != 7)
 		return LIBRARY_FUNCTION_ERROR;
 	auto na_in = MArgument_getMNumericArray(Args[0]);
 	auto output_mode = MArgument_getInteger(Args[1]);
-	auto nthreads = MArgument_getInteger(Args[2]);
+	auto method = MArgument_getInteger(Args[2]);
+	auto is_back_sub = MArgument_getBoolean(Args[3]);
+	auto nthreads = MArgument_getInteger(Args[4]);
+	auto verbose = MArgument_getBoolean(Args[5]);
+	auto print_step = MArgument_getInteger(Args[6]);
 
 	numericarray_data_t type = MNumericArray_Type_Undef;
 	auto naFuns = ld->numericarrayLibraryFunctions;
@@ -237,7 +276,11 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.tokens, F);
 
 		rref_option_t opt;
+		opt->method = method;
+		opt->is_back_sub = is_back_sub;
 		opt->pool.reset(nthreads);
+		opt->verbose = verbose;
+		opt->print_step = print_step;
 
 		std::atomic<bool> cancel(false);
 		std::thread check_cancel([&]() {
