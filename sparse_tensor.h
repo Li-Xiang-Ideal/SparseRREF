@@ -60,14 +60,14 @@ namespace SparseRREF {
 			return A;
 
 		if (A.rank() != B.rank()) {
-			std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
-			exit(1);
+			std::cerr << "Error: tensor_add: The dimensions of the two tensors do not match." << std::endl;
+			return sparse_tensor<T, index_type, SPARSE_COO>();
 		}
 
 		for (size_t i = 0; i < A.rank(); i++) {
 			if (A.dim(i) != B.dim(i)) {
-				std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
-				exit(1);
+				std::cerr << "Error: tensor_add: The dimensions of the two tensors do not match." << std::endl;
+				return sparse_tensor<T, index_type, SPARSE_COO>();
 			}
 		}
 
@@ -142,20 +142,20 @@ namespace SparseRREF {
 		auto rank = A.rank();
 
 		if (A.rank() != B.rank()) {
-			std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
-			exit(1);
+			std::cerr << "Error: tensor_sum_replace: The dimensions of the two tensors do not match." << std::endl;
+			return;
 		}
 
 		for (size_t i = 0; i < A.rank(); i++) {
 			if (A.dim(i) != B.dim(i)) {
-				std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
-				exit(1);
+				std::cerr << "Error: tensor_sum_replace: The dimensions of the two tensors do not match." << std::endl;
+				return;
 			}
 		}
 
 		if (!(A.check_sorted() && B.check_sorted())) {
-			std::cerr << "Error: tensor_sum_replace: Both tensors must be sorted." << std::endl;
-			exit(1);
+			std::cerr << "Error: tensor_sum_replace: tensor_sum_replace: Both tensors must be sorted." << std::endl;
+			return;
 		}
 
 		// if one of the tensors is zero
@@ -234,7 +234,7 @@ namespace SparseRREF {
 
 		if (i1.size() != i2.size()) {
 			std::cerr << "Error: tensor_contract: The size of the two contract sets do not match." << std::endl;
-			exit(1);
+			return sparse_tensor<T, index_type, SPARSE_COO>();
 		}
 
 		if (i1.size() == 0) {
@@ -246,8 +246,8 @@ namespace SparseRREF {
 
 		for (size_t k = 0; k < i1.size(); k++) {
 			if (dimsA[i1[k]] != dimsB[i2[k]]) {
-				std::cerr << "Error: The dimensions of the two tensors do not match." << std::endl;
-				exit(1);
+				std::cerr << "Error: tensor_contract: The dimensions of the two tensors do not match." << std::endl;
+				return sparse_tensor<T, index_type, SPARSE_COO>();
 			}
 		}
 
@@ -676,13 +676,13 @@ namespace SparseRREF {
 
 		auto nt = tensors.size();
 		if (nt != index_sets.size()) {
-			std::cerr << "Error: The number of tensors does not match the number of index sets." << std::endl;
-			exit(1);
+			std::cerr << "Error: einstein_sum: The number of tensors does not match the number of index sets." << std::endl;
+			return sparse_tensor<T, index_type, SPARSE_COO>();
 		}
 		for (size_t i = 1; i < nt; i++) {
 			if (tensors[i]->rank() != index_sets[i].size()) {
-				std::cerr << "Error: The rank of the tensor does not match the index set." << std::endl;
-				exit(1);
+				std::cerr << "Error: einstein_sum: The rank of the tensor does not match the index set." << std::endl;
+				return sparse_tensor<T, index_type, SPARSE_COO>();
 			}
 		}
 
@@ -950,7 +950,8 @@ namespace SparseRREF {
 			}
 
 			if (count != dims.size()) {
-				throw std::runtime_error("Error: wrong format in the tensor file");
+				std::cerr << "Error: sparse_tensor_read: wrong format in the tensor file" << std::endl;
+				return sparse_tensor<ScalarType, IndexType, SPARSE_COO>();
 			}
 
 			ScalarType val;

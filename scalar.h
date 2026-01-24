@@ -46,11 +46,6 @@ namespace Flint {
 	concept unsigned_builtin_integral = builtin_integral<T> && std::is_unsigned_v<T>;
 
 #ifdef USE_MIMALLOC
-	static void* mi_gmp_alloc(size_t size) {
-		void* ptr = mi_malloc(size);
-		return ptr;
-	}
-
 	static void* mi_gmp_realloc(void* ptr, size_t old_size, size_t new_size) {
 		void* new_ptr = mi_realloc(ptr, new_size);
 		return new_ptr;
@@ -62,7 +57,7 @@ namespace Flint {
 	// set memory functions for flint
 	inline void set_memory_functions() {
 #ifdef USE_MIMALLOC
-		mp_set_memory_functions(&mi_gmp_alloc, &mi_gmp_realloc, &mi_gmp_free);
+		mp_set_memory_functions(&mi_malloc, &mi_gmp_realloc, &mi_gmp_free);
 		__flint_set_memory_functions(&mi_malloc, &mi_calloc, &mi_realloc, &mi_free);
 #endif
 	}
@@ -230,9 +225,9 @@ namespace Flint {
 		template <unsigned_builtin_integral T> rat_t(const T a) { init(); fmpq_set_ui(&_data, a, 1); }
 
 		rat_t(const int_t& a) { init(); fmpq_set_fmpz(&_data, &a._data); }
-		rat_t(int_t&& a) { _data = { a._data,1LL }; a.init(); }
+		rat_t(int_t&& a) noexcept { _data = { a._data,1LL }; a.init(); }
 		rat_t(const int_t& a, const int_t& b) { init(); fmpq_set_fmpz_frac(&_data, &a._data, &b._data); }
-		rat_t(int_t&& a, int_t&& b, const bool is_canonical = false) {
+		rat_t(int_t&& a, int_t&& b, const bool is_canonical = false) noexcept {
 			_data = { a._data, b._data };
 			a.init(); b.init(); // reset the other data to avoid double free
 			if (!is_canonical)
@@ -245,8 +240,7 @@ namespace Flint {
 		explicit rat_t(const char* str) { init(); set_str(str); }
 
 		ulong height_bits() const { return fmpq_height_bits(&_data); }
-		bool is_den_one() const { return fmpz_is_one(fmpq_denref(&_data)); }
-		bool is_integer() const { return is_den_one(); }
+		bool is_integer() const { return fmpz_is_one(fmpq_denref(&_data)); }
 
 		int_t num() const { return fmpq_numref(&_data); }
 		int_t den() const { return fmpq_denref(&_data); }

@@ -771,20 +771,6 @@ namespace SparseRREF {
 
 			return max_height;
 		}
-
-		// denominator bits
-		template <typename U = T> requires std::is_same_v<U, rat_t>
-		ulong den_bits() const {
-			int_t den = 1;
-			for (size_t i = 0; i < nrow; i++) {
-				for (size_t j = 0; j < rows[i].nnz(); j++) {
-					if (rows[i][j] != 0 && !(rows[i][j].is_den_one()))
-						den = LCM(den, rows[i][j].den());
-				}
-			}
-
-			return den.bits();
-		}
 	};
 
 	// CSR format for sparse tensor
