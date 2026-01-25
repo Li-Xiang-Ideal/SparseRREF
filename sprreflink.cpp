@@ -189,57 +189,153 @@ EXTERN_C DLLEXPORT int sprref_mod_matmul(WolframLibraryData ld, mint Argc, MArgu
 	return LIBRARY_NO_ERROR;
 }
 
-EXTERN_C DLLEXPORT int sprref_mod_rref(WolframLibraryData ld, mint Argc, MArgument *Args, MArgument Res) {
+// output_mode:
+// 0: output the rref
+// 1: output the rref and its kernel
+// 2: output the rref and its pivots
+// 3: output the rref, kernel and pivots
+EXTERN_C DLLEXPORT int sprref_mod_rref(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
 	if (Argc != 8)
 		return LIBRARY_FUNCTION_ERROR;
-	auto mat = MArgument_getMSparseArray(Args[0]);
+	auto mat_in = MArgument_getMSparseArray(Args[0]);
 	auto p = MArgument_getInteger(Args[1]);
-	auto output_kernel = MArgument_getInteger(Args[2]);
+	auto output_mode = MArgument_getInteger(Args[2]);
 	auto method = MArgument_getInteger(Args[3]);
 	auto is_back_sub = MArgument_getBoolean(Args[4]);
 	auto nthreads = MArgument_getInteger(Args[5]);
 	auto verbose = MArgument_getBoolean(Args[6]);
 	auto print_step = MArgument_getInteger(Args[7]);
 
+	numericarray_data_t type = MNumericArray_Type_UBit8;
 	auto sf = ld->sparseLibraryFunctions;
+	auto naFuns = ld->numericarrayLibraryFunctions;
 
-	auto ranks = sf->MSparseArray_getRank(mat);
-	if (ranks != 2 && sf->MSparseArray_getImplicitValue(mat) != 0)
-		return LIBRARY_FUNCTION_ERROR;
-	
-
-	auto A = MSparseArray_to_sparse_mat_ulong(ld, Args, (ulong)p);
-
-	field_t F(FIELD_Fp, p);
-
-	rref_option_t opt;
-	opt->method = method;
-	opt->is_back_sub = is_back_sub;
-	opt->pool.reset(nthreads);
-	opt->verbose = verbose;
-	opt->print_step = print_step;
-
-	auto pivots = sparse_mat_rref(A, F, opt);
-	sparse_mat<ulong> K;
-	size_t len = 0;
-	if (output_kernel) {
-		K = sparse_mat_rref_kernel(A, pivots, F, opt);
-		K = K.transpose();
-		len = K.nrow;
-	} 
-
-	A.append(std::move(K));
-
-	MSparseArray result = 0;
-	int err = sparse_mat_ulong_to_MSparseArray(ld, result, A);
-	
-	if (err)
+	auto ranks = sf->MSparseArray_getRank(mat_in);
+	if (ranks != 2 && sf->MSparseArray_getImplicitValue(mat_in) != 0)
 		return LIBRARY_FUNCTION_ERROR;
 
-	MArgument_setMSparseArray(Res, result);
-	// MArgument_setMTensor(Res, pos);
+	auto mat = MSparseArray_to_sparse_mat_ulong(ld, Args, (ulong)p);
 
-	return LIBRARY_NO_ERROR;
+	WXF_PARSER::Encoder encoder;
+	auto& res_str = encoder.buffer;
+	uint8_t* out_str = nullptr;
+	mint out_len = 0;
+	auto err = LIBRARY_NO_ERROR;
+	MNumericArray na_out = NULL;
+	{
+		field_t F(FIELD_Fp, p);
+
+		rref_option_t opt;
+		opt->method = method;
+		opt->is_back_sub = is_back_sub;
+		opt->pool.reset(nthreads);
+		opt->verbose = verbose;
+		opt->print_step = print_step;
+
+		std::atomic<bool> cancel(false);
+		std::thread check_cancel([&]() {
+			while (!cancel) {
+				cancel = ld->AbortQ();
+				opt->abort = cancel.load();
+				// wait for 100 ms before checking again
+				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			}
+			});
+
+		auto pivots = sparse_mat_rref(mat, F, opt);
+		std::vector<pivot_t<int>> pivots_vec;
+		for (auto& p : pivots) {
+			pivots_vec.insert(pivots_vec.end(), p.begin(), p.end());
+		}
+
+		sparse_mat<ulong> K;
+		size_t len = 0;
+		if (output_mode == 1 || output_mode == 3) {
+			K = sparse_mat_rref_kernel(mat, pivots, F, opt);
+			len = K.nrow;
+		}
+
+		{
+			using namespace WXF_PARSER;
+
+			std::vector<uint8_t> m_str;
+			auto push_mat = [&](const auto& M) {
+				m_str = sparse_mat_write_wxf(M, false);
+				encoder.push_ustr(m_str);
+				};
+			auto push_pivots = [&]() {
+				// rank 2, dimensions {pivots_vec.size(), 2}
+				encoder.push_array_info({ pivots_vec.size(), 2 }, WXF_HEAD::array, 3);
+				uint8_t int64_buf[16];
+				for (auto& p : pivots_vec) {
+					// output the pivot position
+					int64_t row = p.r + 1; // 1-based index
+					int64_t col = p.c + 1; // 1-based index
+					memcpy(int64_buf, &row, sizeof(row));
+					memcpy(int64_buf + sizeof(row), &col, sizeof(col));
+					res_str.insert(res_str.end(), int64_buf, int64_buf + sizeof(row) + sizeof(col));
+				}
+				};
+			
+			switch (output_mode) {
+			case 0: // output the rref
+				res_str = sparse_mat_write_wxf(mat, true);
+				break;
+			case 1: {// output the rref and its kernel
+				res_str.push_back(56); res_str.push_back(58);
+				encoder.push_function("List", 2);
+				push_mat(mat);
+				if (len > 0) 
+					push_mat(K);
+				else 
+					encoder.push_symbol("Null");
+				break;
+			}
+			case 2: { // output the rref and its pivots
+				res_str.push_back(56); res_str.push_back(58);
+				encoder.push_function("List", 2);
+				push_mat(mat);
+				push_pivots();
+				break;
+			}
+			case 3: { // output the rref, kernel and pivots
+				res_str.push_back(56); res_str.push_back(58);
+				encoder.push_function("List", 3);
+				push_mat(mat);
+				if (len > 0)
+					push_mat(K);
+				else
+					encoder.push_symbol("Null");
+				push_pivots();
+				break;
+			}
+			default:
+				return LIBRARY_FUNCTION_ERROR;
+			}
+		}
+
+		cancel = true;
+		check_cancel.join();
+
+		if (opt->abort) {
+			return LIBRARY_FUNCTION_ERROR;
+		}
+
+		// output the result(bit_array)
+		out_len = res_str.size();
+		auto err = naFuns->MNumericArray_new(type, 1, &out_len, &na_out);
+
+		if (err)
+			return LIBRARY_FUNCTION_ERROR;
+
+		out_str = (uint8_t*)(naFuns->MNumericArray_getData(na_out));
+	}
+
+	std::memcpy(out_str, res_str.data(), res_str.size() * sizeof(uint8_t));
+
+	MArgument_setMNumericArray(Res, na_out);
+
+	return err;
 }
 
 // output_mode:

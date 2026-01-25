@@ -19,8 +19,8 @@
   - "OutputMode" - return value of a function:
     0, "RREF": rref
     1, "RREF,Kernel": {rref, kernel}
-    2, "RREF,Pivots": {rref, pivots} (only for Modulus -> 0)
-    3, "RREF,Kernel,Pivots": {rref, kernel, pivots} (only for Modulus -> 0)
+    2, "RREF,Pivots": {rref, pivots}
+    3, "RREF,Kernel,Pivots": {rref, kernel, pivots}
   - "Method":
     0, "RightAndLeft": right and left search
     1, "Right": only right search (chooses the leftmost independent columns as pivots)
@@ -70,14 +70,13 @@ SyntaxInformation[SparseRREF] = {"ArgumentsPattern" -> {_, OptionsPattern[]}}
 
 SparseRREF::findlib = "SparseRREF library \"`1`\" not found at `2`";
 SparseRREF::optionvalue = "Invalid SparseRREF option value: `1` -> `2`. Allowed values: `3`";
-SparseRREF::rettype = "SparseRREF should return SparseArray or List, but returned: `1`"
+SparseRREF::rettype = "SparseRREF should return SparseArray or List, but returned: `1`";
 
 Begin["`Private`"];
 
 (* Load SparseRREF library *)
 
 $sparseRREFDirectory = DirectoryName[$InputFileName];
-(* TODO rename e.g. to SparseRREF_MMA or SparseRREF_LibraryLink *)
 $sparseRREFLibName = "sprreflink";
 
 (* TODO: shall we search in all directories from $LibraryPath? *)
@@ -119,7 +118,7 @@ modRREFLibFunction =
       True | False,
       Integer
     },
-    {LibraryDataType[SparseArray], Automatic}
+    {LibraryDataType[ByteArray], Automatic}
   ];
 
 (* Helper functions: parse options, validate etc. *)
@@ -245,42 +244,15 @@ modRREF[
     verbose_?BooleanQ,
     printStep_?IntegerQ
   ] :=
-  With[
-    {
-      joinedmat = modRREFLibFunction[
-        mat,
-        p,
-        outputMode,
-        method,
-        backwardSubstitution,
-        threads,
-        verbose,
-        printStep
-      ]
-    },
-    If[!MatchQ[joinedmat, _SparseArray],
-      (* SparseRREF will print error message and return $Failed *)
-      Return[joinedmat];
-    ];
-    Switch[outputMode,
-      0,
-      joinedmat,
-      1,
-      {
-        joinedmat[[;; Length @ mat]],
-        Transpose @ joinedmat[[Length @ mat + 1;;]]
-      },
-      (* TODO: support "OutputMode" -> 2 and 3 (pivots), similar to rationalRREF *)
-      _,
-      throwOptionError[
-        "OutputMode",
-        outputMode,
-        InputForm @ Keys @ Select[
-          outputModeToInteger, 
-          MemberQ[{0, 1}, #] &
-        ]
-      ]
-    ]
+  BinaryDeserialize @ modRREFLibFunction[
+    mat,
+    p,
+    outputMode,
+    method,
+    backwardSubstitution,
+    threads,
+    verbose,
+    printStep
   ];
 
 With[{syms = Names["SparseRREF`*"]},
