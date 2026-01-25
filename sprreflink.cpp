@@ -25,10 +25,10 @@
 
 	```mathematica
 
-	rationalRREFLibFunction =
+	ratRREFLibFunction =
 	  LibraryFunctionLoad[
-		"mathlink.dll",
-		"rational_rref",
+		"sprreflink.dll",
+		"sprref_rat_rref",
 		{
 		  {LibraryDataType[ByteArray], "Constant"},
 		  Integer,
@@ -43,8 +43,8 @@
 
 	modRREFLibFunction =
 	  LibraryFunctionLoad[
-		"mathlink.dll",
-		"modrref",
+		"sprreflink.dll",
+		"sprref_mod_rref",
 		{
 		  {LibraryDataType[SparseArray], "Constant"},
 		  Integer,
@@ -55,17 +55,15 @@
 		  True | False,
 		  Integer
 		},
-		{LibraryDataType[SparseArray], Automatic}
+		{LibraryDataType[ByteArray], Automatic}
 	  ];
 
 	(* the first matrix is the result of rref, and the second is its kernel *)
-	modprref[mat_SparseArray, p_?IntegerQ, outputMode_ : 0, method : 0, backSub : True, nthread_ : 1, verbose : False, printStep : 100] :=
-		With[{joinedmat = modRREFLibFunction[mat, p, outputMode, method, backSub, nthread, verbose, printStep]},
-		 If[outputMode =!= 0, {joinedmat[[;; Length@mat]],
-		   Transpose[joinedmat[[Length@mat + 1 ;;]]]}, joinedmat]];
+	modrref[mat_SparseArray, p_?IntegerQ, outputMode_ : 0, method : 0, backSub : True, nthread_ : 1, verbose : False, printStep : 100] :=
+		BinaryDeserialize[modRREFLibFunction[mat, p, outputMode, method, backSub, nthread, verbose, printStep]];
 
 	ratrref[mat_SparseArray, outputMode_ : 0, method : 0, backSub : True, nthread_ : 1, verbose : False, printStep : 100] :=
-		BinaryDeserialize[rationalRREFLibFunction[BinarySerialize[mat], outputMode, method, backSub, nthread, verbose, printStep]];
+		BinaryDeserialize[ratRREFLibFunction[BinarySerialize[mat], outputMode, method, backSub, nthread, verbose, printStep]];
 
 	```
 */
@@ -78,6 +76,14 @@
 #include "WolframNumericArrayLibrary.h"
 
 using namespace SparseRREF;
+
+EXTERN_C DLLEXPORT mint WolframLibrary_getVersion() {
+    return WolframLibraryVersion;
+}
+
+EXTERN_C DLLEXPORT int WolframLibrary_initialize(WolframLibraryData ld) {
+    return LIBRARY_NO_ERROR;
+}
 
 sparse_mat<ulong> MSparseArray_to_sparse_mat_ulong(WolframLibraryData ld, MArgument* arg, ulong p) {
 	auto mat = MArgument_getMSparseArray(*arg);
@@ -147,7 +153,7 @@ int sparse_mat_ulong_to_MSparseArray(WolframLibraryData ld, MSparseArray& res, c
 	return err;
 }
 
-EXTERN_C DLLEXPORT int modpmatmul(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+EXTERN_C DLLEXPORT int sprref_mod_matmul(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
 	if (Argc != 4)
 		return LIBRARY_FUNCTION_ERROR;
 	auto matA = MArgument_getMSparseArray(Args[0]);
@@ -183,7 +189,7 @@ EXTERN_C DLLEXPORT int modpmatmul(WolframLibraryData ld, mint Argc, MArgument* A
 	return LIBRARY_NO_ERROR;
 }
 
-EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args, MArgument Res) {
+EXTERN_C DLLEXPORT int sprref_mod_rref(WolframLibraryData ld, mint Argc, MArgument *Args, MArgument Res) {
 	if (Argc != 8)
 		return LIBRARY_FUNCTION_ERROR;
 	auto mat = MArgument_getMSparseArray(Args[0]);
@@ -241,7 +247,7 @@ EXTERN_C DLLEXPORT int modrref(WolframLibraryData ld, mint Argc, MArgument *Args
 // 1: output the rref and its kernel
 // 2: output the rref and its pivots
 // 3: output the rref, kernel and pivots
-EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+EXTERN_C DLLEXPORT int sprref_rat_rref(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
 	if (Argc != 7)
 		return LIBRARY_FUNCTION_ERROR;
 	auto na_in = MArgument_getMNumericArray(Args[0]);
@@ -388,7 +394,7 @@ EXTERN_C DLLEXPORT int rational_rref(WolframLibraryData ld, mint Argc, MArgument
 	return err;
 }
 
-EXTERN_C DLLEXPORT int ratmat_inv(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+EXTERN_C DLLEXPORT int sprref_rat_matinv(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
 	if (Argc != 2)
 		return LIBRARY_FUNCTION_ERROR;
 	auto na_in = MArgument_getMNumericArray(Args[0]);

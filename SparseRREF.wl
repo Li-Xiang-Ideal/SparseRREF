@@ -6,7 +6,7 @@
   See details at https://github.com/munuxi/SparseRREF
   
   Prerequisites:
-  - Compile mma_link.cpp to shared library mathlink.$EXT ($EXT = "dll" on Windows, "so" on Linux, "dylib" on macOS)
+  - Compile sprreflink.cpp to shared library sprreflink.$EXT ($EXT = "dll" on Windows, "so" on Linux, "dylib" on macOS)
   - Store SparseRREF.wl in the same directory.
 
   Available functions:
@@ -78,7 +78,7 @@ Begin["`Private`"];
 
 $sparseRREFDirectory = DirectoryName[$InputFileName];
 (* TODO rename e.g. to SparseRREF_MMA or SparseRREF_LibraryLink *)
-$sparseRREFLibName = "mathlink";
+$sparseRREFLibName = "sprreflink";
 
 (* TODO: shall we search in all directories from $LibraryPath? *)
 $sparseRREFLib = FindLibrary @ FileNameJoin @ {$sparseRREFDirectory, $sparseRREFLibName};
@@ -89,10 +89,10 @@ If[FailureQ[$sparseRREFLib],
 
 (* TODO: provide API for other exported functions: modpmatmul, ratmat_inv *)
 
-rationalRREFLibFunction =
+ratRREFLibFunction =
   LibraryFunctionLoad[
     $sparseRREFLib,
-    "rational_rref",
+    "sprref_rat_rref",
     {
       {LibraryDataType[ByteArray], "Constant"},
       Integer,
@@ -108,7 +108,7 @@ rationalRREFLibFunction =
 modRREFLibFunction =
   LibraryFunctionLoad[
     $sparseRREFLib,
-    "modrref",
+    "sprref_mod_rref",
     {
       {LibraryDataType[SparseArray], "Constant"},
       Integer,
@@ -225,7 +225,7 @@ rationalRREF[
     verbose_?BooleanQ,
     printStep_?IntegerQ
   ] :=
-  BinaryDeserialize @ rationalRREFLibFunction[
+  BinaryDeserialize @ ratRREFLibFunction[
     BinarySerialize[mat],
     outputMode,
     method,
