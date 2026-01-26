@@ -69,7 +69,9 @@
 */
 
 #include <string>
+#include <utility>
 #include "sparse_mat.h"
+#include "sparse_tensor.h"
 #include "wxf_support.h"
 #include "WolframLibrary.h"
 #include "WolframSparseLibrary.h"
@@ -126,9 +128,11 @@ int sparse_mat_ulong_to_MSparseArray(WolframLibraryData ld, MSparseArray& res, c
 	auto sf = ld->sparseLibraryFunctions;
 	size_t nnz = A.nnz();
 	MTensor pos, val, dim;
-	mint dims_r2[] = { nnz, 2 };
+	if (!std::in_range<mint>(nnz))
+		return LIBRARY_FUNCTION_ERROR;
+	mint dims_r2[] = { static_cast<mint>(nnz), 2 };
 	ld->MTensor_new(MType_Integer, 2, dims_r2, &pos);
-	mint dims_r1[] = { nnz };
+	mint dims_r1[] = { static_cast<mint>(nnz) };
 	ld->MTensor_new(MType_Integer, 1, dims_r1, &val);
 	dims_r1[0] = 2;
 	ld->MTensor_new(MType_Integer, 1, dims_r1, &dim);
@@ -150,6 +154,226 @@ int sparse_mat_ulong_to_MSparseArray(WolframLibraryData ld, MSparseArray& res, c
 	ld->MTensor_free(pos);
 	ld->MTensor_free(val);
 	ld->MTensor_free(dim);
+	return err;
+}
+
+sparse_tensor<ulong, int, SPARSE_CSR> MSparseArray_to_sparse_tensor_ulong(WolframLibraryData ld, MArgument* arg, ulong p) {
+	auto tensor = MArgument_getMSparseArray(*arg);
+	auto sf = ld->sparseLibraryFunctions;
+
+	auto dims = sf->MSparseArray_getDimensions(tensor);
+	auto rank = sf->MSparseArray_getRank(tensor);
+	auto nrows = dims[0];
+
+	auto m_rowptr = sf->MSparseArray_getRowPointers(tensor);
+	auto m_colptr = sf->MSparseArray_getColumnIndices(tensor);
+	auto m_valptr = sf->MSparseArray_getExplicitValues(tensor);
+
+	// rowptr, valptr, colptr are managed by mathematica
+	// do not free them
+	mint* rowptr = ld->MTensor_getIntegerData(*m_rowptr);
+	mint* valptr = ld->MTensor_getIntegerData(*m_valptr);
+	mint* colptr = ld->MTensor_getIntegerData(*m_colptr);
+
+	auto nnz = rowptr[nrows];
+
+	// init a sparse tensor
+	nmod_t pp;
+	int_t tmp;
+	nmod_init(&pp, (ulong)p);
+	sparse_tensor<ulong, int, SPARSE_CSR> A(std::vector<size_t>(dims, dims + rank), nnz);
+
+	auto& A_rowptr = A.data.rowptr;
+	auto& A_colptr = A.data.colptr;
+	auto& A_valptr = A.data.valptr;
+
+	std::copy(rowptr, rowptr + nrows + 1, A_rowptr.begin());
+	for (auto i = 0; i < nnz; i++) {
+		tmp = valptr[i];
+		A_valptr[i] = tmp % pp;
+	}
+	for (auto i = 0; i < nnz * (rank - 1); i++) {
+		A_colptr[i] = colptr[i] - 1;
+	}
+
+	return A;
+}
+
+int sparse_tensor_ulong_to_MSparseArray(WolframLibraryData ld, MSparseArray& res, const sparse_tensor<ulong, int, SPARSE_CSR>& A) {
+	auto sf = ld->sparseLibraryFunctions;
+	size_t nnz = A.nnz();
+	MTensor pos, val, dim;
+	if (!std::in_range<mint>(nnz))
+		return LIBRARY_FUNCTION_ERROR;
+	mint dims_r2[] = { static_cast<mint>(nnz), static_cast<mint>(A.rank()) };
+	ld->MTensor_new(MType_Integer, 2, dims_r2, &pos);
+	mint dims_r1[] = { static_cast<mint>(nnz) };
+	ld->MTensor_new(MType_Integer, 1, dims_r1, &val);
+	dims_r1[0] = static_cast<mint>(A.rank());
+	ld->MTensor_new(MType_Integer, 1, dims_r1, &dim);
+	mint* dimdata = ld->MTensor_getIntegerData(dim);
+	for (size_t i = 0; i < A.rank(); i++)
+		dimdata[i] = static_cast<mint>(A.dim(i));
+	mint* valdata = ld->MTensor_getIntegerData(val);
+	mint* posdata = ld->MTensor_getIntegerData(pos);
+	for (size_t i = 0; i < nnz; i++) {
+		valdata[i] = static_cast<mint>(A.val(i));
+		auto index_v = A.index_vector(i);
+		for (size_t j = 0; j < A.rank(); j++) {
+			posdata[i * A.rank() + j] = static_cast<mint>(index_v[j] + 1);
+		}
+	}
+	auto err = sf->MSparseArray_fromExplicitPositions(pos, val, dim, 0, &res);
+	ld->MTensor_free(pos);
+	ld->MTensor_free(val);
+	ld->MTensor_free(dim);
+	return err;
+}
+
+EXTERN_C DLLEXPORT int sprref_mod_tensor_contract(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+	if (Argc != 6)
+		return LIBRARY_FUNCTION_ERROR;
+	auto p = MArgument_getInteger(Args[2]);
+	auto indexA = MArgument_getMTensor(Args[3]);
+	auto indexB = MArgument_getMTensor(Args[4]);
+	auto nthreads = MArgument_getInteger(Args[5]);
+
+	if (ld->MTensor_getRank(indexA) != 1 || ld->MTensor_getRank(indexB) != 1)
+		return LIBRARY_FUNCTION_ERROR;
+
+	auto A = MSparseArray_to_sparse_tensor_ulong(ld, Args, (ulong)p);
+	auto B = MSparseArray_to_sparse_tensor_ulong(ld, Args + 1, (ulong)p);
+
+	sparse_tensor<ulong> tensorA(std::move(A));
+	sparse_tensor<ulong> tensorB(std::move(B));
+
+	auto startA = ld->MTensor_getIntegerData(indexA);
+	auto startB = ld->MTensor_getIntegerData(indexB);
+	size_t lenA = ld->MTensor_getFlattenedLength(indexA);
+	size_t lenB = ld->MTensor_getFlattenedLength(indexB);
+
+	if (lenA != lenB)
+		return LIBRARY_FUNCTION_ERROR;
+
+	std::vector<size_t> idxA(startA, startA + lenA);
+	std::vector<size_t> idxB(startB, startB + lenB);
+	for (auto& i : idxA) {
+		i--; // change to zero-based index
+		if (i < 0 || i >= tensorA.rank()) { return LIBRARY_FUNCTION_ERROR; }
+	}
+	for (auto& i : idxB) {
+		i--;
+		if (i < 0 || i >= tensorB.rank()) { return LIBRARY_FUNCTION_ERROR; }
+	}
+
+	field_t F(FIELD_Fp, (ulong)p);
+	int err = 0;
+	MSparseArray result = 0;
+	if (nthreads == 1) {
+		auto C = tensor_contract(tensorA, tensorB, idxA, idxB, F, nullptr);
+		err = sparse_tensor_ulong_to_MSparseArray(ld, result, C);
+	}
+	else {
+		thread_pool pool(nthreads);
+		auto tensorC = tensor_contract(tensorA, tensorB, idxA, idxB, F, &pool);
+		sparse_tensor<ulong, int, SPARSE_CSR> C(std::move(tensorC), &pool);
+		err = sparse_tensor_ulong_to_MSparseArray(ld, result, C);
+	}
+	if (err)
+		return LIBRARY_FUNCTION_ERROR;
+	MArgument_setMSparseArray(Res, result);
+	return LIBRARY_NO_ERROR;
+}
+
+EXTERN_C DLLEXPORT int sprref_rat_tensor_contract(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+	if (Argc != 5)
+		return LIBRARY_FUNCTION_ERROR;
+	auto na_inA = MArgument_getMNumericArray(Args[0]);
+	auto na_inB = MArgument_getMNumericArray(Args[1]);
+	auto indexA = MArgument_getMTensor(Args[2]);
+	auto indexB = MArgument_getMTensor(Args[3]);
+	auto nthreads = MArgument_getInteger(Args[4]);
+	numericarray_data_t type = MNumericArray_Type_Undef;
+	auto naFuns = ld->numericarrayLibraryFunctions;
+
+	type = naFuns->MNumericArray_getType(na_inA);
+	if (type != MNumericArray_Type_UBit8)
+		return LIBRARY_FUNCTION_ERROR;
+	type = naFuns->MNumericArray_getType(na_inB);
+	if (type != MNumericArray_Type_UBit8)
+		return LIBRARY_FUNCTION_ERROR;
+
+	auto in_strA = (uint8_t*)(naFuns->MNumericArray_getData(na_inA));
+	auto lengthA = naFuns->MNumericArray_getFlattenedLength(na_inA);
+	auto in_strB = (uint8_t*)(naFuns->MNumericArray_getData(na_inB));
+	auto lengthB = naFuns->MNumericArray_getFlattenedLength(na_inB);
+
+	if (ld->MTensor_getRank(indexA) != 1 || ld->MTensor_getRank(indexB) != 1)
+		return LIBRARY_FUNCTION_ERROR;
+
+	auto startA = ld->MTensor_getIntegerData(indexA);
+	auto startB = ld->MTensor_getIntegerData(indexB);
+	size_t lenA = ld->MTensor_getFlattenedLength(indexA);
+	size_t lenB = ld->MTensor_getFlattenedLength(indexB);
+
+	if (lenA != lenB)
+		return LIBRARY_FUNCTION_ERROR;
+
+	std::vector<size_t> idxA(startA, startA + lenA);
+	std::vector<size_t> idxB(startB, startB + lenB);
+
+	std::vector<uint8_t> res_str;
+	uint8_t* out_str = nullptr;
+	mint out_len = 0;
+	auto err = LIBRARY_NO_ERROR;
+	MNumericArray na_out = NULL;
+	{
+		field_t F(FIELD_QQ);
+		sparse_tensor<rat_t> tensorA, tensorB;
+		thread_pool pool(nthreads);
+		thread_pool* pool_ptr = (nthreads == 1) ? nullptr : &pool;
+
+		{
+			WXF_PARSER::Parser parserA(in_strA, lengthA);
+			parserA.parse();
+			auto A = sparse_tensor_read_wxf<rat_t, int>(parserA.tokens, F, pool_ptr);
+			tensorA = std::move(A);
+		}
+
+		{
+			WXF_PARSER::Parser parserB(in_strB, lengthB);
+			parserB.parse();
+			auto B = sparse_tensor_read_wxf<rat_t, int>(parserB.tokens, F, pool_ptr);
+			tensorB = std::move(B);
+		}
+		
+		for (auto& i : idxA) {
+			i--; // change to zero-based index
+			if (i < 0 || i >= tensorA.rank()) { return LIBRARY_FUNCTION_ERROR; }
+		}
+		for (auto& i : idxB) {
+			i--;
+			if (i < 0 || i >= tensorB.rank()) { return LIBRARY_FUNCTION_ERROR; }
+		}
+
+		auto tensorC = tensor_contract(tensorA, tensorB, idxA, idxB, F, pool_ptr);
+		sparse_tensor<rat_t, int, SPARSE_CSR> C(std::move(tensorC), pool_ptr);
+		res_str = sparse_tensor_write_wxf(C, true);
+
+		// output the result(bit_array)
+		out_len = res_str.size();
+		auto err = naFuns->MNumericArray_new(type, 1, &out_len, &na_out);
+
+		if (err)
+			return LIBRARY_FUNCTION_ERROR;
+
+		out_str = (uint8_t*)(naFuns->MNumericArray_getData(na_out));
+	}
+
+	std::memcpy(out_str, res_str.data(), res_str.size() * sizeof(uint8_t));
+
+	MArgument_setMNumericArray(Res, na_out);
+
 	return err;
 }
 

@@ -35,7 +35,25 @@
     - "PrintStep": Integer (print progress every n steps).
     
   SparseMatMul[matA, matB, opts]
-    Computes the exact matrix product of two sparse matrices.
+    Computes the matrix multiplication of two sparse matrices.
+    
+    Options:
+    - "Modulus":
+      0: compute over rational field (default).
+      prime p: compute over finite field Z/p.
+    - "Threads": number of threads (Integer >= 0, with 0 meaning automatic).
+    
+  SparseTensorContract[tensorA, tensorB, IndexPairs, opts]
+    Computes the tensor contraction of two sparse tensors, with the idxA-th index of tensorA contracted with the idxB-th index of tensorB for each {idxA, idxB} in IndexPairs.
+    
+    Options:
+    - "Modulus":
+      0: compute over rational field (default).
+      prime p: compute over finite field Z/p.
+    - "Threads": number of threads (Integer >= 0, with 0 meaning automatic).
+    
+  SparseTensorDot[tensorA, tensorB, opts]
+    Computes the dot product of two sparse tensors.
     
     Options:
     - "Modulus":
@@ -106,7 +124,7 @@ Options[SparseMatMul] = {
 };
 
 SparseMatMul::usage =
-  "SparseMatMul[matA, matB, opts] computes the exact matrix multiplication of two sparse rational matrices " <>
+  "SparseMatMul[matA, matB, opts] computes the matrix multiplication of two sparse rational matrices " <>
   "or two sparse integer matrices modulo prime p (if Modulus -> p is specified). " <>
   "Default options: " <> ToString @ Options @ SparseMatMul;
 
@@ -115,6 +133,39 @@ SyntaxInformation[SparseMatMul] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]
 SparseMatMul::optionvalue = "Invalid SparseMatMul option value: `1` -> `2`. Allowed values: `3`";
 SparseMatMul::rettype = "SparseMatMul should return SparseArray, but returned: `1`";
 SparseMatMul::dims = "Matrices `1` and `2` have incompatible dimensions.";
+
+
+Options[SparseTensorContract] = {
+  Modulus -> 0,
+  "Threads" -> 1
+};
+
+SparseTensorContract::usage =
+  "SparseTensorContract[tensorA, tensorB, IndexPairs, opts] computes the tensor contraction of " <>
+  "two sparse rational tensors or two sparse integer tensors modulo prime p (if Modulus -> p is specified), " <>
+  "with the idxA-th index of tensorA contracted with the idxB-th index of tensorB for each {idxA, idxB} in IndexPairs. " <>
+  "Default options: " <> ToString @ Options @ SparseTensorContract;
+
+SyntaxInformation[SparseTensorContract] = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}}
+
+SparseTensorContract::optionvalue = "Invalid SparseTensorContract option value: `1` -> `2`. Allowed values: `3`";
+SparseTensorContract::rettype = "SparseTensorContract should return SparseArray, but returned: `1`";
+SparseTensorContract::dims = "Tensors `1` and `2` have incompatible dimensions for contraction.";
+SparseTensorContract::indexpairs = "IndexPairs `1` is invalid.";
+
+
+Options[SparseTensorDot] = Options[SparseTensorContract];
+
+SparseTensorDot::usage =
+  "SparseTensorDot[tensorA, tensorB, opts] computes the dot product of two sparse rational tensors " <>
+  "or two sparse integer tensors modulo prime p (if Modulus -> p is specified). " <>
+  "Default options: " <> ToString @ Options @ SparseTensorDot;
+
+SyntaxInformation[SparseTensorDot] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}}
+
+SparseTensorDot::optionvalue = "Invalid SparseTensorDot option value: `1` -> `2`. Allowed values: `3`";
+SparseTensorDot::rettype = "SparseTensorDot should return SparseArray, but returned: `1`";
+SparseTensorDot::dims = "Tensors `1` and `2` have incompatible dimensions for dot product.";
 
 
 Begin["`Private`"];
@@ -188,6 +239,36 @@ modMatMulLibFunction =
       {LibraryDataType[SparseArray], "Constant"},
       {LibraryDataType[SparseArray], "Constant"},
       Integer,
+      Integer
+    },
+    {LibraryDataType[SparseArray], Automatic}
+  ];
+
+
+ratTensorContractLibFunction =
+  LibraryFunctionLoad[
+    $sparseRREFLib,
+    "sprref_rat_tensor_contract",
+    {
+      {LibraryDataType[ByteArray], "Constant"},
+      {LibraryDataType[ByteArray], "Constant"},
+      {LibraryDataType[List, Integer, 1], "Constant"},
+      {LibraryDataType[List, Integer, 1], "Constant"},
+      Integer
+    },
+    {LibraryDataType[ByteArray], Automatic}
+  ];
+
+modTensorContractLibFunction =
+  LibraryFunctionLoad[
+    $sparseRREFLib,
+    "sprref_mod_tensor_contract",
+    {
+      {LibraryDataType[SparseArray], "Constant"},
+      {LibraryDataType[SparseArray], "Constant"},
+      Integer,
+      {LibraryDataType[List, Integer, 1], "Constant"},
+      {LibraryDataType[List, Integer, 1], "Constant"},
       Integer
     },
     {LibraryDataType[SparseArray], Automatic}
@@ -380,6 +461,107 @@ modMatMul[
     matB,
     p,
     threads
+  ];
+
+
+(* Define public function SparseTensorContract[] *)
+
+SparseTensorContract[
+    tensorA_SparseArray,
+    tensorB_SparseArray,
+    indexPairs : {{_Integer ..} ..},
+    opts : OptionsPattern[]
+  ] :=
+  Catch @ With[
+    {
+      $modulus = parseModulus @ OptionValue["Modulus"],
+      $threads = parseThreads @ OptionValue["Threads"],
+      $dimA = Dimensions[tensorA],
+      $dimB = Dimensions[tensorB],
+      $idxA = indexPairs[[All, 1]],
+      $idxB = indexPairs[[All, 2]]
+    },
+    If[
+      Or[
+        Max[$idxA] > Length[$dimA],
+        Max[$idxB] > Length[$dimB],
+        Min[$idxA] < 1,
+        Min[$idxB] < 1,
+        Length[$idxA] != Length[$idxB]
+      ],
+      Message[SparseTensorContract::indexpairs, indexPairs];
+      Throw[$Failed];
+    ];
+    If[And @@ Thread[ $dimA[[ $idxA ]] == $dimB[[ $idxB ]] ] == False,
+      Message[SparseTensorContract::dims, tensorA, tensorB];
+      Throw[$Failed];
+    ];
+    checkResult[
+      SparseTensorContract::rettype,
+      If[$modulus == 0,
+        ratTensorContract[tensorA, tensorB, $idxA, $idxB, $threads],
+        modTensorContract[tensorA, tensorB, $modulus, $idxA, $idxB, $threads]
+      ],
+      _SparseArray
+    ]
+  ];
+
+ratTensorContract[
+    tensorA_SparseArray,
+    tensorB_SparseArray,
+    idxA : {_Integer ..},
+    idxB : {_Integer ..},
+    threads_?IntegerQ
+  ] :=
+  BinaryDeserialize @ ratTensorContractLibFunction[
+    BinarySerialize[tensorA],
+    BinarySerialize[tensorB],
+    idxA,
+    idxB,
+    threads
+  ];
+
+modTensorContract[
+    tensorA_SparseArray,
+    tensorB_SparseArray,
+    p_?PrimeQ,
+    idxA : {_Integer ..},
+    idxB : {_Integer ..},
+    threads_?IntegerQ
+  ] :=
+  modTensorContractLibFunction[
+    tensorA,
+    tensorB,
+    p,
+    idxA,
+    idxB,
+    threads
+  ];
+
+SparseTensorDot[
+    tensorA_SparseArray,
+    tensorB_SparseArray,
+    opts : OptionsPattern[]
+  ] :=
+  Catch @ With[
+    {
+      $modulus = parseModulus @ OptionValue["Modulus"],
+      $threads = parseThreads @ OptionValue["Threads"],
+      $dimA = Dimensions[tensorA],
+      $dimB = Dimensions[tensorB]
+    },
+    If[Last[$dimA] != First[$dimB],
+      Message[SparseTensorDot::dims, tensorA, tensorB];
+      Throw[$Failed];
+    ];
+    checkResult[
+      SparseTensorDot::rettype,
+      If[$modulus == 0,
+        ratTensorContract[tensorA, tensorB, {Length[$dimA]}, {1}, $threads],
+        modTensorContract[tensorA, tensorB, $modulus, {Length[$dimA]}, {1}, $threads]
+      ],
+      _SparseArray
+    ]
   ];
 
 
