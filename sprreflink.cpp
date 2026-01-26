@@ -189,6 +189,76 @@ EXTERN_C DLLEXPORT int sprref_mod_matmul(WolframLibraryData ld, mint Argc, MArgu
 	return LIBRARY_NO_ERROR;
 }
 
+EXTERN_C DLLEXPORT int sprref_rat_matmul(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+	if (Argc != 3)
+		return LIBRARY_FUNCTION_ERROR;
+	auto na_inA = MArgument_getMNumericArray(Args[0]);
+	auto na_inB = MArgument_getMNumericArray(Args[1]);
+	auto nthreads = MArgument_getInteger(Args[2]);
+
+	numericarray_data_t type = MNumericArray_Type_Undef;
+	auto naFuns = ld->numericarrayLibraryFunctions;
+
+	type = naFuns->MNumericArray_getType(na_inA);
+	if (type != MNumericArray_Type_UBit8)
+		return LIBRARY_FUNCTION_ERROR;
+	type = naFuns->MNumericArray_getType(na_inB);
+	if (type != MNumericArray_Type_UBit8)
+		return LIBRARY_FUNCTION_ERROR;
+
+	auto in_strA = (uint8_t*)(naFuns->MNumericArray_getData(na_inA));
+	auto lengthA = naFuns->MNumericArray_getFlattenedLength(na_inA);
+	auto in_strB = (uint8_t*)(naFuns->MNumericArray_getData(na_inB));
+	auto lengthB = naFuns->MNumericArray_getFlattenedLength(na_inB);
+
+	std::vector<uint8_t> res_str;
+	uint8_t* out_str = nullptr;
+	mint out_len = 0;
+	auto err = LIBRARY_NO_ERROR;
+	MNumericArray na_out = NULL;
+	{
+		field_t F(FIELD_QQ);
+		sparse_mat<rat_t, int> matA, matB;
+
+		{
+			WXF_PARSER::Parser parserA(in_strA, lengthA);
+			parserA.parse();
+			matA = sparse_mat_read_wxf<rat_t, int>(parserA.tokens, F);
+		}
+
+		{
+			WXF_PARSER::Parser parserB(in_strB, lengthB);
+			parserB.parse();
+			matB = sparse_mat_read_wxf<rat_t, int>(parserB.tokens, F);
+		}
+
+		if (nthreads == 1) {
+			auto matC = sparse_mat_mul(matA, matB, F, nullptr);
+			res_str = sparse_mat_write_wxf(matC, true);
+		}
+		else {
+			thread_pool pool(nthreads);
+			auto matC = sparse_mat_mul(matA, matB, F, &pool);
+			res_str = sparse_mat_write_wxf(matC, true);
+		}
+
+		// output the result(bit_array)
+		out_len = res_str.size();
+		auto err = naFuns->MNumericArray_new(type, 1, &out_len, &na_out);
+
+		if (err)
+			return LIBRARY_FUNCTION_ERROR;
+
+		out_str = (uint8_t*)(naFuns->MNumericArray_getData(na_out));
+	}
+
+	std::memcpy(out_str, res_str.data(), res_str.size() * sizeof(uint8_t));
+
+	MArgument_setMNumericArray(Res, na_out);
+
+	return err;
+}
+
 // output_mode:
 // 0: output the rref
 // 1: output the rref and its kernel
