@@ -784,6 +784,32 @@ EXTERN_C DLLEXPORT int sprref_rat_rref(WolframLibraryData ld, mint Argc, MArgume
 	return err;
 }
 
+EXTERN_C DLLEXPORT int sprref_mod_matinv(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
+	if (Argc != 3)
+		return LIBRARY_FUNCTION_ERROR;
+	auto mat_in = MArgument_getMSparseArray(Args[0]);
+	auto p = MArgument_getInteger(Args[1]);
+	auto nthreads = MArgument_getInteger(Args[2]);
+	auto sf = ld->sparseLibraryFunctions;
+	auto ranks = sf->MSparseArray_getRank(mat_in);
+	if (ranks != 2 && sf->MSparseArray_getImplicitValue(mat_in) != 0)
+		return LIBRARY_FUNCTION_ERROR;
+	auto mat = MSparseArray_to_sparse_mat_ulong(ld, Args, (ulong)p);
+	if (mat.ncol != mat.nrow)
+		return LIBRARY_FUNCTION_ERROR;
+	field_t F(FIELD_Fp, p);
+	int err = 0;
+	MSparseArray result = 0;
+	rref_option_t opt;
+	opt->pool.reset(nthreads);
+	auto inv_mat = sparse_mat_inverse(mat, F, opt);
+	err = sparse_mat_ulong_to_MSparseArray(ld, result, inv_mat);
+	if (err)
+		return LIBRARY_FUNCTION_ERROR;
+	MArgument_setMSparseArray(Res, result);
+	return LIBRARY_NO_ERROR;
+}
+
 EXTERN_C DLLEXPORT int sprref_rat_matinv(WolframLibraryData ld, mint Argc, MArgument* Args, MArgument Res) {
 	if (Argc != 2)
 		return LIBRARY_FUNCTION_ERROR;
