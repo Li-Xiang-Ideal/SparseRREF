@@ -99,7 +99,7 @@ COPY . /app
 COPY --from=wolfram /export/wolfram /usr/local/include/wolfram
 
 RUN g++ main.cpp -o sparserref -O3 -std=c++20 -lflint -lgmp -ltbb -lmimalloc
-RUN g++ mma_link.cpp -fPIC -shared -O3 -std=c++20 -o mathlink.so -I/usr/local/include/wolfram -Wl,-Bstatic -lflint -lmpfr -lgmp -Wl,-Bdynamic -ltbb -lmimalloc
+RUN g++ sprreflink.cpp -fPIC -shared -O3 -std=c++20 -o sprreflink.so -I/usr/local/include/wolfram -Wl,-Bstatic -lflint -lmpfr -lgmp -Wl,-Bdynamic -ltbb -lmimalloc
 
 WORKDIR /dist
 RUN mkdir -p lib bin
@@ -107,7 +107,7 @@ RUN mkdir -p lib bin
 RUN cp -P /usr/local/lib/libgmp.so* ./lib/ && \
     cp -P /usr/local/lib/libmpfr.so* ./lib/ && \
     cp -P /usr/local/lib/libflint.so* ./lib/ && \
-    cp /app/mathlink.so ./lib/ && \
+    cp /app/sprreflink.so ./lib/ && \
     cp /app/sparserref ./bin/
 
 RUN strip --strip-unneeded ./lib/* ./bin/*
