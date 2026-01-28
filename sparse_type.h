@@ -2271,7 +2271,7 @@ namespace SparseRREF {
 		inline std::vector<size_t> rowptr() const {
 			std::vector<size_t> result(dim(0) + 1);
 			result[0] = 0;
-			for (auto i = 0; i < nnz(); i++) {
+			for (size_t i = 0; i < nnz(); i++) {
 				result[index(i)[0] + 1]++;
 			}
 			for (size_t i = 0; i < dim(0); i++)

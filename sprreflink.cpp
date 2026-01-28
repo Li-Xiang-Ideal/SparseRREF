@@ -137,8 +137,10 @@ int sparse_mat_ulong_to_MSparseArray(WolframLibraryData ld, MSparseArray& res, c
 	dims_r1[0] = 2;
 	ld->MTensor_new(MType_Integer, 1, dims_r1, &dim);
 	mint* dimdata = ld->MTensor_getIntegerData(dim);
-	dimdata[0] = A.nrow;
-	dimdata[1] = A.ncol;
+	if (!std::in_range<mint>(A.nrow) || !std::in_range<mint>(A.ncol))
+		return LIBRARY_FUNCTION_ERROR;
+	dimdata[0] = static_cast<mint>(A.nrow);
+	dimdata[1] = static_cast<mint>(A.ncol);
 	mint* valdata = ld->MTensor_getIntegerData(val);
 	mint* posdata = ld->MTensor_getIntegerData(pos);
 	auto nownnz = 0;
@@ -188,11 +190,11 @@ sparse_tensor<ulong, int, SPARSE_CSR> MSparseArray_to_sparse_tensor_ulong(Wolfra
 	auto& A_valptr = A.data.valptr;
 
 	std::copy(rowptr, rowptr + nrows + 1, A_rowptr.begin());
-	for (auto i = 0; i < nnz; i++) {
+	for (size_t i = 0; i < nnz; i++) {
 		tmp = valptr[i];
 		A_valptr[i] = tmp % pp;
 	}
-	for (auto i = 0; i < nnz * (rank - 1); i++) {
+	for (size_t i = 0; i < nnz * (rank - 1); i++) {
 		A_colptr[i] = colptr[i] - 1;
 	}
 
@@ -205,21 +207,31 @@ int sparse_tensor_ulong_to_MSparseArray(WolframLibraryData ld, MSparseArray& res
 	MTensor pos, val, dim;
 	if (!std::in_range<mint>(nnz))
 		return LIBRARY_FUNCTION_ERROR;
-	mint dims_r2[] = { static_cast<mint>(nnz), static_cast<mint>(A.rank()) };
+	if (!std::in_range<mint>(A.rank()))
+		return LIBRARY_FUNCTION_ERROR;
+	mint rank_mint = static_cast<mint>(A.rank());
+	mint dims_r2[] = { static_cast<mint>(nnz), rank_mint };
 	ld->MTensor_new(MType_Integer, 2, dims_r2, &pos);
 	mint dims_r1[] = { static_cast<mint>(nnz) };
 	ld->MTensor_new(MType_Integer, 1, dims_r1, &val);
-	dims_r1[0] = static_cast<mint>(A.rank());
+	dims_r1[0] = rank_mint;
 	ld->MTensor_new(MType_Integer, 1, dims_r1, &dim);
 	mint* dimdata = ld->MTensor_getIntegerData(dim);
-	for (size_t i = 0; i < A.rank(); i++)
+	for (size_t i = 0; i < A.rank(); i++) {
+		if (!std::in_range<mint>(A.dim(i)))
+			return LIBRARY_FUNCTION_ERROR;
 		dimdata[i] = static_cast<mint>(A.dim(i));
+	}
 	mint* valdata = ld->MTensor_getIntegerData(val);
 	mint* posdata = ld->MTensor_getIntegerData(pos);
 	for (size_t i = 0; i < nnz; i++) {
+		if (!std::in_range<mint>(A.val(i)))
+			return LIBRARY_FUNCTION_ERROR;
 		valdata[i] = static_cast<mint>(A.val(i));
 		auto index_v = A.index_vector(i);
 		for (size_t j = 0; j < A.rank(); j++) {
+			if (!std::in_range<mint>(index_v[j] + 1))
+				return LIBRARY_FUNCTION_ERROR;
 			posdata[i * A.rank() + j] = static_cast<mint>(index_v[j] + 1);
 		}
 	}
@@ -259,11 +271,11 @@ EXTERN_C DLLEXPORT int sprref_mod_tensor_contract(WolframLibraryData ld, mint Ar
 	std::vector<size_t> idxB(startB, startB + lenB);
 	for (auto& i : idxA) {
 		i--; // change to zero-based index
-		if (i < 0 || i >= tensorA.rank()) { return LIBRARY_FUNCTION_ERROR; }
+		if (i >= tensorA.rank()) { return LIBRARY_FUNCTION_ERROR; }
 	}
 	for (auto& i : idxB) {
 		i--;
-		if (i < 0 || i >= tensorB.rank()) { return LIBRARY_FUNCTION_ERROR; }
+		if (i >= tensorB.rank()) { return LIBRARY_FUNCTION_ERROR; }
 	}
 
 	field_t F(FIELD_Fp, (ulong)p);
@@ -349,11 +361,11 @@ EXTERN_C DLLEXPORT int sprref_rat_tensor_contract(WolframLibraryData ld, mint Ar
 		
 		for (auto& i : idxA) {
 			i--; // change to zero-based index
-			if (i < 0 || i >= tensorA.rank()) { return LIBRARY_FUNCTION_ERROR; }
+			if (i >= tensorA.rank()) { return LIBRARY_FUNCTION_ERROR; }
 		}
 		for (auto& i : idxB) {
 			i--;
-			if (i < 0 || i >= tensorB.rank()) { return LIBRARY_FUNCTION_ERROR; }
+			if (i >= tensorB.rank()) { return LIBRARY_FUNCTION_ERROR; }
 		}
 
 		auto tensorC = tensor_contract(tensorA, tensorB, idxA, idxB, F, pool_ptr);
@@ -579,9 +591,9 @@ EXTERN_C DLLEXPORT int sprref_mod_rref(WolframLibraryData ld, mint Argc, MArgume
 				res_str.push_back(56); res_str.push_back(58);
 				encoder.push_function("List", 2);
 				push_mat(mat);
-				if (len > 0) 
+				if (len > 0)
 					push_mat(K);
-				else 
+				else
 					encoder.push_symbol("Null");
 				break;
 			}
@@ -604,6 +616,8 @@ EXTERN_C DLLEXPORT int sprref_mod_rref(WolframLibraryData ld, mint Argc, MArgume
 				break;
 			}
 			default:
+				cancel = true;
+				check_cancel.join();
 				return LIBRARY_FUNCTION_ERROR;
 			}
 		}
@@ -731,9 +745,9 @@ EXTERN_C DLLEXPORT int sprref_rat_rref(WolframLibraryData ld, mint Argc, MArgume
 				res_str.push_back(56); res_str.push_back(58);
 				encoder.push_function("List", 2);
 				push_mat(mat);
-				if (len > 0) 
+				if (len > 0)
 					push_mat(K);
-				else 
+				else
 					encoder.push_symbol("Null");
 				break;
 			}
@@ -756,6 +770,8 @@ EXTERN_C DLLEXPORT int sprref_rat_rref(WolframLibraryData ld, mint Argc, MArgume
 				break;
 			}
 			default:
+				cancel = true;
+				check_cancel.join();
 				return LIBRARY_FUNCTION_ERROR;
 			}
 		}
