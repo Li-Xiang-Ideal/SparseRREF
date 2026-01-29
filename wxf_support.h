@@ -12,8 +12,6 @@
 #include "wxf_parser.h"
 #include "sparse_type.h"
 
-#define USE_PARALLEL_COPY_ARR 1
-
 namespace SparseRREF {
 	// TODO: reuse the code for sparse_mat_read_wxf and sparse_tensor_read_wxf
 
@@ -32,7 +30,6 @@ namespace SparseRREF {
 			return sparse_mat<T, index_t>();
 		}
 
-#if USE_PARALLEL_COPY_ARR
 #define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC, PARALLELIZE) \
 		case TYPE: { \
 			auto sp = token.get_arr_span<CTYPE>(); \
@@ -46,13 +43,6 @@ namespace SparseRREF {
 				pool->wait(); \
 			} \
 			break; }
-#else
-#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC, PARALLELIZE) \
-		case TYPE: { \
-			auto sp = token.get_arr_span<CTYPE>(); \
-			for (const auto& v : sp) out.push_back(FUNC(v)); \
-			break; }
-#endif
 
 #define TMP_IDENTITY_FUNC(x) (x)
 
@@ -238,23 +228,22 @@ namespace SparseRREF {
 		}
 
 		sparse_mat<T, index_t> mat(dims[0], dims[1]);
+
+		auto fill_mat_row = [&](size_t i) {
+			mat[i].reserve(rowptr[i + 1] - rowptr[i]);
+			for (auto j = rowptr[i]; j < rowptr[i + 1]; j++) {
+				// mathematica is 1-indexed
+				mat[i].push_back(colindex[j] - 1, vals[j]);
+			}
+			};
+			
 		if (pool == nullptr) {
 			for (size_t i = 0; i < rowptr.size() - 1; i++) {
-				mat[i].reserve(rowptr[i + 1] - rowptr[i]);
-				for (auto j = rowptr[i]; j < rowptr[i + 1]; j++) {
-					// mathematica is 1-indexed
-					mat[i].push_back(colindex[j] - 1, vals[j]);
-				}
+				fill_mat_row(i);
 			}
 		}
 		else {
-			pool->detach_loop(0, rowptr.size() - 1, [&](size_t i) {
-				mat[i].reserve(rowptr[i + 1] - rowptr[i]);
-				for (auto j = rowptr[i]; j < rowptr[i + 1]; j++) {
-					// mathematica is 1-indexed
-					mat[i].push_back(colindex[j] - 1, vals[j]);
-				}
-				});
+			pool->detach_loop(0, rowptr.size() - 1, fill_mat_row);
 			pool->wait();
 		}
 
@@ -438,7 +427,6 @@ namespace SparseRREF {
 			return st();
 		}
 
-#if USE_PARALLEL_COPY_ARR
 #define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC, PARALLELIZE) \
 		case TYPE: { \
 			auto sp = token.get_arr_span<CTYPE>(); \
@@ -452,13 +440,6 @@ namespace SparseRREF {
 				out += sp.size(); \
 			} \
 			break; }
-#else
-#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC, PARALLELIZE) \
-		case TYPE: { \
-			auto sp = token.get_arr_span<CTYPE>(); \
-			for (const auto& v : sp) { *out = FUNC(v); out++; } \
-			break; }
-#endif
 
 #define TMP_IDENTITY_FUNC(x) (x)
 
