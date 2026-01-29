@@ -12,11 +12,13 @@
 #include "wxf_parser.h"
 #include "sparse_type.h"
 
+#define USE_PARALLEL_COPY_ARR 1
+
 namespace SparseRREF {
 	// TODO: reuse the code for sparse_mat_read_wxf and sparse_tensor_read_wxf
 
 	template <typename T, typename index_t>
-	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::vector<WXF_PARSER::Token>& tokens, const field_t& F) {
+	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::vector<WXF_PARSER::Token>& tokens, const field_t& F, thread_pool* pool = nullptr) {
 		if (tokens.size() == 0)
 			return sparse_mat<T, index_t>();
 
@@ -30,40 +32,56 @@ namespace SparseRREF {
 			return sparse_mat<T, index_t>();
 		}
 
-#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC) \
+#if USE_PARALLEL_COPY_ARR
+#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC, PARALLELIZE) \
+		case TYPE: { \
+			auto sp = token.get_arr_span<CTYPE>(); \
+			if (!PARALLELIZE || pool == nullptr) { \
+				for (const auto& v : sp) out.push_back(FUNC(v)); \
+			} else { \
+				out.resize(sp.size()); \
+				pool->detach_loop(0, sp.size(), [&](size_t i) { \
+					out[i] = FUNC(sp[i]); \
+					}); \
+				pool->wait(); \
+			} \
+			break; }
+#else
+#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC, PARALLELIZE) \
 		case TYPE: { \
 			auto sp = token.get_arr_span<CTYPE>(); \
 			for (const auto& v : sp) out.push_back(FUNC(v)); \
 			break; }
+#endif
 
 #define TMP_IDENTITY_FUNC(x) (x)
 
-#define GENERATE_ALL_ARR(FUNC2) \
-		GENERATE_COPY_ARR(0, int8_t, FUNC2)  \
-		GENERATE_COPY_ARR(1, int16_t, FUNC2) \
-		GENERATE_COPY_ARR(2, int32_t, FUNC2) \
-		GENERATE_COPY_ARR(3, int64_t, FUNC2) \
-		GENERATE_COPY_ARR(16, uint8_t, FUNC2)  \
-		GENERATE_COPY_ARR(17, uint16_t, FUNC2) \
-		GENERATE_COPY_ARR(18, uint32_t, FUNC2) \
-		GENERATE_COPY_ARR(19, uint64_t, FUNC2)
+#define GENERATE_ALL_ARR(FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(0, int8_t, FUNC2, PARALLELIZE)  \
+		GENERATE_COPY_ARR(1, int16_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(2, int32_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(3, int64_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(16, uint8_t, FUNC2, PARALLELIZE)  \
+		GENERATE_COPY_ARR(17, uint16_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(18, uint32_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(19, uint64_t, FUNC2, PARALLELIZE)
 
-		auto copy_arr = [](const WXF_PARSER::Token& token, auto& out) {
+		auto copy_arr = [&pool](const WXF_PARSER::Token& token, auto& out, bool parallelize) {
 			int num_type = token.dimensions[0];
 			out.reserve(token.dimensions[1]);
 			switch (num_type) {
-				GENERATE_ALL_ARR(TMP_IDENTITY_FUNC);
+				GENERATE_ALL_ARR(TMP_IDENTITY_FUNC, parallelize);
 			default:
 				std::cerr << "Error: sparse_mat_read: read array fails" << std::endl;
 				break;
 			}
 			};
 
-		auto copy_modify_arr = [](const WXF_PARSER::Token& token, auto& out, auto&& func) {
+		auto copy_modify_arr = [&pool](const WXF_PARSER::Token& token, auto& out, auto&& func, bool parallelize) {
 			int num_type = token.dimensions[0];
 			out.reserve(token.dimensions[1]);
 			switch (num_type) {
-				GENERATE_ALL_ARR(func);
+				GENERATE_ALL_ARR(func, parallelize);
 			default:
 				std::cerr << "Error: sparse_mat_read: read array fails" << std::endl;
 				break;
@@ -75,7 +93,7 @@ namespace SparseRREF {
 
 		// dims
 		std::vector<size_t> dims;
-		copy_arr(tokens[3], dims);
+		copy_arr(tokens[3], dims, false);
 
 		// imp_val
 		if (tokens[4].get_integer() != 0) {
@@ -101,7 +119,7 @@ namespace SparseRREF {
 
 		// rowptr is tokens[10]
 		std::vector<size_t> rowptr;
-		copy_arr(tokens[10], rowptr);
+		copy_arr(tokens[10], rowptr, false);
 
 		// colindex is tokens[11]
 		std::vector<index_t> colindex;
@@ -109,7 +127,7 @@ namespace SparseRREF {
 			std::cerr << "Error: sparse_mat_read: the type of index is not enough for colindex" << std::endl;
 			return sparse_mat<T, index_t>();
 		}
-		copy_arr(tokens[11], colindex);
+		copy_arr(tokens[11], colindex, true);
 
 		std::vector<char> buffer;
 		auto get_int_from_sv = [&buffer](std::string_view sv) -> int_t {
@@ -141,11 +159,11 @@ namespace SparseRREF {
 		if (tokens[12].type == WXF_PARSER::WXF_HEAD::array ||
 			tokens[12].type == WXF_PARSER::WXF_HEAD::narray) {
 			if constexpr (std::is_same_v<T, rat_t>)
-				copy_arr(tokens[12], vals);
+				copy_arr(tokens[12], vals, true);
 			else if constexpr (std::is_same_v<T, ulong>) {
 				copy_modify_arr(tokens[12], vals, [&](auto v) {
 					return nmod_set_si(v, F.mod);
-					});
+					}, true);
 			}
 		}
 		else {
@@ -220,19 +238,31 @@ namespace SparseRREF {
 		}
 
 		sparse_mat<T, index_t> mat(dims[0], dims[1]);
-		for (size_t i = 0; i < rowptr.size() - 1; i++) {
-			mat[i].reserve(rowptr[i + 1] - rowptr[i]);
-			for (auto j = rowptr[i]; j < rowptr[i + 1]; j++) {
-				// mathematica is 1-indexed
-				mat[i].push_back(colindex[j] - 1, vals[j]);
+		if (pool == nullptr) {
+			for (size_t i = 0; i < rowptr.size() - 1; i++) {
+				mat[i].reserve(rowptr[i + 1] - rowptr[i]);
+				for (auto j = rowptr[i]; j < rowptr[i + 1]; j++) {
+					// mathematica is 1-indexed
+					mat[i].push_back(colindex[j] - 1, vals[j]);
+				}
 			}
+		}
+		else {
+			pool->detach_loop(0, rowptr.size() - 1, [&](size_t i) {
+				mat[i].reserve(rowptr[i + 1] - rowptr[i]);
+				for (auto j = rowptr[i]; j < rowptr[i + 1]; j++) {
+					// mathematica is 1-indexed
+					mat[i].push_back(colindex[j] - 1, vals[j]);
+				}
+				});
+			pool->wait();
 		}
 
 		return mat;
 	}
 
 	template <typename T, typename index_t>
-	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::filesystem::path file, const field_t& F) {
+	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::filesystem::path file, const field_t& F, thread_pool* pool = nullptr) {
 		auto fz = std::filesystem::file_size(file);
 
 		WXF_PARSER::Parser wxf_parser;
@@ -257,7 +287,7 @@ namespace SparseRREF {
 
 		wxf_parser.parse();
 
-		return sparse_mat_read_wxf<T, index_t>(wxf_parser.tokens, F);
+		return sparse_mat_read_wxf<T, index_t>(wxf_parser.tokens, F, pool);
 	}
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
@@ -408,38 +438,54 @@ namespace SparseRREF {
 			return st();
 		}
 
-#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC) \
+#if USE_PARALLEL_COPY_ARR
+#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC, PARALLELIZE) \
 		case TYPE: { \
 			auto sp = token.get_arr_span<CTYPE>(); \
-			for (const auto& v : sp) {*out = FUNC(v); out++;} \
+			if (!PARALLELIZE || pool == nullptr) { \
+				for (const auto& v : sp) { *out = FUNC(v); out++; } \
+			} else { \
+				pool->detach_loop(0, sp.size(), [&](size_t i) { \
+					out[i] = FUNC(sp[i]); \
+					}); \
+				pool->wait(); \
+				out += sp.size(); \
+			} \
 			break; }
+#else
+#define GENERATE_COPY_ARR(TYPE, CTYPE, FUNC, PARALLELIZE) \
+		case TYPE: { \
+			auto sp = token.get_arr_span<CTYPE>(); \
+			for (const auto& v : sp) { *out = FUNC(v); out++; } \
+			break; }
+#endif
 
 #define TMP_IDENTITY_FUNC(x) (x)
 
-#define GENERATE_ALL_ARR(FUNC2) \
-		GENERATE_COPY_ARR(0, int8_t, FUNC2)  \
-		GENERATE_COPY_ARR(1, int16_t, FUNC2) \
-		GENERATE_COPY_ARR(2, int32_t, FUNC2) \
-		GENERATE_COPY_ARR(3, int64_t, FUNC2) \
-		GENERATE_COPY_ARR(16, uint8_t, FUNC2)  \
-		GENERATE_COPY_ARR(17, uint16_t, FUNC2) \
-		GENERATE_COPY_ARR(18, uint32_t, FUNC2) \
-		GENERATE_COPY_ARR(19, uint64_t, FUNC2)
+#define GENERATE_ALL_ARR(FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(0, int8_t, FUNC2, PARALLELIZE)  \
+		GENERATE_COPY_ARR(1, int16_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(2, int32_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(3, int64_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(16, uint8_t, FUNC2, PARALLELIZE)  \
+		GENERATE_COPY_ARR(17, uint16_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(18, uint32_t, FUNC2, PARALLELIZE) \
+		GENERATE_COPY_ARR(19, uint64_t, FUNC2, PARALLELIZE)
 
-		auto copy_arr = [](const WXF_PARSER::Token& token, auto out) {
+		auto copy_arr = [&pool](const WXF_PARSER::Token& token, auto out, bool parallelize) {
 			int num_type = token.dimensions[0];
 			switch (num_type) {
-				GENERATE_ALL_ARR(TMP_IDENTITY_FUNC);
+				GENERATE_ALL_ARR(TMP_IDENTITY_FUNC, parallelize);
 			default:
 				std::cerr << "Error: sparse_tensor_read: read array fails" << std::endl;
 				break;
 			}
 			};
 
-		auto copy_modify_arr = [](const WXF_PARSER::Token& token, auto out, auto&& func) {
+		auto copy_modify_arr = [&pool](const WXF_PARSER::Token& token, auto out, auto&& func, bool parallelize) {
 			int num_type = token.dimensions[0];
 			switch (num_type) {
-				GENERATE_ALL_ARR(func);
+				GENERATE_ALL_ARR(func, parallelize);
 			default:
 				std::cerr << "Error: sparse_tensor_read: read array fails" << std::endl;
 				break;
@@ -451,7 +497,7 @@ namespace SparseRREF {
 
 		// dims
 		std::vector<size_t> dims(tokens[3].dimensions[1]);
-		copy_arr(tokens[3], dims.data());
+		copy_arr(tokens[3], dims.data(), false);
 
 		// imp_val
 		if (tokens[4].get_integer() != 0) {
@@ -477,7 +523,7 @@ namespace SparseRREF {
 
 		// rowptr is tokens[10]
 		std::vector<size_t> rowptr(tokens[10].dimensions[1]);
-		copy_arr(tokens[10], rowptr.data());
+		copy_arr(tokens[10], rowptr.data(), false);
 		size_t nz = rowptr.back();
 
 		st tensor(dims, nz);
@@ -489,7 +535,7 @@ namespace SparseRREF {
 			return st();
 		}
 		// mma is 1-based for colindex
-		copy_modify_arr(tokens[11], tensor.data.colptr, [](auto v) { return v - 1; });
+		copy_modify_arr(tokens[11], tensor.data.colptr, [](auto v) { return v - 1; }, true);
 
 		std::vector<char> buffer;
 		auto get_int_from_sv = [&buffer](std::string_view sv) -> int_t {
@@ -520,11 +566,11 @@ namespace SparseRREF {
 		if (tokens[12].type == WXF_PARSER::WXF_HEAD::array ||
 			tokens[12].type == WXF_PARSER::WXF_HEAD::narray) {
 			if constexpr (std::is_same_v<T, rat_t>)
-				copy_arr(tokens[12], tensor.data.valptr);
+				copy_arr(tokens[12], tensor.data.valptr, true);
 			else if constexpr (std::is_same_v<T, ulong>) {
 				copy_modify_arr(tokens[12], tensor.data.valptr, [&](auto v) {
 					return nmod_set_si(v, F.mod);
-					});
+					}, true);
 			}
 		}
 		else {
