@@ -879,6 +879,14 @@ namespace SparseRREF {
 			alloc = size;
 		}
 
+		// change the dimensions of the tensor
+		// it is dangerous, only for internal use
+		void change_dims(const std::vector<size_t>& new_dims) {
+			dims = new_dims;
+			rank = new_dims.size();
+			colptr = s_realloc<index_t>(colptr, alloc * (rank - 1));
+		}
+
 		void zero() {
 			if (rank != 0)
 				std::fill(rowptr.begin(), rowptr.end(), 0);
@@ -1954,33 +1962,35 @@ namespace SparseRREF {
 		sparse_tensor& operator=(const sparse_tensor& l) { data = l.data; return *this; }
 		sparse_tensor& operator=(sparse_tensor&& l) noexcept { data = std::move(l.data); return *this; }
 
-		inline size_t alloc() const { return data.alloc; }
-		inline size_t rank() const { return data.rank; }
-		inline size_t nnz() const { return data.rowptr[data.dims[0]]; }
-		inline auto& rowptr() const { return data.rowptr; }
-		inline auto& colptr() const { return data.colptr; }
-		inline auto& valptr() const { return data.valptr; }
-		inline auto& dims() const { return data.dims; }
-		inline size_t dim(size_t i) const { return data.dims[i]; }
+		size_t alloc() const { return data.alloc; }
+		size_t rank() const { return data.rank; }
+		size_t nnz() const { return data.rowptr[data.dims[0]]; }
+		auto& rowptr() const { return data.rowptr; }
+		auto& colptr() const { return data.colptr; }
+		auto& valptr() const { return data.valptr; }
+		auto& dims() const { return data.dims; }
+		size_t dim(size_t i) const { return data.dims[i]; }
 		index_p index(size_t i) { return data.colptr + i * (rank() - 1); }
 		const_index_p index(size_t i) const { return data.colptr + i * (rank() - 1); }
 		T& val(size_t i) { return data.valptr[i]; }
 		const T& val(size_t i) const { return data.valptr[i]; }
-		inline bool check_sorted() const { return data.check_sorted(); }
-		inline void zero() { data.zero(); }
-		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(l, val, mode); }
-		inline void push_back(const index_v& l, const T& val) { data.push_back(l, val); }
-		inline void canonicalize() { data.canonicalize(); }
-		inline void sort_indices(thread_pool* pool = nullptr) { data.sort_indices(pool); }
-		inline void reserve(size_t size) { data.reserve(size); }
-		inline sparse_tensor transpose(const std::vector<size_t>& perm, thread_pool* pool = nullptr, const bool sort_ind = true) const {
+		bool check_sorted() const { return data.check_sorted(); }
+		void zero() { data.zero(); }
+		void insert(const index_v& l, const T& val, bool mode = true) { data.insert(l, val, mode); }
+		void push_back(const index_v& l, const T& val) { data.push_back(l, val); }
+		void canonicalize() { data.canonicalize(); }
+		void sort_indices(thread_pool* pool = nullptr) { data.sort_indices(pool); }
+		void reserve(size_t size) { data.reserve(size); }
+		sparse_tensor transpose(const std::vector<size_t>& perm, thread_pool* pool = nullptr, const bool sort_ind = true) const {
 			sparse_tensor B;
 			B.data = data.transpose(perm, pool, sort_ind);
 			return B;
 		}
 
+		void change_dims(const std::vector<size_t>& new_dims) { data.change_dims(new_dims); }
+
 		// index vector (row index included at first) of the i-th entry
-		index_v index_vector(size_t i) const {
+		index_v index_vector(const size_t i) const {
 			index_v result(rank());
 			result[0] = data.row_index(i);
 			for (size_t j = 1; j < rank(); j++)
@@ -2282,10 +2292,7 @@ namespace SparseRREF {
 		// change the dimensions of the tensor
 		// it is dangerous, only for internal use
 		inline void change_dims(const std::vector<size_t>& new_dims) {
-			auto dims = prepend_num(new_dims, (size_t)1);
-			data.dims = dims;
-			data.rank = dims.size();
-			data.colptr = s_realloc<index_t>(data.colptr, new_dims.size() * alloc());
+			data.change_dims(prepend_num(new_dims, (size_t)1));
 		}
 
 		inline void flatten(const std::vector<std::vector<size_t>>& pos) {
