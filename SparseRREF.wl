@@ -6,50 +6,129 @@
   See details at https://github.com/munuxi/SparseRREF
   
   Prerequisites:
-  - Compile mma_link.cpp to shared library mathlink.$EXT ($EXT = "dll" on Windows, "so" on Linux, "dylib" on macOS)
+  - Compile sprreflink.cpp to shared library sprreflink.$EXT ($EXT = "dll" on Windows, "so" on Linux, "dylib" on macOS)
   - Store SparseRREF.wl in the same directory.
-
+  
   Available functions:
-  - SparseRREF
-
-  Options:
-  - "Modulus":
-    0: compute RREF over rational field.
-    prime number p: compute RREF over finite field Z/p (integers modulo p).
-  - "OutputMode" - return value of a function:
-    0, "RREF": rref
-    1, "RREF,Kernel": {rref, kernel}
-    2, "RREF,Pivots": {rref, pivots} (only for Modulus -> 0)
-    3, "RREF,Kernel,Pivots": {rref, kernel, pivots} (only for Modulus -> 0)
-  - "Method":
-    0, "RightAndLeft": right and left search
-    1, "Right": only right search (chooses the leftmost independent columns as pivots)
-    2, "Hybrid": hybrid
-  - "BackwardSubstitution":
-    True (default): submatrix rref[[ pivots[[All,1]], pivots[[All,2]] ]]$ is an identity matrix.
-    False: submatrix is upper triangular.
-  - "Threads": number of threads (nonnegative integer).
-  - "Verbose" (True | False): print steps.
-  - "PrintStep" (Integer): print each i-th step.
+  --------------------
+  SparseRREF[mat, opts]
+    Computes Row Reduced Echelon Form (and optionally kernel/pivots).
+    
+    Options:
+    - "Modulus":
+      0: compute over rational field (default).
+      prime p: compute over finite field Z/p.
+    - "OutputMode":
+      0, "RREF": returns rref (default).
+      1, "RREF,Kernel": returns {rref, kernel}.
+      2, "RREF,Pivots": returns {rref, pivots}.
+      3, "RREF,Kernel,Pivots": returns {rref, kernel, pivots}.
+    - "Method":
+      0, "RightAndLeft": right and left search (default).
+      1, "Right": only right search (chooses the leftmost independent columns as pivots).
+      2, "Hybrid": hybrid.
+    - "BackwardSubstitution":
+      True: submatrix rref[[ pivots[[All,1]], pivots[[All,2]] ]] is an identity matrix (default).
+      False: submatrix is upper triangular.
+    - "Threads": number of threads (Integer >= 0, with 0 meaning automatic).
+    - "Verbose": True | False.
+    - "PrintStep": Integer (print progress every n steps).
+    
+  SparseMatMul[matA, matB, opts]
+    Computes the matrix multiplication of two sparse matrices.
+    
+    Options:
+    - "Modulus":
+      0: compute over rational field (default).
+      prime p: compute over finite field Z/p.
+    - "Threads": number of threads (Integer >= 0, with 0 meaning automatic).
+    
+  SparseTensorContract[tensorA, tensorB, IndexPairs, opts]
+    Computes the tensor contraction of two sparse tensors, with the idxA-th index of tensorA contracted with the idxB-th index of tensorB for each {idxA, idxB} in IndexPairs.
+    
+    Options:
+    - "Modulus":
+      0: compute over rational field (default).
+      prime p: compute over finite field Z/p.
+    - "Threads": number of threads (Integer >= 0, with 0 meaning automatic).
+    
+  SparseTensorDot[tensorA, tensorB, opts]
+    Computes the dot product of two sparse tensors.
+    
+    Options:
+    - "Modulus":
+      0: compute over rational field (default).
+      prime p: compute over finite field Z/p.
+    - "Threads": number of threads (Integer >= 0, with 0 meaning automatic).
+    
+  SparseMatInv[mat, opts]
+    Computes the matrix inverse of a sparse matrix.
+    
+    Options:
+    - "Modulus":
+      0: compute over rational field (default).
+      prime p: compute over finite field Z/p.
+    - "Threads": number of threads (Integer >= 0, with 0 meaning automatic).
 
   Example usage:
+  --------------
     Needs["SparseRREF`"];
     (* or: Needs["SparseRREF`", "/path/to/SparseRREF.wl"]; *)
-
-    (* rationals *)
+    
+    (* --- RREF Example --- *)    
+    (* Rationals *)
     mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
     rref = SparseRREF[mat];
     {rref, kernel, pivots} = SparseRREF[mat, "OutputMode" -> "RREF,Kernel,Pivots", "Method" -> "Right", "BackwardSubstitution" -> True, "Threads" -> $ProcessorCount, "Verbose" -> True, "PrintStep" -> 10];
-
-    (* integers mod p *)
+    
+    (* Finite Field *)
     mat = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
     p = 7;
-    {rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
+    {rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 1];
+    
+    (* --- MatMul Example --- *)
+    (* Rationals *)
+    matA = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4} };
+    matB = SparseArray @ { {0, 1}, {1, 0}, {1, 1} };
+    matC = SparseMatMul[matA, matB, "Threads" -> 0];
+    
+    (* Finite Field *)
+    matA = SparseArray @ { {10, 0, 20}, {30, 40, 50} };
+    matB = SparseArray @ { {1, 2}, {3, 4}, {5, 6} };
+    p = 11;
+    matC = SparseMatMul[matA, matB, Modulus -> p, "Threads" -> 1];
+
+    (* --- TensorContract Example --- *)
+    (* Rationals *)
+    tensorA = SparseArray @ LeviCivitaTensor[3];
+    tensorB = SparseArray @ { {0, 1}, {1, 0}, {1, 1} };
+    tensorC = SparseTensorContract[tensorA, tensorB, {{2, 1}}, "Threads" -> 0];
+    (* tensorC == TensorContract[TensorProduct[tensorA, tensorB], {{2, 4}}] *)
+
+    (* --- TensorDot Example --- *)
+    (* Rationals *)
+    tensorA = SparseArray @ LeviCivitaTensor[3];
+    tensorB = SparseArray @ { {0, 1}, {1, 0}, {1, 1} };
+    tensorC = SparseTensorDot[tensorA, tensorB, "Threads" -> 0];
+    (* tensorC == tensorA . tensorB *)
+
+    (* --- MatInv Example --- *)
+    (* Rationals *)
+    mat = SparseArray @ { {1, 0, 2}, {1/2, 1/3, 1/4}, {-1, 0, 1} };
+    invMat = SparseMatInv[mat, "Threads" -> 0];
+
+    (* Finite Field *)
+    mat = SparseArray @ { {1, 2, 0}, {2, 1, 0}, {0, 0, 3} };
+    p = 7;
+    invMat = SparseMatInv[mat, Modulus -> p, "Threads" -> 1];
+    (* invMat == SparseArray @ Inverse[mat, Modulus -> p] *)
 *)
+
 
 BeginPackage["SparseRREF`"];
 
 Unprotect["SparseRREF`*"];
+
 
 Options[SparseRREF] = {
   Modulus -> 0,
@@ -70,15 +149,83 @@ SyntaxInformation[SparseRREF] = {"ArgumentsPattern" -> {_, OptionsPattern[]}}
 
 SparseRREF::findlib = "SparseRREF library \"`1`\" not found at `2`";
 SparseRREF::optionvalue = "Invalid SparseRREF option value: `1` -> `2`. Allowed values: `3`";
-SparseRREF::rettype = "SparseRREF should return SparseArray or List, but returned: `1`"
+SparseRREF::rettype = "SparseRREF should return SparseArray or List, but returned: `1`";
+
+
+Options[SparseMatMul] = {
+  Modulus -> 0,
+  "Threads" -> 1
+};
+
+SparseMatMul::usage =
+  "SparseMatMul[matA, matB, opts] computes the matrix multiplication of two sparse rational matrices " <>
+  "or two sparse integer matrices modulo prime p (if Modulus -> p is specified). " <>
+  "Default options: " <> ToString @ Options @ SparseMatMul;
+
+SyntaxInformation[SparseMatMul] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}}
+
+SparseMatMul::optionvalue = "Invalid SparseMatMul option value: `1` -> `2`. Allowed values: `3`";
+SparseMatMul::rettype = "SparseMatMul should return SparseArray, but returned: `1`";
+SparseMatMul::dims = "Matrices `1` and `2` have incompatible dimensions.";
+
+
+Options[SparseTensorContract] = {
+  Modulus -> 0,
+  "Threads" -> 1
+};
+
+SparseTensorContract::usage =
+  "SparseTensorContract[tensorA, tensorB, IndexPairs, opts] computes the tensor contraction of " <>
+  "two sparse rational tensors or two sparse integer tensors modulo prime p (if Modulus -> p is specified), " <>
+  "with the idxA-th index of tensorA contracted with the idxB-th index of tensorB for each {idxA, idxB} in IndexPairs. " <>
+  "Default options: " <> ToString @ Options @ SparseTensorContract;
+
+SyntaxInformation[SparseTensorContract] = {"ArgumentsPattern" -> {_, _, _, OptionsPattern[]}}
+
+SparseTensorContract::optionvalue = "Invalid SparseTensorContract option value: `1` -> `2`. Allowed values: `3`";
+SparseTensorContract::rettype = "SparseTensorContract should return SparseArray, but returned: `1`";
+SparseTensorContract::dims = "Tensors `1` and `2` have incompatible dimensions for contraction.";
+SparseTensorContract::indexpairs = "IndexPairs `1` is invalid.";
+
+
+Options[SparseTensorDot] = Options[SparseTensorContract];
+
+SparseTensorDot::usage =
+  "SparseTensorDot[tensorA, tensorB, opts] computes the dot product of two sparse rational tensors " <>
+  "or two sparse integer tensors modulo prime p (if Modulus -> p is specified). " <>
+  "Default options: " <> ToString @ Options @ SparseTensorDot;
+
+SyntaxInformation[SparseTensorDot] = {"ArgumentsPattern" -> {_, _, OptionsPattern[]}}
+
+SparseTensorDot::optionvalue = "Invalid SparseTensorDot option value: `1` -> `2`. Allowed values: `3`";
+SparseTensorDot::rettype = "SparseTensorDot should return SparseArray, but returned: `1`";
+SparseTensorDot::dims = "Tensors `1` and `2` have incompatible dimensions for dot product.";
+
+
+Options[SparseMatInv] = {
+  Modulus -> 0,
+  "Threads" -> 1
+};
+
+SparseMatInv::usage =
+  "SparseMatInv[mat, opts] computes the matrix inverse of a sparse rational matrix " <>
+  "or a sparse integer matrix modulo prime p (if Modulus -> p is specified). " <>
+  "Default options: " <> ToString @ Options @ SparseMatInv;
+
+SyntaxInformation[SparseMatInv] = {"ArgumentsPattern" -> {_, OptionsPattern[]}}
+
+SparseMatInv::optionvalue = "Invalid SparseMatInv option value: `1` -> `2`. Allowed values: `3`";
+SparseMatInv::rettype = "SparseMatInv should return SparseArray, but returned: `1`";
+SparseMatInv::nonsquare = "Matrix `1` is not square.";
+SparseMatInv::singular = "Matrix `1` is singular and not invertible.";
+
 
 Begin["`Private`"];
 
 (* Load SparseRREF library *)
 
 $sparseRREFDirectory = DirectoryName[$InputFileName];
-(* TODO rename e.g. to SparseRREF_MMA or SparseRREF_LibraryLink *)
-$sparseRREFLibName = "mathlink";
+$sparseRREFLibName = "sprreflink";
 
 (* TODO: shall we search in all directories from $LibraryPath? *)
 $sparseRREFLib = FindLibrary @ FileNameJoin @ {$sparseRREFDirectory, $sparseRREFLibName};
@@ -87,12 +234,11 @@ If[FailureQ[$sparseRREFLib],
   Message[SparseRREF::findlib, $sparseRREFLibName, $sparseRREFDirectory];
 ];
 
-(* TODO: provide API for other exported functions: modpmatmul, ratmat_inv *)
 
-rationalRREFLibFunction =
+ratRREFLibFunction =
   LibraryFunctionLoad[
     $sparseRREFLib,
-    "rational_rref",
+    "sprref_rat_rref",
     {
       {LibraryDataType[ByteArray], "Constant"},
       Integer,
@@ -108,7 +254,7 @@ rationalRREFLibFunction =
 modRREFLibFunction =
   LibraryFunctionLoad[
     $sparseRREFLib,
-    "modrref",
+    "sprref_mod_rref",
     {
       {LibraryDataType[SparseArray], "Constant"},
       Integer,
@@ -119,8 +265,88 @@ modRREFLibFunction =
       True | False,
       Integer
     },
+    {LibraryDataType[ByteArray], Automatic}
+  ];
+
+
+ratMatMulLibFunction =
+  LibraryFunctionLoad[
+    $sparseRREFLib,
+    "sprref_rat_matmul",
+    {
+      {LibraryDataType[ByteArray], "Constant"},
+      {LibraryDataType[ByteArray], "Constant"},
+      Integer
+    },
+    {LibraryDataType[ByteArray], Automatic}
+  ];
+
+modMatMulLibFunction =
+  LibraryFunctionLoad[
+    $sparseRREFLib,
+    "sprref_mod_matmul",
+    {
+      {LibraryDataType[SparseArray], "Constant"},
+      {LibraryDataType[SparseArray], "Constant"},
+      Integer,
+      Integer
+    },
     {LibraryDataType[SparseArray], Automatic}
   ];
+
+
+ratTensorContractLibFunction =
+  LibraryFunctionLoad[
+    $sparseRREFLib,
+    "sprref_rat_tensor_contract",
+    {
+      {LibraryDataType[ByteArray], "Constant"},
+      {LibraryDataType[ByteArray], "Constant"},
+      {LibraryDataType[List, Integer, 1], "Constant"},
+      {LibraryDataType[List, Integer, 1], "Constant"},
+      Integer
+    },
+    {LibraryDataType[ByteArray], Automatic}
+  ];
+
+modTensorContractLibFunction =
+  LibraryFunctionLoad[
+    $sparseRREFLib,
+    "sprref_mod_tensor_contract",
+    {
+      {LibraryDataType[SparseArray], "Constant"},
+      {LibraryDataType[SparseArray], "Constant"},
+      Integer,
+      {LibraryDataType[List, Integer, 1], "Constant"},
+      {LibraryDataType[List, Integer, 1], "Constant"},
+      Integer
+    },
+    {LibraryDataType[SparseArray], Automatic}
+  ];
+
+ratMatInvLibFunction =
+  LibraryFunctionLoad[
+    $sparseRREFLib,
+    "sprref_rat_matinv",
+    {
+      {LibraryDataType[ByteArray], "Constant"},
+      Integer
+    },
+    {LibraryDataType[ByteArray], Automatic}
+  ];
+
+modMatInvLibFunction =
+  LibraryFunctionLoad[
+    $sparseRREFLib,
+    "sprref_mod_matinv",
+    {
+      {LibraryDataType[SparseArray], "Constant"},
+      Integer,
+      Integer
+    },
+    {LibraryDataType[SparseArray], Automatic}
+  ];
+
 
 (* Helper functions: parse options, validate etc. *)
 
@@ -189,13 +415,14 @@ parseVerbose[b_] := throwOptionError["Verbose", b, {True, False}];
 parsePrintStep[ps_?IntegerQ] /; ps > 0 := ps;
 parsePrintStep[ps_] := throwOptionError["PrintStep", ps, "1,2,3..."];
 
-checkResult[res_SparseArray] := res;
-checkResult[res_List] := res;
-checkResult[res_] :=
-  (
-    Message[SparseRREF::rettype, res];
+checkResult[msg_, res_, pattern_] :=
+  If[MatchQ[res, pattern],
+    res,
+    Message[msg, res];
     Throw[$Failed]
-  );
+  ];
+SetAttributes[checkResult, HoldFirst];
+
 
 (* Define public function SparseRREF[] *)
 
@@ -210,13 +437,17 @@ SparseRREF[mat_SparseArray, opts : OptionsPattern[] ] :=
       $verbose = parseVerbose @ OptionValue["Verbose"],
       $printStep = parsePrintStep @ OptionValue["PrintStep"]
     },
-    checkResult @ If[$modulus == 0,
-      rationalRREF[mat, $outputMode, $method, $backwardSubstitution, $threads, $verbose, $printStep],
-      modRREF[mat, $modulus, $outputMode, $method, $backwardSubstitution, $threads, $verbose, $printStep]
+    checkResult[
+      SparseRREF::rettype,
+      If[$modulus == 0,
+        ratRREF[mat, $outputMode, $method, $backwardSubstitution, $threads, $verbose, $printStep],
+        modRREF[mat, $modulus, $outputMode, $method, $backwardSubstitution, $threads, $verbose, $printStep]
+      ],
+      _SparseArray | _List
     ]
   ];
 
-rationalRREF[
+ratRREF[
     mat_SparseArray,
     outputMode_?IntegerQ,
     method_?IntegerQ,
@@ -225,7 +456,7 @@ rationalRREF[
     verbose_?BooleanQ,
     printStep_?IntegerQ
   ] :=
-  BinaryDeserialize @ rationalRREFLibFunction[
+  BinaryDeserialize @ ratRREFLibFunction[
     BinarySerialize[mat],
     outputMode,
     method,
@@ -245,43 +476,211 @@ modRREF[
     verbose_?BooleanQ,
     printStep_?IntegerQ
   ] :=
-  With[
+  BinaryDeserialize @ modRREFLibFunction[
+    mat,
+    p,
+    outputMode,
+    method,
+    backwardSubstitution,
+    threads,
+    verbose,
+    printStep
+  ];
+
+
+(* Define public function SparseMatMul[] *)
+
+SparseMatMul[matA_SparseArray, matB_SparseArray, opts : OptionsPattern[] ] :=
+  Catch @ With[
     {
-      joinedmat = modRREFLibFunction[
-        mat,
-        p,
-        outputMode,
-        method,
-        backwardSubstitution,
-        threads,
-        verbose,
-        printStep
-      ]
+      $modulus = parseModulus @ OptionValue["Modulus"],
+      $threads = parseThreads @ OptionValue["Threads"],
+      $dimA = Dimensions[matA],
+      $dimB = Dimensions[matB]
     },
-    If[!MatchQ[joinedmat, _SparseArray],
-      (* SparseRREF will print error message and return $Failed *)
-      Return[joinedmat];
+    If[Last[$dimA] != First[$dimB],
+      Message[SparseMatMul::dims, matA, matB];
+      Throw[$Failed];
     ];
-    Switch[outputMode,
-      0,
-      joinedmat,
-      1,
-      {
-        joinedmat[[;; Length @ mat]],
-        Transpose @ joinedmat[[Length @ mat + 1;;]]
-      },
-      (* TODO: support "OutputMode" -> 2 and 3 (pivots), similar to rationalRREF *)
-      _,
-      throwOptionError[
-        "OutputMode",
-        outputMode,
-        InputForm @ Keys @ Select[
-          outputModeToInteger, 
-          MemberQ[{0, 1}, #] &
-        ]
-      ]
+    checkResult[
+      SparseMatMul::rettype,
+      If[$modulus == 0,
+        ratMatMul[matA, matB, $threads],
+        modMatMul[matA, matB, $modulus, $threads]
+      ],
+      _SparseArray
     ]
   ];
+
+ratMatMul[
+    matA_SparseArray,
+    matB_SparseArray,
+    threads_?IntegerQ
+  ] :=
+  BinaryDeserialize @ ratMatMulLibFunction[
+    BinarySerialize[matA],
+    BinarySerialize[matB],
+    threads
+  ];
+
+modMatMul[
+    matA_SparseArray,
+    matB_SparseArray,
+    p_?PrimeQ,
+    threads_?IntegerQ
+  ] :=
+  modMatMulLibFunction[
+    matA,
+    matB,
+    p,
+    threads
+  ];
+
+
+(* Define public function SparseTensorContract[] *)
+
+SparseTensorContract[
+    tensorA_SparseArray,
+    tensorB_SparseArray,
+    indexPairs : {{_Integer ..} ..},
+    opts : OptionsPattern[]
+  ] :=
+  Catch @ With[
+    {
+      $modulus = parseModulus @ OptionValue["Modulus"],
+      $threads = parseThreads @ OptionValue["Threads"],
+      $dimA = Dimensions[tensorA],
+      $dimB = Dimensions[tensorB],
+      $idxA = indexPairs[[All, 1]],
+      $idxB = indexPairs[[All, 2]]
+    },
+    If[
+      Or[
+        Max[$idxA] > Length[$dimA],
+        Max[$idxB] > Length[$dimB],
+        Min[$idxA] < 1,
+        Min[$idxB] < 1,
+        Length[$idxA] != Length[$idxB]
+      ],
+      Message[SparseTensorContract::indexpairs, indexPairs];
+      Throw[$Failed];
+    ];
+    If[And @@ Thread[ $dimA[[ $idxA ]] == $dimB[[ $idxB ]] ] == False,
+      Message[SparseTensorContract::dims, tensorA, tensorB];
+      Throw[$Failed];
+    ];
+    checkResult[
+      SparseTensorContract::rettype,
+      If[$modulus == 0,
+        ratTensorContract[tensorA, tensorB, $idxA, $idxB, $threads],
+        modTensorContract[tensorA, tensorB, $modulus, $idxA, $idxB, $threads]
+      ],
+      _SparseArray
+    ]
+  ];
+
+ratTensorContract[
+    tensorA_SparseArray,
+    tensorB_SparseArray,
+    idxA : {_Integer ..},
+    idxB : {_Integer ..},
+    threads_?IntegerQ
+  ] :=
+  BinaryDeserialize @ ratTensorContractLibFunction[
+    BinarySerialize[tensorA],
+    BinarySerialize[tensorB],
+    idxA,
+    idxB,
+    threads
+  ];
+
+modTensorContract[
+    tensorA_SparseArray,
+    tensorB_SparseArray,
+    p_?PrimeQ,
+    idxA : {_Integer ..},
+    idxB : {_Integer ..},
+    threads_?IntegerQ
+  ] :=
+  modTensorContractLibFunction[
+    tensorA,
+    tensorB,
+    p,
+    idxA,
+    idxB,
+    threads
+  ];
+
+SparseTensorDot[
+    tensorA_SparseArray,
+    tensorB_SparseArray,
+    opts : OptionsPattern[]
+  ] :=
+  Catch @ With[
+    {
+      $modulus = parseModulus @ OptionValue["Modulus"],
+      $threads = parseThreads @ OptionValue["Threads"],
+      $dimA = Dimensions[tensorA],
+      $dimB = Dimensions[tensorB]
+    },
+    If[Last[$dimA] != First[$dimB],
+      Message[SparseTensorDot::dims, tensorA, tensorB];
+      Throw[$Failed];
+    ];
+    checkResult[
+      SparseTensorDot::rettype,
+      If[$modulus == 0,
+        ratTensorContract[tensorA, tensorB, {Length[$dimA]}, {1}, $threads],
+        modTensorContract[tensorA, tensorB, $modulus, {Length[$dimA]}, {1}, $threads]
+      ],
+      _SparseArray
+    ]
+  ];
+
+
+(* Define public function SparseMatInv[] *)
+
+SparseMatInv[mat_SparseArray, opts : OptionsPattern[] ] :=
+  Catch @ With[
+    {
+      $modulus = parseModulus @ OptionValue["Modulus"],
+      $threads = parseThreads @ OptionValue["Threads"],
+      $dim = Dimensions[mat]
+    },
+    If[Length[$dim] != 2 || $dim[[1]] != $dim[[2]],
+      Message[SparseMatInv::nonsquare, mat];
+      Throw[$Failed];
+    ];
+    checkResult[
+      SparseMatInv::rettype,
+      If[$modulus == 0,
+        ratMatInv[mat, $threads],
+        modMatInv[mat, $modulus, $threads]
+      ],
+      _SparseArray
+    ]
+  ];
+
+ratMatInv[
+    mat_SparseArray,
+    threads_?IntegerQ
+  ] :=
+  BinaryDeserialize @ ratMatInvLibFunction[
+    BinarySerialize[mat],
+    threads
+  ];
+
+modMatInv[
+    mat_SparseArray,
+    p_?PrimeQ,
+    threads_?IntegerQ
+  ] :=
+  modMatInvLibFunction[
+    mat,
+    p,
+    threads
+  ];
+
 
 With[{syms = Names["SparseRREF`*"]},
   SetAttributes[syms, {Protected, ReadProtected}]
