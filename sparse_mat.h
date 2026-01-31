@@ -2072,7 +2072,14 @@ namespace SparseRREF {
 		if (F.ring == RING::FIELD_Fp)
 			pivots = sparse_mat_rref(M1, F, opt);
 		else if (F.ring == RING::FIELD_QQ)
-			pivots = sparse_mat_rref_reconstruct(M1, opt, true);
+			if constexpr (std::is_same_v<T, rat_t>) {
+				pivots = sparse_mat_rref_reconstruct(M1, opt, true);
+			}
+			else {
+				// type is not rat_t when field is QQ
+				std::cerr << "Warning: sparse_mat_inverse: type is not rat_t when field is QQ" << std::endl;
+				pivots = sparse_mat_rref(M1, F, opt);
+			}
 		else {
 			std::cerr << "Error: sparse_mat_inverse: field not supported" << std::endl;
 			// restore the option

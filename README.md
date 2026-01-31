@@ -40,7 +40,7 @@ g++ main.cpp -o sparserref -O3 -std=c++20 -I$INCULDE -L$LIB -lflint -lgmp
 
 Shared library for [Wolfram LibraryLink](https://reference.wolfram.com/language/guide/LibraryLink.html) API (used by Mathematica package [SparseRREF.wl](SparseRREF.wl), see below):
 ```bash
-g++ mma_link.cpp -fPIC -shared -O3 -std=c++20 -o mathlink.dll -I$MATHEMATICA_HOME/SystemFiles/IncludeFiles/C -I$INCLUDE -L$LIB -lflint -lgmp
+g++ sprreflink.cpp -fPIC -shared -O3 -std=c++20 -o sprreflink.dll -I$MATHEMATICA_HOME/SystemFiles/IncludeFiles/C -I$INCLUDE -L$LIB -lflint -lgmp
 ```
 where we assume that the FLINT library and GMP library are installed in `$LIB`, the header files are in `$INCLUDE`,
 and `$MATHEMATICA_HOME/SystemFiles/IncludeFiles/C` is the path of Mathematica C header files.
@@ -107,7 +107,7 @@ The main function is `sparse_mat_rref`, its output is its pivots, and it modifie
 
 #### Mathematica API
 
-The Mathematica package [SparseRREF.wl](SparseRREF.wl) allows to call functions exported in [mma_link.cpp](mma_link.cpp):
+The Mathematica package [SparseRREF.wl](SparseRREF.wl) allows to call functions exported in [sprreflink.cpp](sprreflink.cpp):
 
 Example usage:
 ```mathematica
@@ -125,7 +125,7 @@ p = 7;
 {rref, kernel} = SparseRREF[mat, Modulus -> p, "OutputMode" -> "RREF,Kernel", "Method" -> "Hybrid", "Threads" -> 0];
 ```
 
-To use this package, you have to compile [mma_link.cpp](mma_link.cpp) to a shared library (`mathlink.dll` on Windows, `mathlink.so` on Linux, `mathlink.dylib` on macOS) in the same directory with [SparseRREF.wl](SparseRREF.wl).
+To use this package, you have to compile [sprreflink.cpp](sprreflink.cpp) to a shared library (`sprreflink.dll` on Windows, `sprreflink.so` on Linux, `sprreflink.dylib` on macOS) in the same directory with [SparseRREF.wl](SparseRREF.wl).
 
 See comments in [SparseRREF.wl](SparseRREF.wl) for more details.
 
