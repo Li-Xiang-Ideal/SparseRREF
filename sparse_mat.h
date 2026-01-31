@@ -2037,23 +2037,33 @@ namespace SparseRREF {
 		return sparse_mat_rref_kernel(M, n_pivots, F, opt);
 	}
 
+	// error code:
+	// 0 - sucess
+	// 1 - matrix is not square
+	// 2 - matrix is not invertible
+	// 3 - Field is not supported
 	template <typename T, typename index_t>
-	sparse_mat<T, index_t> sparse_mat_inverse(const sparse_mat<T, index_t>& M,
-		const field_t& F, rref_option_t opt) {
+	int sparse_mat_inverse(sparse_mat<T, index_t>& M1, const sparse_mat<T, index_t>& M,
+		const field_t& F, rref_option_t opt) noexcept {
 		if (M.nrow != M.ncol) {
 			std::cerr << "Error: sparse_mat_inverse: matrix is not square" << std::endl;
-			return sparse_mat<T, index_t>();
+			return 1;
+		}
+
+		if (M.nnz() == 0) {
+			std::cerr << "Error: sparse_mat_inverse: zero matrix" << std::endl;
+			return 2;
 		}
 
 		auto& pool = opt->pool;
 
 		// define the Augmented matrix
-		auto M1 = M;
+		M1 = M;
 		M1.compress();
 		for (size_t i = 0; i < M1.nrow; i++) {
 			if (M1[i].nnz() == 0) {
 				std::cerr << "Error: sparse_mat_inverse: matrix is not invertible" << std::endl;
-				return sparse_mat<T, index_t>();
+				return 2;
 			}
 			M1[i].push_back(i + M.ncol, (T)1);
 		}
@@ -2085,7 +2095,7 @@ namespace SparseRREF {
 			// restore the option
 			opt->col_weight = old_col_weight;
 			opt->is_back_sub = is_back_sub;
-			return sparse_mat<T, index_t>();
+			return 3;
 		}
 
 		std::vector<pivot_t<index_t>> flatten_pivots;
@@ -2100,7 +2110,7 @@ namespace SparseRREF {
 			// restore the option
 			opt->col_weight = old_col_weight;
 			opt->is_back_sub = is_back_sub;
-			return sparse_mat<T, index_t>();
+			return 2;
 		}
 
 		auto perm = perm_init(M.nrow);
@@ -2129,7 +2139,17 @@ namespace SparseRREF {
 		opt->col_weight = old_col_weight;
 		opt->is_back_sub = is_back_sub;
 
-		return M1;
+		return 0;
+	}
+
+	template <typename T, typename index_t>
+	sparse_mat<T, index_t> sparse_mat_inverse(const sparse_mat<T, index_t>& M,
+		const field_t& F, rref_option_t opt) {
+		sparse_mat<T, index_t> res;
+		int error = sparse_mat_inverse(res, M, F, opt);
+		if (error != 0) 
+			return sparse_mat<T, index_t>();
+		return res;
 	}
 
 	// IO

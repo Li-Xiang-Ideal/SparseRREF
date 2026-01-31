@@ -233,6 +233,11 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_read_wxf(const std::filesystem::path file, const field_t& F) {
+		if (!std::filesystem::exists(file)) {
+			std::cerr << file << " does not exist." << std::endl;
+			return sparse_mat<T, index_t>();
+		}
+
 		auto fz = std::filesystem::file_size(file);
 
 		WXF_PARSER::Parser wxf_parser;
@@ -357,37 +362,6 @@ namespace SparseRREF {
 		Encoder enc = fullform_to_wxf(ff_template, func_map, include_head);
 
 		return enc.buffer;
-	}
-
-	template<typename T, typename IndexType, typename S>
-	void sparse_tensor_write(S& st, const sparse_tensor<T, IndexType, SPARSE_COO>& tensor) {
-		const auto& dims = tensor.dims();
-		const size_t rank = dims.size();
-		char num_buf[32];
-
-		for (size_t i = 0; i < rank; ++i) {
-			auto [ptr, ec] = std::to_chars(num_buf, num_buf + sizeof(num_buf), dims[i]);
-			st.write(num_buf, ptr - num_buf);
-			st.put(' ');
-		}
-		auto [ptr, ec] = std::to_chars(num_buf, num_buf + sizeof(num_buf), tensor.nnz());
-		st.write(num_buf, ptr - num_buf);
-		st.put('\n');
-
-		std::vector<char> index_buf;
-		index_buf.reserve(rank * 20 + 64);
-
-		for (size_t i = 0; i < tensor.nnz(); ++i) {
-			index_buf.clear();
-			const auto& index = tensor.index(i);
-			for (size_t j = 0; j < rank; ++j) {
-				auto [ptr, ec] = std::to_chars(num_buf, num_buf + sizeof(num_buf), index[j] + 1);
-				index_buf.insert(index_buf.end(), num_buf, ptr);
-				index_buf.push_back(' ');
-			}
-			st.write(index_buf.data(), index_buf.size());
-			st << tensor.val(i) << '\n';
-		}
 	}
 
 	// SparseArray[Automatic,dims,imp_val = 0,{1,{rowptr,colindex},vals}]
@@ -606,6 +580,11 @@ namespace SparseRREF {
 
 	template <typename T, typename index_t>
 	auto sparse_tensor_read_wxf(const std::filesystem::path file, const field_t& F, thread_pool* pool = nullptr, bool sort_ind = true) {
+		if (!std::filesystem::exists(file)) {
+			std::cerr << file << " does not exist." << std::endl;
+			return sparse_tensor<T, index_t, SPARSE_CSR>();
+		}
+
 		auto fz = std::filesystem::file_size(file);
 
 		WXF_PARSER::Parser wxf_parser;
