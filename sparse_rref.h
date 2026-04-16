@@ -17,12 +17,12 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <execution>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <list>
 #include <map>
 #include <numeric>
 #include <queue>
@@ -160,6 +160,8 @@ namespace SparseRREF {
 	// method 0: right and left search
 	// method 1: only right search
 	// method 2: hibrid
+	// method 3: standard RREF (Preview)
+	// TODO: more methods...
 	struct rref_option {
 		bool verbose = false;
 		bool shrink_memory = false;

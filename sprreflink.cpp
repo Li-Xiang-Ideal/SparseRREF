@@ -818,7 +818,10 @@ EXTERN_C DLLEXPORT int sprref_mod_matinv(WolframLibraryData ld, mint Argc, MArgu
 	MSparseArray result = 0;
 	rref_option_t opt;
 	opt->pool.reset(nthreads);
-	auto inv_mat = sparse_mat_inverse(mat, F, opt);
+	decltype(mat) inv_mat;
+	err = sparse_mat_inverse(inv_mat, mat, F, opt);
+	if (err)
+		return LIBRARY_FUNCTION_ERROR;
 	err = sparse_mat_ulong_to_MSparseArray(ld, result, inv_mat);
 	if (err)
 		return LIBRARY_FUNCTION_ERROR;
@@ -845,7 +848,7 @@ EXTERN_C DLLEXPORT int sprref_rat_matinv(WolframLibraryData ld, mint Argc, MArgu
 	std::vector<uint8_t> res_str;
 	uint8_t* out_str = nullptr;
 	mint out_len = 0;
-	auto err = LIBRARY_NO_ERROR;
+	int err = 0;
 	MNumericArray na_out = NULL;
 	{
 		field_t F(FIELD_QQ);
@@ -857,7 +860,10 @@ EXTERN_C DLLEXPORT int sprref_rat_matinv(WolframLibraryData ld, mint Argc, MArgu
 		rref_option_t opt;
 		opt->pool.reset(nthreads);
 
-		auto inv_mat = sparse_mat_inverse(mat, F, opt);
+		decltype(mat) inv_mat;
+		err = sparse_mat_inverse(inv_mat, mat, F, opt);
+		if (err)
+			return LIBRARY_FUNCTION_ERROR;
 		res_str = sparse_mat_write_wxf(inv_mat, true);
 
 		// output the result(bit_array)
