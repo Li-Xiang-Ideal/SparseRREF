@@ -487,6 +487,8 @@ namespace SparseRREF {
 			}
 			return *this;
 		}
+
+		ulong get_prime() const { return mod.n; }
 	};
 
 	// scalar
@@ -501,7 +503,7 @@ namespace SparseRREF {
 	// arithmetic
 
 	static inline ulong scalar_neg(const ulong b, const field_t& field) {
-		return field.mod.n - b;
+		return field.get_prime() - b;
 	}
 	static inline int_t scalar_neg(const int_t& b, const field_t& field) { return -b; }
 	static inline rat_t scalar_neg(const rat_t& b, const field_t& field) { return -b; }

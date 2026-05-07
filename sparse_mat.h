@@ -546,6 +546,8 @@ namespace SparseRREF {
 		std::vector<T> cachedensedmat(A.ncol * nthreads);
 		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, A.ncol);
 
+		auto pp = F.get_prime();
+
 		auto method = [&](size_t id, size_t i) {
 			auto& therow = B[i];
 			if (therow.nnz() == 0)
@@ -562,12 +564,12 @@ namespace SparseRREF {
 			T scalar = therow[0];
 			ulong e_pr;
 			if constexpr (std::is_same_v<T, ulong>) {
-				e_pr = n_mulmod_precomp_shoup(scalar, F.mod.n);
+				e_pr = n_mulmod_precomp_shoup(scalar, pp);
 			}
 			for (auto [ind, val] : C[therow(0)]) {
 				nonzero_c_vec.insert(ind);
 				if constexpr (std::is_same_v<T, ulong>) {
-					cache_dense_vec[ind] = n_mulmod_shoup(scalar, val, e_pr, F.mod.n);
+					cache_dense_vec[ind] = n_mulmod_shoup(scalar, val, e_pr, pp);
 				}
 				else if constexpr (std::is_same_v<T, rat_t>) {
 					cache_dense_vec[ind] = scalar * val;
@@ -577,7 +579,7 @@ namespace SparseRREF {
 			for (size_t j = 1; j < therow.nnz(); j++) {
 				scalar = therow[j];
 				if constexpr (std::is_same_v<T, ulong>) {
-					e_pr = n_mulmod_precomp_shoup(scalar, F.mod.n);
+					e_pr = n_mulmod_precomp_shoup(scalar, pp);
 				}
 				for (auto [ind, val] : C[therow(j)]) {
 					if (!nonzero_c_vec.test(ind)) {
@@ -586,7 +588,7 @@ namespace SparseRREF {
 					}
 					if constexpr (std::is_same_v<T, ulong>) {
 						cache_dense_vec[ind] = _nmod_add(cache_dense_vec[ind],
-							n_mulmod_shoup(scalar, val, e_pr, F.mod.n), F.mod);
+							n_mulmod_shoup(scalar, val, e_pr, pp), F.mod);
 					}
 					else if constexpr (std::is_same_v<T, rat_t>) {
 						cache_dense_vec[ind] += scalar * val;
@@ -638,6 +640,7 @@ namespace SparseRREF {
 		std::vector<index_t> remove_list;
 
 		ulong e_pr;
+		auto pp = F.get_prime();
 		for (auto [r, c] : pivots) {
 			if (!nonzero_c.test(c))
 				continue;
@@ -647,13 +650,13 @@ namespace SparseRREF {
 			remove_list.clear();
 
 			if constexpr (std::is_same_v<T, ulong>) {
-				e_pr = n_mulmod_precomp_shoup(entry, F.mod.n);
+				e_pr = n_mulmod_precomp_shoup(entry, pp);
 			}
 			for (auto [ind, val] : mat[r]) {
 				bool old_c = tmpvec[ind] == 0;
 				if constexpr (std::is_same_v<T, ulong>) {
 					tmpvec[ind] = _nmod_sub(tmpvec[ind],
-						n_mulmod_shoup(entry, val, e_pr, F.mod.n), F.mod);
+						n_mulmod_shoup(entry, val, e_pr, pp), F.mod);
 				}
 				else if constexpr (std::is_same_v<T, rat_t>) {
 					tmpvec[ind] -= entry * val;
@@ -743,6 +746,7 @@ namespace SparseRREF {
 		std::vector<index_t> remove_list;
 		
 		ulong e_pr;
+		auto pp = F.get_prime();
 		for (auto [r, c] : pivots) {
 			if (buffer[c % buffer_size] == 0)
 				continue;
@@ -754,13 +758,13 @@ namespace SparseRREF {
 			remove_list.clear();
 
 			if constexpr (std::is_same_v<T, ulong>) {
-				e_pr = n_mulmod_precomp_shoup(tmpvec[c], F.mod.n);
+				e_pr = n_mulmod_precomp_shoup(tmpvec[c], pp);
 			}
 			for (auto [ind, val] : mat[r]) {
 				bool old_c = tmpvec[ind] == 0;
 				if constexpr (std::is_same_v<T, ulong>) {
 					tmpvec[ind] = _nmod_sub(tmpvec[ind],
-						n_mulmod_shoup(entry, val, e_pr, F.mod.n), F.mod);
+						n_mulmod_shoup(entry, val, e_pr, pp), F.mod);
 				}
 				else if constexpr (std::is_same_v<T, rat_t>) {
 					tmpvec[ind] -= entry * val;

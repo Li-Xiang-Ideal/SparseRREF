@@ -22,9 +22,10 @@ namespace SparseRREF {
 		if (scalar == 1)
 			return;
 		if constexpr (std::is_same_v<T, ulong>) {
-			ulong e_pr = n_mulmod_precomp_shoup(scalar, F.mod.n);
+			auto pp = F.get_prime();
+			ulong e_pr = n_mulmod_precomp_shoup(scalar, pp);
 			for (size_t i = 0; i < vec.nnz(); i++)
-				vec.entries[i] = n_mulmod_shoup(scalar, vec.entries[i], e_pr, F.mod.n);
+				vec.entries[i] = n_mulmod_shoup(scalar, vec.entries[i], e_pr, pp);
 		}
 		else if constexpr (Flint::IsOneOf<T, int_t, rat_t>) {
 			for (size_t i = 0; i < vec.nnz(); i++)
@@ -233,7 +234,7 @@ namespace SparseRREF {
 
 	template <typename index_t>
 	inline int sparse_vec_sub(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const field_t& F) {
-		return snmod_vec_add_mul(vec, src, F.mod.n - 1, F);
+		return snmod_vec_add_mul(vec, src, F.get_prime() - 1, F);
 	}
 
 	template <typename index_t>
@@ -248,7 +249,7 @@ namespace SparseRREF {
 
 	template <typename index_t>
 	inline int sparse_vec_sub_mul(snmod_vec<index_t>& vec, const snmod_vec<index_t>& src, const ulong a, const field_t& F) {
-		return snmod_vec_add_mul(vec, src, F.mod.n - a, F);
+		return snmod_vec_add_mul(vec, src, F.get_prime() - a, F);
 	}
 
 	template <typename index_t>
