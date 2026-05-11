@@ -190,6 +190,12 @@ namespace Flint {
 
 		int_t operator-() const { return neg(); }
 
+		// replace version of some functions
+		void abs_r() { fmpz_abs(&_data, &_data); }
+		void neg_r() { fmpz_neg(&_data, &_data); }
+		void pow_r(const int_t& n) { fmpz_pow_fmpz(&_data, &_data, &n._data); }
+		void pow_r(const ulong n) { fmpz_pow_ui(&_data, &_data, n); }
+
 		std::string get_str(int base = 10) const {
 			auto len = fmpz_sizeinbase(&_data, base) + 3;
 			std::string result;
@@ -337,6 +343,14 @@ namespace Flint {
 		rat_t inv() const { rat_t result; fmpq_inv(&result._data, &_data); return result; }
 		rat_t abs() const { rat_t result; fmpq_abs(&result._data, &_data); return result; }
 		rat_t neg() const { rat_t result; fmpq_neg(&result._data, &_data); return result; }
+
+		// replace version of some functions
+		void pow_r(const int_t& n) { fmpq_pow_fmpz(&_data, &_data, &n._data); }
+		template <signed_builtin_integral T>
+		void pow_r(const T n) { fmpq_pow_si(&_data, &_data, n); }
+		void inv_r() { fmpq_inv(&_data, &_data); }
+		void abs_r() { fmpq_abs(&_data, &_data); }
+		void neg_r() { fmpq_neg(&_data, &_data); }
 
 		// explicit conversion to double
 		// the following is copied from flint doc:
