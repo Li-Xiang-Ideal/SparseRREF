@@ -1737,11 +1737,11 @@ namespace SparseRREF {
 					// copy entries
 					auto copy_entry = [&](size_t i, size_t j) {
 						auto tmpptr = colptr + sorted_jth(j) * (rank - 1);
-						size_t& res_index = row_starting_index[new_row_index(i, tmpptr)];
 						if (check_coordinate(tmpptr)) {
+							size_t& res_index = row_starting_index[new_row_index(i, tmpptr)];
 							auto new_coord = B.colptr + res_index * (B.rank - 1);
 							copy_colptr(tmpptr, new_coord);
-							B.valptr[res_index] = valptr[j];
+							B.valptr[res_index] = valptr[sorted_jth(j)];
 							res_index++;
 						}
 					};
@@ -1798,8 +1798,8 @@ namespace SparseRREF {
 					// copy entries
 					auto copy_entry = [&](size_t i, size_t j, size_t blk) {
 						auto oldptr = colptr + sorted_jth(j) * (rank - 1);
-						size_t& res_index = row_block_starting_index[new_row_index(i, oldptr)][blk];
 						if (check_coordinate(oldptr)) {
+							size_t& res_index = row_block_starting_index[new_row_index(i, oldptr)][blk];
 							auto newptr = B.colptr + res_index * (B.rank - 1);
 							copy_colptr(oldptr, newptr);
 							B.valptr[res_index] = valptr[sorted_jth(j)];
