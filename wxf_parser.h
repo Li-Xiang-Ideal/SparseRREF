@@ -202,9 +202,8 @@ namespace WXF_PARSER {
 
 		// generate data as ustr in the back
 		template<typename T, typename F>
+			requires std::is_trivially_copyable_v<T> && std::is_invocable_r_v<T, F&, size_t>
 		Encoder& generate_back_ustr(const size_t len, F&& func) {
-			static_assert(std::is_trivially_copyable_v<T>, "T should be trivially copyable");
-			static_assert(std::is_invocable_r_v<T, F&, size_t>, "func should be callable with size_t and return T");
 			size_t old_size = buffer.size();
 			buffer.resize(old_size + len * sizeof(T));
 			uint8_t* data_ptr = buffer.data() + old_size;
@@ -217,9 +216,8 @@ namespace WXF_PARSER {
 
 		// generate transformed data as ustr in the back
 		template<typename T1, typename T2, typename F>
+			requires std::is_trivially_copyable_v<T1> && std::is_invocable_r_v<T1, F&, const T2&>
 		Encoder& transform_back_ustr(const T2* src_ptr, const size_t len, F&& func) {
-			static_assert(std::is_trivially_copyable_v<T1>, "T1 should be trivially copyable");
-			static_assert(std::is_invocable_r_v<T1, F&, const T2&>, "func should be callable with T2 and return T1");
 			size_t old_size = buffer.size();
 			buffer.resize(old_size + len * sizeof(T1));
 			uint8_t* data_ptr = buffer.data() + old_size;

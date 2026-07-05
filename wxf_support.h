@@ -39,9 +39,7 @@ namespace SparseRREF {
 				enc.push_bigint(scalar_to_str(value));
 		}
 
-		template <typename T>
-			requires std::is_same_v<T, rat_t>
-		inline void push_value(WXF_PARSER::Encoder& enc, const T& value) {
+		inline void push_value(WXF_PARSER::Encoder& enc, const rat_t& value) {
 			if (value.is_integer()) {
 				push_value(enc, value.num());
 			}
