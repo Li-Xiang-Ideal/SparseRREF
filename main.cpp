@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
 	else {
 		std::cerr << "The field is not valid: "
 			<< program.get<std::string>("--field") << std::endl;
-		return 1;
+		exit(1);
 	}
 
 	rref_option_t opt;
@@ -207,7 +207,7 @@ int main(int argc, char** argv) {
 	std::filesystem::path filePath = input_file;
 	if (!std::filesystem::exists(filePath)) {
 		std::cerr << "File does not exist: " << filePath << std::endl;
-		return 1;
+		exit(1);
 	}
 	
 	using index_t = uint32_t;
