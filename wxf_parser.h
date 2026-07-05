@@ -51,6 +51,7 @@
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <utility>
 
 namespace WXF_PARSER {
 
@@ -301,8 +302,59 @@ namespace WXF_PARSER {
 			return all_len;
 		}
 
-		template<typename T>
-		Encoder& push_array(const std::vector<size_t>& dimension_array, const std::span<T> data, WXF_HEAD type, uint8_t num_type) {
+		template<typename T, typename F = std::identity>
+			requires std::is_invocable_v<F&, const T&>
+		Encoder& push_array_data(const std::span<T> data, uint8_t num_type, F&& func = std::identity{}) {
+			// backup current size
+			size_t old_size = buffer.size();
+			using value_t = std::remove_cvref_t<std::invoke_result_t<F&, const T&>>;
+			
+			if constexpr (std::is_integral_v<value_t>) {
+				const bool consistent_sign = (num_type >> 2) == (std::is_unsigned_v<value_t> ? (16 >> 2) : 0);
+				if (size_of_arr_num_type(num_type) == sizeof(value_t) && consistent_sign) {
+					if constexpr (std::is_same_v<std::remove_cvref_t<F>, std::identity>) {
+						return push_ustr(data.data(), data.size());
+					}
+					else {
+						return transform_back_ustr<value_t>(data.data(), data.size(), func);
+					}
+				}
+
+#define APPEND_CASTED_ARRAY_DATA(TYPE) do {                                            \
+				transform_back_ustr<TYPE>(data.data(), data.size(),                    \
+					[&](const T& value) { return static_cast<TYPE>(func(value)); });   \
+				} while (0)
+
+				switch (num_type) {
+				case 0: APPEND_CASTED_ARRAY_DATA(int8_t); break;
+				case 1: APPEND_CASTED_ARRAY_DATA(int16_t); break;
+				case 2: APPEND_CASTED_ARRAY_DATA(int32_t); break;
+				case 3: APPEND_CASTED_ARRAY_DATA(int64_t); break;
+				case 16: APPEND_CASTED_ARRAY_DATA(uint8_t); break;
+				case 17: APPEND_CASTED_ARRAY_DATA(uint16_t); break;
+				case 18: APPEND_CASTED_ARRAY_DATA(uint32_t); break;
+				case 19: APPEND_CASTED_ARRAY_DATA(uint64_t); break;
+				default: std::cerr << "Encoder::push_array_data: unsupported integer array num_type "
+						<< static_cast<int>(num_type) << "." << std::endl;
+					buffer.resize(old_size);
+					break;
+				}
+				return *this;
+#undef APPEND_CASTED_ARRAY_DATA
+			}
+			else {
+				if constexpr (std::is_same_v<std::remove_cvref_t<F>, std::identity>) {
+					return push_ustr(data.data(), data.size());
+				}
+				else {
+					return transform_back_ustr<value_t>(data.data(), data.size(), func);
+				}
+			}
+		}
+
+		template<typename T, typename F = std::identity>
+			requires std::is_invocable_v<F&, const T&>
+		Encoder& push_array(const std::vector<size_t>& dimension_array, const std::span<T> data, WXF_HEAD type, uint8_t num_type, F&& func = std::identity{}) {
 			// backup current size
 			size_t old_size = buffer.size();
 
@@ -317,7 +369,74 @@ namespace WXF_PARSER {
 			}
 
 			// push data
-			return push_ustr(data.data(), data.size());
+			if constexpr (std::is_integral_v<T>) {
+				const bool supported_num_type = num_type <= 3 || (num_type >= 16 && num_type <= 19);
+				if (!supported_num_type) {
+					std::cerr << "Encoder::push_array: unsupported integer array num_type "
+						<< static_cast<int>(num_type) << "." << std::endl;
+					buffer.resize(old_size);
+					return *this;
+				}
+			}
+			return push_array_data(data, num_type, std::forward<F>(func));
+		}
+
+		template<typename F>
+			requires std::is_invocable_v<F&, size_t>
+		Encoder& push_generated_array_data(const size_t len, uint8_t num_type, F&& func) {
+			// backup current size
+			size_t old_size = buffer.size();
+			using value_t = std::remove_cvref_t<std::invoke_result_t<F&, size_t>>;
+
+			if constexpr (std::is_integral_v<value_t>) {
+#define GENERATE_ARRAY_DATA(TYPE) do {                               \
+				generate_back_ustr<TYPE>(len, [&](size_t i) {        \
+					return static_cast<TYPE>(func(i));               \
+				});} while (0)
+
+				switch (num_type) {
+				case 0: GENERATE_ARRAY_DATA(int8_t); break;
+				case 1: GENERATE_ARRAY_DATA(int16_t); break;
+				case 2: GENERATE_ARRAY_DATA(int32_t); break;
+				case 3: GENERATE_ARRAY_DATA(int64_t); break;
+				case 16: GENERATE_ARRAY_DATA(uint8_t); break;
+				case 17: GENERATE_ARRAY_DATA(uint16_t); break;
+				case 18: GENERATE_ARRAY_DATA(uint32_t); break;
+				case 19: GENERATE_ARRAY_DATA(uint64_t); break;
+				default: std::cerr << "Encoder::push_generated_array_data: unsupported integer array num_type "
+						<< static_cast<int>(num_type) << "." << std::endl;
+					buffer.resize(old_size);
+					break;
+				}
+				return *this;
+#undef GENERATE_ARRAY_DATA
+			}
+			else {
+				return generate_back_ustr<value_t>(len, func);
+			}
+		}
+
+		template<typename F>
+			requires std::is_invocable_v<F&, size_t>
+		Encoder& push_generated_array(const std::vector<size_t>& dimension_array, WXF_HEAD type, uint8_t num_type, F&& func) {
+			// backup current size
+			size_t old_size = buffer.size();
+			using value_t = std::remove_cvref_t<std::invoke_result_t<F&, size_t>>;
+
+			// [array_type, num_type, rank, dimensions..., data...]
+			auto all_len = push_array_info(dimension_array, type, num_type);
+
+			// push data
+			if constexpr (std::is_integral_v<value_t>) {
+				const bool supported_num_type = num_type <= 3 || (num_type >= 16 && num_type <= 19);
+				if (!supported_num_type) {
+					std::cerr << "Encoder::push_generated_array: unsupported integer array num_type "
+						<< static_cast<int>(num_type) << "." << std::endl;
+					buffer.resize(old_size);
+					return *this;
+				}
+			}
+			return push_generated_array_data(all_len, num_type, std::forward<F>(func));
 		}
 
 		template<typename T>
