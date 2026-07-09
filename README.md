@@ -59,7 +59,7 @@ Usage: SparseRREF [--help] [--version] [--output VAR]
                   [--no-backward-substitution]
                   input_file
 
-(exact) Sparse Reduced Row Echelon Form v0.3.6
+(exact) Sparse Reduced Row Echelon Form v0.4.0
 
 Positional arguments:
   input_file                       input file in the Matrix Market exchange formats (MTX) or
@@ -167,3 +167,14 @@ SparseRREF uses less memory than Spasm since its result has less non zero values
 * Add more fields/rings.
 * Add more functions and parameters to Mathematica API
 
+### Citing
+
+```bibtex
+@software{SparseRREF,
+  author    = {Li, Zhenjie},
+  title     = {{SparseRREF}: Exact Sparse Reduced Row Echelon Form in {C++}},
+  version   = {0.4.0},
+  doi       = {10.5281/zenodo.21278863},
+  url       = {https://github.com/munuxi/SparseRREF}
+}
+```
