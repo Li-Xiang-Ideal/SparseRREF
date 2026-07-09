@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2025 Zhenjie Li (Li, Zhenjie)
+	Copyright (C) 2025-2026 Zhenjie Li (Li, Zhenjie)
 
 	You can redistribute it and/or modify it under the terms of the MIT
 	License.

@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2024-2025 Zhenjie Li (Li, Zhenjie)
+	Copyright (C) 2024-2026 Zhenjie Li (Li, Zhenjie)
 
 	This file is part of SparseRREF. The SparseRREF is free software:
 	you can redistribute it and/or modify it under the terms of the MIT
@@ -57,10 +57,10 @@
 
 namespace SparseRREF {
 	// version
-	static const char version[] = "v0.3.6";
+	static const char version[] = "v0.4.0";
 	static const int version_major = 0;
-	static const int version_minor = 3;
-	static const int version_patch = 6;
+	static const int version_minor = 4;
+	static const int version_patch = 0;
 
 	enum SPARSE_FILE_TYPE {
 		SPARSE_FILE_TYPE_PLAIN,
