@@ -1906,6 +1906,8 @@ namespace SparseRREF {
 			auto nz = nnz();
 			auto n_colptr = s_malloc<index_t>(nz * (rank - 1));
 			auto n_valptr = s_malloc<T>(nz);
+			for (size_t i = 0; i < nz; i++)
+				new (n_valptr + i) T();
 
 			for (size_t i = 0; i < dims[0]; i++) {
 				size_t rownnz = rowptr[i + 1] - rowptr[i];
@@ -1926,6 +1928,8 @@ namespace SparseRREF {
 					});
 				pool->wait();
 			}
+			for (size_t i = 0; i < alloc; i++)
+				valptr[i].~T();
 			s_free(colptr);
 			s_free(valptr);
 			colptr = n_colptr;
