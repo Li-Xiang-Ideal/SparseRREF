@@ -17,7 +17,8 @@ namespace SparseRREF {
 	enum SPARSE_TYPE {
 		SPARSE_CSR, // Compressed sparse row
 		SPARSE_COO, // Coordinate list
-		SPARSE_LR  // List of rows
+		SPARSE_LR,   // List of rows
+		SPARSE_OTHER  // Other types
 	};
 
 	template <Flint::builtin_integral index_t = int>

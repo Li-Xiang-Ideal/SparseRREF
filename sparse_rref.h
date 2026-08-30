@@ -294,7 +294,7 @@ namespace SparseRREF {
 		return 0;
 	}
 
-	// mulit for
+	// multi for
 	template <typename Func>
 	void multi_for(
 		const std::vector<size_t>& start,
@@ -303,7 +303,7 @@ namespace SparseRREF {
 
 		if (start.size() != end.size()) {
 			std::cerr << "Error: start and end size not match." << std::endl;
-			exit(1);
+			return;
 		}
 
 		std::vector<size_t> index(start);
