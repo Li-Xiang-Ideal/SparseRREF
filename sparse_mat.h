@@ -1342,12 +1342,14 @@ namespace SparseRREF {
 
 		int method = opt->method;
 
-		std::vector<sparse_mat<bool, index_t>> tranmat_vec(nthreads);
-		for (auto& tmat : tranmat_vec) {
-			tmat = sparse_mat<bool, index_t>(mat.ncol, mat.nrow);
-		}
+		// the per-thread transposes serve the left search only (methods 0 and 2); with the
+		// right-only search they were allocated (ncol row headers per thread) and never used
+		std::vector<sparse_mat<bool, index_t>> tranmat_vec;
 
 		if (method != 1) {
+			tranmat_vec.resize(nthreads);
+			for (auto& tmat : tranmat_vec)
+				tmat = sparse_mat<bool, index_t>(mat.ncol, mat.nrow);
 			pool.detach_loop(0, leftrows.size(), [&](size_t i) {
 				auto id = thread_id();
 				auto r = leftrows[i];
