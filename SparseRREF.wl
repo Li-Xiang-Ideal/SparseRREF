@@ -416,6 +416,7 @@ outputModeToInteger = <|
   0 -> 0,
   1 -> 1,
   2 -> 2,
+  3 -> 3,
   "RREF" -> 0,
   "RREF,Kernel" -> 1,
   "RREF,Pivots" -> 2,
