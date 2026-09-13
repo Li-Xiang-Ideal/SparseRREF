@@ -1681,6 +1681,11 @@ namespace SparseRREF {
 		if (opt->abort)
 			return pivots;
 
+		// the rows grew by doubling during the elimination and keep up to twice their final
+		// size; trim them before the back substitution and the rational copy are allocated
+		pool.detach_loop(0, matul.nrow, [&](auto i) { matul[i].reserve(matul[i].nnz()); });
+		pool.wait();
+
 		if (checkrank) {
 			size_t rank = 0;
 			for (auto& p : pivots)
@@ -1821,7 +1826,11 @@ namespace SparseRREF {
 				(unsigned long long)mod.bits());
 		}
 
-		mat = matq;
+		// release the modular copy and the CRT accumulators before the result takes its place,
+		// and move it instead of copying it (three full copies were alive at the same time)
+		matul.clear();
+		matz.clear();
+		mat = std::move(matq);
 
 		return pivots;
 	}
