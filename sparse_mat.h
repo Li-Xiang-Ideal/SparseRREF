@@ -1675,10 +1675,27 @@ namespace SparseRREF {
 		return h;
 	}
 
+	// In this function, we try to rref the rational matrix by first doing the rref 
+	// of the modular matrix, and then reconstruct the rational matrix from the modular matrix.
+	// 
+	// The prime is first choosen as nextprime(2^60). If it's not enough, we will try the next prime
+	// and combine it by using the Chinese Remainder Theorem. 
+	// We will keep trying until the reconstruction is successful or the user aborts.
+	// 
 	// The condition to stop reconstruct: H(d*E)*H(mat)*ncol < product of primes
 	// where H is the height of a matrix (the maximal height of each entry), 
 	// E is the reconstracted rref matrix
 	// d is an integer such that d*E is a integer matrix
+	// 
+	// IMPORTANT: In this function, we assume that the sharp of reduced matrix on the modular field
+	// is the same as the one on the rational field. This is not always true in math, for example,
+	// the matrix [[1, 1], [1, p + 1]] is full rank over Q, but rank 1 over F_p. 
+	// And it reduces [[1, 1], [0, 0]] on F_p but [[1,0], [0, 1]] on Q. However, in practice, 
+	// this is very very rare if the input matrix comes from a real application and
+	// the prime is choosen as a large prime like nextprime(2^60). 
+	// Therefore, we assume that here. If the user is dealing with a very special matrix,
+	// it is better to do it manually because usually there would be other problems from math side.
+	// 
 	// checkrank is only used for sparse_mat_inverse
 	template <typename index_t>
 	std::vector<std::vector<pivot_t<index_t>>> sparse_mat_rref_reconstruct(
@@ -1854,10 +1871,6 @@ namespace SparseRREF {
 				(unsigned long long)mod.bits());
 		}
 
-		// release the modular copy and the CRT accumulators before the result takes its place,
-		// and move it instead of copying it (three full copies were alive at the same time)
-		matul.clear();
-		matz.clear();
 		mat = std::move(matq);
 
 		return pivots;

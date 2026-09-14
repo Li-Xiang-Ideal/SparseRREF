@@ -178,7 +178,7 @@ The first two test matrices come from https://hpac.imag.fr; bs comes from symbol
 | bs-1     | (202552, 64350, 11690309, 62130)       | 2.9s + 0.6s                  | 0.40s      |
 | bs-2     | (709620, 732600, 48819232, 709620)     | too slow                     | 82.24s     |
 | bs-3     | (10011551, 2958306, 33896262, 2867955) | 312s + 182.4s                | 17.22s     |
-| ibp-1    | (69153, 73316, 1117324, 58252)         | too slow                     | 1.90s      |
+| ibp-1    | (69153, 73316, 1117324, 58252)         | 1348s + 3734.4s              | 1.90s      |
 | ibp-2    | (169323, 161970, 2801475, 135009)      | too slow                     | 10.60s     |
 
 Some Spasm runs are slow because there is not enough physical memory and it starts swapping. In most cases
