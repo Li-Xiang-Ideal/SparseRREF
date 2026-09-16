@@ -64,13 +64,13 @@ Usage: SparseRREF [--help] [--version] [--output VAR]
 (exact) Sparse Reduced Row Echelon Form v0.4.2
 
 Positional arguments:
-  input_file                       input file in the Matrix Market exchange formats (MTX) or
-                                   Sparse/Symbolic Matrix Storage (SMS)
+  input_file                       input file in the Matrix Market exchange formats (MTX),
+                                   Sparse/Symbolic Matrix Storage (SMS), or WXF (Wolfram, e.g. from Mathematica)
 
 Optional arguments:
   -h, --help                       shows help message and exits
   -v, --version                    prints version information and exits
-  -o, --output                     output file in MTX format [default: "<input_file>.rref"]
+  -o, --output                     output file in MTX format, or WXF when the input is WXF [default: "<input_file>.rref"]
   -k, --kernel                     output the kernel (null vectors)
   -m, --method                     method of RREF:
                                    0: right and left search (permuted)
@@ -115,6 +115,25 @@ The last line is a dummy line, which is used to indicate the end of the matrix.
 
 The main function is `sparse_mat_rref`; its output is its pivots, and it reduces the input matrix $M$ in place to its RREF $\Lambda$.
 
+#### WXF (Wolfram) input and output
+
+The executable also reads and writes [WXF](https://reference.wolfram.com/language/ref/format/WXF.html), the binary serialization that Wolfram Language's `BinarySerialize` produces, so a matrix can be handed over from Mathematica and taken back without going through a text format:
+
+```bash
+sparserref matrix.wxf                # reads matrix.wxf, writes matrix.rref.wxf
+sparserref matrix.wxf -o out.wxf     # writes out.wxf
+sparserref matrix.wxf -k -op         # matrix.rref.wxf, matrix.wxf.kernel (WXF), matrix.wxf.piv (text)
+```
+
+A file is read as WXF exactly when its extension is `.wxf` or `.WXF`; anything else goes through the MTX/SMS reader above. For a WXF run, `--output` is used verbatim, so the file it names holds WXF bytes whatever its name is; the default name is `<input_file>.rref.wxf`, and the side files of `--output-pivots` and `--kernel` are named after the same base (`<input_file>.piv` and `<input_file>.kernel`, or `<output>.piv` and `<output>.kernel` when `--output` is given). The pivots are plain text (`row, col`, 1-based, one pair per line); the RREF and the kernel are WXF.
+
+The expected content is the serialization of the `SparseArray`, that is, `BinarySerialize[mat]`, and the result is written back in the same form, so `BinaryDeserialize` yields a `SparseArray` again. Two practical notes:
+
+* column indices that need 64 bits (roughly, more than $2^{31}$ columns) are refused, since the index type of the build is 32-bit;
+* files larger than 1 GiB are memory-mapped instead of being copied into memory.
+
+WXF has its own entry points in the header-only library, `sparse_mat_read_wxf` and `sparse_mat_write_wxf` (with the `sparse_tensor_*` counterparts); `sparse_mat_write` itself does not write WXF, even though `SPARSE_FILE_TYPE_WXF` exists in the `SPARSE_FILE_TYPE` enum.
+
 #### Mathematica API
 
 The Mathematica package [SparseRREF.wl](SparseRREF.wl) allows calling the functions exported in [sprreflink.cpp](sprreflink.cpp):
@@ -151,6 +170,8 @@ rref = SparseRREF[mat, Modulus -> p, "Method" -> "Right"];
 ```
 
 To use this package, you have to compile [sprreflink.cpp](sprreflink.cpp) to a shared library (`sprreflink.dll` on Windows, `sprreflink.so` on Linux, `sprreflink.dylib` on macOS) in the same directory with [SparseRREF.wl](SparseRREF.wl).
+
+The rational entry points exchange the matrix with the kernel as WXF: the package sends `BinarySerialize[mat]` (a `ByteArray`) and reads the answer back with `BinaryDeserialize`, using the same SparseArray layout as the `.wxf` files described above. The integer mod `p` entry points pass the `SparseArray` directly instead. Since both APIs speak WXF, a matrix can be moved between them, and to and from a file, with `BinarySerialize` / `BinaryDeserialize`.
 
 See comments in [SparseRREF.wl](SparseRREF.wl) for more details.
 

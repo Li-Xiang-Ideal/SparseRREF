@@ -2086,13 +2086,18 @@ namespace SparseRREF {
 			size_t end = line.find(' ');
 			while (end != std::string::npos) {
 				if (start != end) {
-					dims.push_back(string_to_ull(line.substr(start, end - start)));
+					uint64_t dim = 0;
+					if (!string_to_ull(line.substr(start, end - start), dim)) {
+						std::cerr << "Error: sparse_mat_read: wrong format in the matrix file" << std::endl;
+						return sparse_mat<T, index_t>();
+					}
+					dims.push_back(dim);
 				}
 				start = end + 1;
 				end = line.find(' ', start);
 			}
 			if (start < line.size()) {
-				// size_t nnz = string_to_ull(line.substr(start));
+				// size_t nnz = 0; string_to_ull(line.substr(start), nnz);
 				if (dims.size() != 2) {
 					std::cerr << "Error: sparse_mat_read: wrong format in the matrix file" << std::endl;
 					return sparse_mat<T, index_t>();
@@ -2115,7 +2120,11 @@ namespace SparseRREF {
 
 			while (end != std::string::npos && count < 2) {
 				if (start != end) {
-					auto val = string_to_ull(line.substr(start, end - start));
+					uint64_t val = 0;
+					if (!string_to_ull(line.substr(start, end - start), val)) {
+						std::cerr << "Error: sparse_mat_read: wrong format in the matrix file" << std::endl;
+						return sparse_mat<T, index_t>();
+					}
 					if (val == 0) {
 						is_end = true;
 						break;
@@ -2136,16 +2145,27 @@ namespace SparseRREF {
 				return sparse_mat<T, index_t>();
 			}
 
+			// set_str returns a non-zero value for a literal that is not a number in this field,
+			// which must be reported instead of being stored as an unvalidated value; the value
+			// is normalized, since the arithmetic below assumes the canonical form
 			T val{};
+			int val_ok = 0;
 			if constexpr (std::is_same_v<T, ulong>) {
-				rat_t raw_val(line.substr(start));
+				rat_t raw_val;
+				val_ok = raw_val.set_str(line.substr(start), 10, true);
 				val = raw_val % F.mod;
 			}
 			else if constexpr (std::is_same_v<T, rat_t>) {
-				val = rat_t(line.substr(start));
+				val_ok = val.set_str(line.substr(start), 10, true);
 			}
 			else if constexpr (std::is_same_v<T, int_t>) {
-				val = int_t(line.substr(start));
+				val_ok = val.set_str(line.substr(start));
+			}
+
+			if (val_ok != 0) {
+				std::cerr << "Error: sparse_mat_read: the value is not a number: "
+					<< line.substr(start) << std::endl;
+				return sparse_mat<T, index_t>();
 			}
 
 			mat[rowcol[0]].push_back(rowcol[1], val);

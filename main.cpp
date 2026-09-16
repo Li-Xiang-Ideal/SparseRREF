@@ -87,9 +87,9 @@ int main(int argc, char** argv) {
 	program.set_usage_max_line_width(80);
 	program.add_description("(exact) Sparse Reduced Row Echelon Form " + std::string(SparseRREF::version));
 	program.add_argument("input_file")
-		.help("input file in the Matrix Market exchange formats (MTX) or\nSparse/Symbolic Matrix Storage (SMS)");
+		.help("input file in the Matrix Market exchange formats (MTX),\nSparse/Symbolic Matrix Storage (SMS), or WXF (Wolfram, e.g. from Mathematica)");
 	program.add_argument("-o", "--output")
-		.help("output file in MTX format")
+		.help("output file in MTX format, or WXF when the input is WXF")
 		.default_value("<input_file>.rref")
 		.nargs(1);
 	program.add_usage_newline();
@@ -164,11 +164,15 @@ int main(int argc, char** argv) {
 		}
 		else {
 			auto str = program.get<std::string>("--prime");
-			int_t prep(str);
-			if (prep > (1ULL << ((FLINT64) ? 63 : 31))) {
-				std::cerr << "The prime number is too large: " << str
+			int_t prep;
+			if (prep.set_str(str) != 0) {
+				std::cerr << "The prime number is not valid: " << str << std::endl;
+				std::exit(1);
+			}
+			if (prep < 2 || prep >= (1ULL << ((FLINT64) ? 63 : 31))) {
+				std::cerr << "The prime number is out of range: " << str
 					<< std::endl;
-				std::cerr << "It should be less than " << 2 << "^"
+				std::cerr << "It should be at least 2 and less than 2^"
 					<< ((FLINT64) ? 63 : 31) << std::endl;
 				std::exit(1);
 			}
@@ -196,11 +200,17 @@ int main(int argc, char** argv) {
 			<< ". It should be 0, 1 or 2." << std::endl;
 		exit(1);
 	}
+	if (nthread < 0) {
+		std::cerr << "The number of threads is not valid: " << nthread
+			<< ". It should be 0 (automatic) or a positive integer." << std::endl;
+		exit(1);
+	}
 	if (nthread == 0)
 		opt->pool.reset(); // automatic mode, use all possible threads
 	else
 		opt->pool.reset(nthread);
 
+	nthread = (int)opt->pool.get_thread_count();
 	opt->verbose = (program["--verbose"] == true);
 	opt->is_back_sub = (program["--no-backward-substitution"] == false);
 	opt->print_step = program.get<int>("--print_step");

@@ -350,13 +350,17 @@ namespace SparseRREF {
 		return result;
 	}
 
-	inline uint64_t string_to_ull(std::string_view sv) {
-		uint64_t result;
+	// parses a non-negative decimal integer; returns false when sv is not one, so that a caller
+	// reading a file can report the malformed input instead of throwing
+	inline bool string_to_ull(std::string_view sv, uint64_t& result) {
 		auto [ptr, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), result);
-		if (ec != std::errc()) {
-			throw std::runtime_error("Failed to parse number");
-		}
-		return result;
+		if (ec != std::errc())
+			return false;
+
+		while (ptr != sv.data() + sv.size() && std::isspace((unsigned char)(*ptr)))
+			ptr++;
+
+		return ptr == sv.data() + sv.size();
 	}
 
 	inline void ustr_write(const std::filesystem::path file, const std::vector<uint8_t>& str) {

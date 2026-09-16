@@ -102,8 +102,8 @@ namespace Flint {
 		double to_double() const { return fmpz_get_d(&_data); }
 		explicit operator double() const { return to_double(); }
 
-		void set_str(const std::string& str, int base = 10) { fmpz_set_str(&_data, str.c_str(), base); }
-		void set_str(const char* str, int base = 10) { fmpz_set_str(&_data, str, base); }
+		int set_str(const std::string& str, int base = 10) { return set_str(str.c_str(), base); }
+		int set_str(const char* str, int base = 10) { return fmpz_set_str(&_data, str, base); }
 		explicit int_t(const std::string& str) { init(); set_str(str); }
 		explicit int_t(const char* str) { init(); set_str(str); }
 
@@ -144,7 +144,8 @@ namespace Flint {
 		template <unsigned_builtin_integral T> int_t operator%(const T other) const { int_t result; fmpz_mod_ui(&result._data, &_data, other); return result; }
 		ulong operator%(const nmod_t& other) const { return fmpz_get_nmod(&_data, other); }
 
-		int_t operator/(const int_t& other) const { int_t result; fmpz_tdiv_q(&result._data, &_data, &other._data); return result; }
+		// no operator/(const int_t&): the free rat_t operator/(const int_t&, const int_t&) below
+		// is the exact division of two integers, and keeping both made every a / b ambiguous
 		template <unsigned_builtin_integral T> int_t operator/(const T other) const { int_t result; fmpz_fdiv_q_ui(&result._data, &_data, other); return result; }
 		template <signed_builtin_integral T> int_t operator/(const T other) const { int_t result; fmpz_fdiv_q_si(&result._data, &_data, other); return result; }
 
@@ -170,7 +171,7 @@ namespace Flint {
 		void operator%=(const int_t& other) { fmpz_mod(&_data, &_data, &other._data); }
 		template <unsigned_builtin_integral T> void operator%=(const T other) { fmpz_mod_ui(&_data, &_data, other); }
 
-		void operator/=(const int_t& other) { fmpz_tdiv_q(&_data, &_data, &other._data); }
+		void operator/=(const int_t& other) { fmpz_fdiv_q(&_data, &_data, &other._data); }
 		template <unsigned_builtin_integral T> void operator/=(const T other) { fmpz_fdiv_q_ui(&_data, &_data, other); }
 		template <signed_builtin_integral T> void operator/=(const T other) { fmpz_fdiv_q_si(&_data, &_data, other); }
 
@@ -241,8 +242,17 @@ namespace Flint {
 				canonicalize();
 		}
 
-		void set_str(const std::string& str, int base = 10) { fmpq_set_str(&_data, str.c_str(), base); }
-		void set_str(const char* str, int base = 10) { fmpq_set_str(&_data, str, base); }
+		// a non-zero return means the literal is invalid and must not be accepted silently;
+		// fmpq_set_str does not reduce, so pass make_canonical = true to store lowest terms
+		int set_str(const std::string& str, int base = 10, const bool make_canonical = false) {
+			return set_str(str.c_str(), base, make_canonical);
+		}
+		int set_str(const char* str, int base = 10, const bool make_canonical = false) {
+			int is_ok = fmpq_set_str(&_data, str, base);
+			if (is_ok == 0 && make_canonical)
+				canonicalize();
+			return is_ok;
+		}
 		explicit rat_t(const std::string& str) { init(); set_str(str); }
 		explicit rat_t(const char* str) { init(); set_str(str); }
 
@@ -278,12 +288,20 @@ namespace Flint {
 
 		bool operator==(const rat_t& other) const { return fmpq_equal(&_data, &other._data); }
 		bool operator==(const int_t& other) const { return fmpq_equal_fmpz((fmpq*)&_data, (fmpz*)&other._data); }
-		template <builtin_integral T> bool operator==(const T other) const {
+		// split by signedness: a slong parameter would turn an unsigned value above 2^63 negative
+		template <signed_builtin_integral T> bool operator==(const T other) const {
 			if (other == 0)
 				return fmpq_is_zero(&_data);
 			if (other == 1)
 				return fmpq_is_one(&_data);
 			return fmpq_equal_si((fmpq*)&_data, other);
+		};
+		template <unsigned_builtin_integral T> bool operator==(const T other) const {
+			if (other == 0)
+				return fmpq_is_zero(&_data);
+			if (other == 1)
+				return fmpq_is_one(&_data);
+			return fmpq_equal_ui((fmpq*)&_data, other);
 		};
 		template<typename T> bool operator!=(const T other) const { return !operator==(other); }
 

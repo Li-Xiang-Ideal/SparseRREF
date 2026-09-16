@@ -19,6 +19,36 @@
 namespace SparseRREF {
 	// TODO: reuse the code for sparse_mat_read_wxf and sparse_tensor_read_wxf
 
+	// Files larger than this are mapped instead of being copied into memory.
+	inline constexpr uintmax_t wxf_mmap_threshold = 1ULL << 30;
+
+	// The bytes a parser reads are only borrowed (WXF_PARSER::Parser keeps a pointer to them
+	// and nothing else), so whoever owns them has to outlive the parse. A file above the
+	// threshold is mapped, otherwise it is read into memory; either way the bytes stay alive
+	// as long as this object does, and only one of the two is ever allocated.
+	struct wxf_file_bytes {
+		MMapFile mm;
+		std::vector<uint8_t> buffer;
+		std::string_view view;
+
+		explicit wxf_file_bytes(const std::filesystem::path& file) {
+			if (std::filesystem::file_size(file) > wxf_mmap_threshold) {
+				std::string cc_str = std::filesystem::canonical(file).string();
+				if (mmap_file(cc_str.c_str(), mm)) {
+					view = mm.view;
+					return;
+				}
+			}
+
+			buffer = file_to_ustr(file);
+			view = std::string_view((const char*)buffer.data(), buffer.size());
+		}
+
+		// MMapFile owns a mapping and must not be copied, so neither may this
+		wxf_file_bytes(const wxf_file_bytes&) = delete;
+		wxf_file_bytes& operator=(const wxf_file_bytes&) = delete;
+	};
+
 	namespace WXF_HELPER {
 		// value fits in int64_t as an integer
 		inline bool value_fits_si(const rat_t& value) { return value.is_integer() && value.num().fits_si(); }
@@ -298,28 +328,8 @@ namespace SparseRREF {
 			return sparse_mat<T, index_t>();
 		}
 
-		auto fz = std::filesystem::file_size(file);
-
-		WXF_PARSER::Parser wxf_parser;
-
-		// if > 1GB, use mmap
-		if (fz > 1ULL << 30) {
-			MMapFile mm;
-			std::string cc_str = std::filesystem::canonical(file).string();
-			bool status = mmap_file(cc_str.c_str(), mm);
-
-			if (!status) {
-				// if mmap failed, read the file directly
-				auto buffer = file_to_ustr(file);
-				wxf_parser = WXF_PARSER::Parser(buffer);
-			}
-
-			wxf_parser = WXF_PARSER::Parser(mm.view);
-		}
-
-		auto buffer = file_to_ustr(file);
-		wxf_parser = WXF_PARSER::Parser(buffer);
-
+		wxf_file_bytes bytes(file);
+		WXF_PARSER::Parser wxf_parser(bytes.view);
 		wxf_parser.parse();
 
 		return sparse_mat_read_wxf<T, index_t>(wxf_parser.tokens, F);
@@ -676,28 +686,8 @@ namespace SparseRREF {
 			return sparse_tensor<T, index_t, SPARSE_CSR>();
 		}
 
-		auto fz = std::filesystem::file_size(file);
-
-		WXF_PARSER::Parser wxf_parser;
-
-		// if > 1GB, use mmap
-		if (fz > 1ULL << 30) {
-			MMapFile mm;
-			std::string cc_str = std::filesystem::canonical(file).string();
-			bool status = mmap_file(cc_str.c_str(), mm);
-
-			if (!status) {
-				// if mmap failed, read the file directly
-				auto buffer = file_to_ustr(file);
-				wxf_parser = WXF_PARSER::Parser(buffer);
-			}
-
-			wxf_parser = WXF_PARSER::Parser(mm.view);
-		}
-
-		auto buffer = file_to_ustr(file);
-		wxf_parser = WXF_PARSER::Parser(buffer);
-
+		wxf_file_bytes bytes(file);
+		WXF_PARSER::Parser wxf_parser(bytes.view);
 		wxf_parser.parse();
 
 		return sparse_tensor_read_wxf<T, index_t>(wxf_parser.tokens, F, pool, sort_ind);

@@ -20,17 +20,17 @@ namespace SparseRREF {
 	// directly: the row of A with permutation position r owns the slice [r * B.nnz(), (r + 1) *
 	// B.nnz()) of C, so the slices do not overlap, their boundaries are known before any entry is
 	// computed, and the parallel version needs neither a per block tensor nor a merge
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> tensor_product(
-		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B, const field_t& F,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> tensor_product(
+		const sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B, const field_t& F,
 		thread_pool* pool = nullptr) {
 
 		std::vector<size_t> dimsB = B.dims();
 		std::vector<size_t> dimsC = A.dims();
 		dimsC.insert(dimsC.end(), dimsB.begin(), dimsB.end());
 
-		sparse_tensor<T, index_type, SPARSE_COO> C(dimsC);
+		sparse_tensor<T, index_t, SPARSE_COO> C(dimsC);
 
 		if (A.nnz() == 0 || B.nnz() == 0) {
 			return C;
@@ -52,7 +52,7 @@ namespace SparseRREF {
 			const auto posA = permA[r];
 			const auto indexA = A.index(posA);
 			const auto valA = A.val(posA);
-			index_type* colptr = C.data.colptr + r * nnzB * rank;
+			index_t* colptr = C.data.colptr + r * nnzB * rank;
 			T* valptr = C.data.valptr + r * nnzB;
 			for (size_t k = 0; k < nnzB; k++) {
 				const auto posB = permB[k];
@@ -81,10 +81,10 @@ namespace SparseRREF {
 	}
 
 	// returned tensor is sorted
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> tensor_add(
-		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> tensor_add(
+		const sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B,
 		const field_t& F) {
 
 		// if one of the tensors is empty, it is ok that dims of A or B are not defined
@@ -95,13 +95,13 @@ namespace SparseRREF {
 
 		if (A.rank() != B.rank()) {
 			std::cerr << "Error: tensor_add: The dimensions of the two tensors do not match." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		for (size_t i = 0; i < A.rank(); i++) {
 			if (A.dim(i) != B.dim(i)) {
 				std::cerr << "Error: tensor_add: The dimensions of the two tensors do not match." << std::endl;
-				return sparse_tensor<T, index_type, SPARSE_COO>();
+				return sparse_tensor<T, index_t, SPARSE_COO>();
 			}
 		}
 
@@ -113,7 +113,7 @@ namespace SparseRREF {
 		if (B.nnz() == 0)
 			return A;
 
-		sparse_tensor<T, index_type, SPARSE_COO> C(A.dims(), A.nnz() + B.nnz());
+		sparse_tensor<T, index_t, SPARSE_COO> C(A.dims(), A.nnz() + B.nnz());
 
 		auto Aperm = A.gen_perm();
 		auto Bperm = B.gen_perm();
@@ -159,10 +159,10 @@ namespace SparseRREF {
 	}
 
 	// A += B, we assume that A and B are sorted
-	template <typename index_type, typename T>
+	template <typename index_t, typename T>
 	void tensor_sum_replace(
-		sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B, const field_t& F) {
+		sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B, const field_t& F) {
 
 		// if one of the tensors is empty, it is ok that dims of A or B are not defined
 		if (A.alloc() == 0) {
@@ -257,19 +257,19 @@ namespace SparseRREF {
 	}
 
 	// the result is sorted
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> tensor_contract(
-		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> tensor_contract(
+		const sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B,
 		const std::vector<size_t>& i1, const std::vector<size_t>& i2,
 		const field_t& F, thread_pool* pool = nullptr) {
 
-		using index_v = std::vector<index_type>;
-		using index_p = index_type*;
+		using index_v = std::vector<index_t>;
+		using index_p = index_t*;
 
 		if (i1.size() != i2.size()) {
 			std::cerr << "Error: tensor_contract: The size of the two contract sets do not match." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		if (i1.size() == 0) {
@@ -280,7 +280,7 @@ namespace SparseRREF {
 		// would make the tail of the index vector a non permutation and silently misplace the entries
 		if (!in_range_and_distinct(i1, A.rank()) || !in_range_and_distinct(i2, B.rank())) {
 			std::cerr << "Error: tensor_contract: The contract indices are out of range or repeated." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		auto dimsA = A.dims();
@@ -289,7 +289,7 @@ namespace SparseRREF {
 		for (size_t k = 0; k < i1.size(); k++) {
 			if (dimsA[i1[k]] != dimsB[i2[k]]) {
 				std::cerr << "Error: tensor_contract: The dimensions of the two tensors do not match." << std::endl;
-				return sparse_tensor<T, index_type, SPARSE_COO>();
+				return sparse_tensor<T, index_t, SPARSE_COO>();
 			}
 		}
 
@@ -319,7 +319,7 @@ namespace SparseRREF {
 		auto permA = A.gen_perm(index_perm_A);
 		auto permB = B.gen_perm(index_perm_B);
 
-		sparse_tensor<T, index_type, SPARSE_COO> C(dimsC);
+		sparse_tensor<T, index_t, SPARSE_COO> C(dimsC);
 
 		auto i1i2_size = i1.size();
 		auto left_size_A = A.rank() - i1i2_size;
@@ -365,8 +365,8 @@ namespace SparseRREF {
 			stride_leftB[l - 1] = stride_leftB[l] * dim;
 		}
 
-		std::vector<index_type> index_A_cache, index_B_cache;
-		std::vector<index_type> index_leftB_cache(left_size_B * B.nnz());
+		std::vector<index_t> index_A_cache, index_B_cache;
+		std::vector<index_t> index_leftB_cache(left_size_B * B.nnz());
 		std::vector<size_t> key_contract_A, key_contract_B, key_leftA, key_leftB;
 		if (keyed_contract) {
 			key_contract_A.resize(A.nnz());
@@ -482,7 +482,7 @@ namespace SparseRREF {
 				val_B[k] = B.val(permB[k]);
 		}
 
-		auto equal_except = [](const index_type* a, const index_type* b, const std::vector<size_t>& perm, const size_t len) {
+		auto equal_except = [](const index_t* a, const index_t* b, const std::vector<size_t>& perm, const size_t len) {
 			for (size_t i = 0; i < len; i++) {
 				if (a[perm[i]] != b[perm[i]])
 					return false;
@@ -619,7 +619,7 @@ namespace SparseRREF {
 			return work;
 			};
 
-		auto method = [&](sparse_tensor<T, index_type>& C, size_t ss, size_t ee) {
+		auto method = [&](sparse_tensor<T, index_t>& C, size_t ss, size_t ee) {
 			index_v indexC(dimsC.size());
 
 			// the runs of B that the row that is being built reaches, the entry of A that reaches each
@@ -812,7 +812,7 @@ namespace SparseRREF {
 			}
 			ranges[nblocks - 1].second = rows;
 
-			std::vector<sparse_tensor<T, index_type, SPARSE_COO>> Cs(nblocks, C);
+			std::vector<sparse_tensor<T, index_t, SPARSE_COO>> Cs(nblocks, C);
 
 			pool->detach_sequence(0, nblocks, [&](size_t i) {
 				method(Cs[i], ranges[i].first, ranges[i].second);
@@ -847,10 +847,10 @@ namespace SparseRREF {
 		}
 	}
 
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> tensor_contract(
-		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> tensor_contract(
+		const sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B,
 		const size_t i, const size_t j, const field_t& F, thread_pool* pool = nullptr) {
 
 		return tensor_contract(A, B, std::vector<size_t>{ i }, std::vector<size_t>{ j }, F, pool);
@@ -860,10 +860,10 @@ namespace SparseRREF {
 	// the slot of the contracted index: the result has rank A.rank() + B.rank() - 2 and the order
 	// [A[0..a-1], B[1], A[a+1..], B[2..]], so that contracting with a matrix reads like a matrix
 	// product. The result is sorted unless sort_ind is false.
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> tensor_contract_2(
-		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> tensor_contract_2(
+		const sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B,
 		const size_t a, const field_t& F, thread_pool* pool = nullptr, const bool sort_ind = true) {
 
 		const size_t rankA = A.rank();
@@ -872,7 +872,7 @@ namespace SparseRREF {
 		if (rankA == 0 || rankB == 0 || a >= rankA) {
 			std::cerr << "Error: tensor_contract_2: cannot contract index " << a << " of a rank " << rankA
 				<< " tensor with a rank " << rankB << " tensor." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		// tensor_contract returns the order [A except a] ++ [B except 0], so perm[i] is the old slot of
@@ -896,23 +896,23 @@ namespace SparseRREF {
 	}
 
 	// self contraction: C[rest] = sum_k A[..., i=k, ..., j=k, ...], requires i != j
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> tensor_contract(
-		const sparse_tensor<T, index_type, SPARSE_COO>& A,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> tensor_contract(
+		const sparse_tensor<T, index_t, SPARSE_COO>& A,
 		const size_t i, const size_t j, const field_t& F, thread_pool* pool = nullptr) {
 
-		using index_v = std::vector<index_type>;
-		using index_p = index_type*;
+		using index_v = std::vector<index_t>;
+		using index_p = index_t*;
 
 		if (i >= A.rank() || j >= A.rank()) {
 			std::cerr << "Error: tensor_contract: cannot contract index " << i << " and " << j << " of a rank "
 				<< A.rank() << " tensor." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		if (i == j) {
 			std::cerr << "Error: tensor_contract: The two contraction indices must be different." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		if (i > j)
@@ -992,7 +992,7 @@ namespace SparseRREF {
 
 		std::vector<size_t> rowptr;
 		rowptr.push_back(0);
-		auto equal_except_ij = [&](const index_type* a, const index_type* b) {
+		auto equal_except_ij = [&](const index_t* a, const index_t* b) {
 			// do not compare the i-th and j-th index
 			for (size_t k = 0; k < rank; k++)
 				if (k != i && k != j && a[k] != b[k])
@@ -1006,7 +1006,7 @@ namespace SparseRREF {
 		}
 		rowptr.push_back(equal_ind_list.size());
 
-		sparse_tensor<T, index_type, SPARSE_COO> C(dimsC);
+		sparse_tensor<T, index_t, SPARSE_COO> C(dimsC);
 
 		// the merge cost scales with the number of matched entries, so a small match set stays on one
 		// thread even when a pool is available, since the dispatch overhead would dominate
@@ -1037,7 +1037,7 @@ namespace SparseRREF {
 
 			// the blocks (not the threads) fix the order of the merged result, since the
 			// scheduler decides which thread runs which block
-			std::vector<sparse_tensor<T, index_type, SPARSE_COO>> Cs(nblocks, C);
+			std::vector<sparse_tensor<T, index_t, SPARSE_COO>> Cs(nblocks, C);
 
 			auto method = [&](const size_t blk) {
 				index_v indexC;
@@ -1107,16 +1107,16 @@ namespace SparseRREF {
 		return C;
 	}
 
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> tensor_dot(
-		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> tensor_dot(
+		const sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B,
 		const field_t& F, thread_pool* pool = nullptr) {
 
 		// otherwise A.rank() - 1 wraps around
 		if (A.rank() == 0 || B.rank() == 0) {
 			std::cerr << "Error: tensor_dot: cannot contract a rank 0 tensor." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		return tensor_contract(A, B, A.rank() - 1, 0, F, pool);
@@ -1125,17 +1125,17 @@ namespace SparseRREF {
 	// usually B is a matrix, and A is a tensor, we want to contract all the dimensions of A with B
 	// e.g. change a basis of a tensor
 	// we always require that B is sorted
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> tensor_transform(
-		const sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> tensor_transform(
+		const sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B,
 		const size_t start_index, const field_t& F, thread_pool* pool = nullptr) {
 
 		auto rank = A.rank();
 		if (start_index >= rank) {
 			std::cerr << "Error: tensor_transform: cannot start at index " << start_index << " of a rank "
 				<< rank << " tensor." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		// A keeps its relative index order (B's remaining indices are appended at the end), so the next
@@ -1148,10 +1148,10 @@ namespace SparseRREF {
 		return C;
 	}
 
-	template <typename index_type, typename T>
+	template <typename index_t, typename T>
 	void tensor_transform_replace(
-		sparse_tensor<T, index_type, SPARSE_COO>& A,
-		const sparse_tensor<T, index_type, SPARSE_COO>& B,
+		sparse_tensor<T, index_t, SPARSE_COO>& A,
+		const sparse_tensor<T, index_t, SPARSE_COO>& B,
 		const size_t start_index, const field_t& F, thread_pool* pool = nullptr) {
 
 		auto rank = A.rank();
@@ -1273,9 +1273,9 @@ namespace SparseRREF {
 	// work is proportional to the number of partial products that really match an entry, and not to the
 	// product of the numbers of rows of the tensors as walking the whole cartesian product would be. A
 	// label is summed out as soon as no tensor below can hold it anymore.
-	template <typename index_type, typename T>
-	sparse_tensor<T, index_type, SPARSE_COO> einstein_sum(
-		const std::vector<sparse_tensor<T, index_type, SPARSE_COO>*> tensors,
+	template <typename index_t, typename T>
+	sparse_tensor<T, index_t, SPARSE_COO> einstein_sum(
+		const std::vector<sparse_tensor<T, index_t, SPARSE_COO>*> tensors,
 		const std::vector<std::vector<size_t>> index_sets,
 		const field_t& F, thread_pool* pool = nullptr) {
 
@@ -1284,12 +1284,12 @@ namespace SparseRREF {
 		auto nt = tensors.size();
 		if (nt == 0 || nt != index_sets.size()) {
 			std::cerr << "Error: einstein_sum: The number of tensors does not match the number of index sets." << std::endl;
-			return sparse_tensor<T, index_type, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 		for (size_t i = 0; i < nt; i++) {
 			if (tensors[i]->rank() != index_sets[i].size()) {
 				std::cerr << "Error: einstein_sum: The rank of the tensor does not match the index set." << std::endl;
-				return sparse_tensor<T, index_type, SPARSE_COO>();
+				return sparse_tensor<T, index_t, SPARSE_COO>();
 			}
 		}
 
@@ -1298,7 +1298,7 @@ namespace SparseRREF {
 		// first case is zero
 		for (size_t i = 0; i < nt; i++) {
 			if (tensors[i]->nnz() == 0)
-				return sparse_tensor<T, index_type, SPARSE_COO>();
+				return sparse_tensor<T, index_t, SPARSE_COO>();
 		}
 
 		// the slot of a label is its rank among the labels of the sum, so the slots are ordered by their
@@ -1346,11 +1346,11 @@ namespace SparseRREF {
 		// an index is stored in a key shifted by the smallest value of its label plus one, so that a zero
 		// can mark a slot that is not part of the key; distinct values of a label stay distinct, and the
 		// range of the indices does not matter
-		std::vector<index_type> lower(nlabels, 0);
+		std::vector<index_t> lower(nlabels, 0);
 		std::vector<bool> has_lower(nlabels, false);
 		for (size_t i = 0; i < nt; i++) {
 			for (size_t e = 0; e < tensors[i]->nnz(); e++) {
-				const index_type* ptr = tensors[i]->index(e);
+				const index_t* ptr = tensors[i]->index(e);
 				for (size_t j = 0; j < entry_slot[i].size(); j++) {
 					const size_t slot = entry_slot[i][j];
 					if (!has_lower[slot]) {
@@ -1443,12 +1443,12 @@ namespace SparseRREF {
 				const T val = tensors[i]->val(e);
 				if (val == 0)
 					return;
-				const index_type* ptr = tensors[i]->index(e);
+				const index_t* ptr = tensors[i]->index(e);
 				// only the diagonal of a tensor with a repeated label contributes
 				for (size_t k = 0; k < each_slot[i].size(); k++) {
 					const size_t* pos = slot_pos[i].data() + slot_start[i][k];
 					const size_t np = slot_start[i][k + 1] - slot_start[i][k];
-					const index_type num = ptr[pos[0]];
+					const index_t num = ptr[pos[0]];
 					for (size_t l = 1; l < np; l++) {
 						if (ptr[pos[l]] != num)
 							return;
@@ -1533,7 +1533,7 @@ namespace SparseRREF {
 			}
 		}
 
-		sparse_tensor<T, index_type, SPARSE_COO> C(dimsC);
+		sparse_tensor<T, index_t, SPARSE_COO> C(dimsC);
 
 		// the entries of the accumulator are in the order of its table, so they are sorted by their index,
 		// which is what the caller expects
@@ -1545,14 +1545,14 @@ namespace SparseRREF {
 				acc.keys.data() + b * nlabels, acc.keys.data() + (b + 1) * nlabels);
 			});
 
-		std::vector<index_type> index(free_slot.size());
+		std::vector<index_t> index(free_slot.size());
 		C.reserve(acc.count);
 		for (auto a : order) {
 			if (acc.vals[a] == 0)
 				continue;
 			const size_t* akey = acc.keys.data() + a * nlabels;
 			for (size_t j = 0; j < free_slot.size(); j++) {
-				index[j] = static_cast<index_type>(static_cast<size_t>(lower[free_slot[j]]) + akey[free_slot[j]] - 1);
+				index[j] = static_cast<index_t>(static_cast<size_t>(lower[free_slot[j]]) + akey[free_slot[j]] - 1);
 			}
 			C.push_back(index, acc.vals[a]);
 		}
@@ -1562,15 +1562,15 @@ namespace SparseRREF {
 
 	// IO
 
-	template <typename ScalarType, typename IndexType, typename T>
-	sparse_tensor<ScalarType, IndexType, SPARSE_COO> sparse_tensor_read(T& st, const field_t& F, thread_pool* pool = nullptr, const bool sort_ind = true) {
+	template <typename T, typename index_t, typename S>
+	sparse_tensor<T, index_t, SPARSE_COO> sparse_tensor_read(S& st, const field_t& F, thread_pool* pool = nullptr, const bool sort_ind = true) {
 		if (!st.is_open())
-			return sparse_tensor<ScalarType, IndexType, SPARSE_COO>();
+			return sparse_tensor<T, index_t, SPARSE_COO>();
 
 		std::string line;
-		std::vector<IndexType> index;
+		std::vector<index_t> index;
 		std::vector<size_t> dims;
-		sparse_tensor<ScalarType, IndexType> tensor;
+		sparse_tensor<T, index_t> tensor;
 
 		while (std::getline(st, line)) {
 			if (line.empty() || line[0] == '%')
@@ -1580,14 +1580,23 @@ namespace SparseRREF {
 			size_t end = line.find(' ');
 			while (end != std::string::npos) {
 				if (start != end) {
-					dims.push_back(string_to_ull(line.substr(start, end - start)));
+					uint64_t dim = 0;
+					if (!string_to_ull(line.substr(start, end - start), dim)) {
+						std::cerr << "Error: sparse_tensor_read: wrong format in the tensor file" << std::endl;
+						return sparse_tensor<T, index_t, SPARSE_COO>();
+					}
+					dims.push_back(dim);
 				}
 				start = end + 1;
 				end = line.find(' ', start);
 			}
 			if (start < line.size()) {
-				size_t nnz = string_to_ull(line.substr(start));
-				tensor = sparse_tensor<ScalarType, IndexType, SPARSE_COO>(dims, nnz);
+				uint64_t nnz = 0;
+				if (!string_to_ull(line.substr(start), nnz)) {
+					std::cerr << "Error: sparse_tensor_read: wrong format in the tensor file" << std::endl;
+					return sparse_tensor<T, index_t, SPARSE_COO>();
+				}
+				tensor = sparse_tensor<T, index_t, SPARSE_COO>(dims, nnz);
 				index.reserve(dims.size());
 			}
 			break;
@@ -1604,7 +1613,12 @@ namespace SparseRREF {
 
 			while (end != std::string::npos && count < dims.size()) {
 				if (start != end) {
-					index.push_back(static_cast<IndexType>(string_to_ull(line.substr(start, end - start)) - 1));
+					uint64_t coord = 0;
+					if (!string_to_ull(line.substr(start, end - start), coord)) {
+						std::cerr << "Error: sparse_tensor_read: wrong format in the tensor file" << std::endl;
+						return sparse_tensor<T, index_t, SPARSE_COO>();
+					}
+					index.push_back(static_cast<index_t>(coord - 1));
 					count++;
 				}
 				start = end + 1;
@@ -1613,16 +1627,27 @@ namespace SparseRREF {
 
 			if (count != dims.size()) {
 				std::cerr << "Error: sparse_tensor_read: wrong format in the tensor file" << std::endl;
-				return sparse_tensor<ScalarType, IndexType, SPARSE_COO>();
+				return sparse_tensor<T, index_t, SPARSE_COO>();
 			}
 
-			ScalarType val;
-			if constexpr (std::is_same_v<ScalarType, ulong>) {
-				rat_t raw_val(line.substr(start));
+			// set_str returns a non-zero value for a literal that is not a number, which must be
+			// reported instead of being stored as an unvalidated value; the value is normalized,
+			// since the arithmetic below assumes the canonical form
+			T val{};
+			int val_ok = 0;
+			if constexpr (std::is_same_v<T, ulong>) {
+				rat_t raw_val;
+				val_ok = raw_val.set_str(line.substr(start), 10, true);
 				val = raw_val % F.mod;
 			}
-			else if constexpr (std::is_same_v<ScalarType, rat_t>) {
-				val = rat_t(line.substr(start));
+			else if constexpr (std::is_same_v<T, rat_t>) {
+				val_ok = val.set_str(line.substr(start), 10, true);
+			}
+
+			if (val_ok != 0) {
+				std::cerr << "Error: sparse_tensor_read: the value is not a number: "
+					<< line.substr(start) << std::endl;
+				return sparse_tensor<T, index_t, SPARSE_COO>();
 			}
 
 			tensor.push_back(index, val);
@@ -1634,8 +1659,8 @@ namespace SparseRREF {
 		return tensor;
 	}
 
-	template<typename T, typename IndexType, typename S>
-	void sparse_tensor_write(S& st, const sparse_tensor<T, IndexType, SPARSE_COO>& tensor) {
+	template<typename T, typename index_t, typename S>
+	void sparse_tensor_write(S& st, const sparse_tensor<T, index_t, SPARSE_COO>& tensor) {
 		const auto& dims = tensor.dims();
 		const size_t rank = dims.size();
 		char num_buf[32];
