@@ -1,5 +1,5 @@
 /*
-	Copyright (C) 2025-2026 Zhenjie Li (Li, Zhenjie)
+	Copyright (C) 2025 Zhenjie Li (Li, Zhenjie)
 
 	You can redistribute it and/or modify it under the terms of the MIT
 	License.
@@ -40,23 +40,48 @@
 
 #include <complex>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
+#include <type_traits>
+#include <utility>
 #include <vector>
 #include <span>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <unordered_map>
-#include <utility>
 
 namespace WXF_PARSER {
 
 	using complex_float_t = std::complex<float>;
 	using complex_double_t = std::complex<double>;
+
+	// Parser::err values.  `ok` means the buffer was consumed without complaint.
+	enum class parse_error : int {
+		ok = 0,
+		invalid_head = 1,       // not a WXF stream (missing the 56 58 magic)
+		unknown_type = 2,       // a head byte that is not a known WXF type
+		truncated = 3,          // the buffer ends in the middle of a value
+		bad_length = 4,         // a declared length/element count leaves the buffer
+		bad_rank = 5,           // an array rank that is too large to be real
+		bad_structure = 6,      // an expression tree that does not match the tokens
+		no_data = 7             // nothing to decode
+	};
+
+	// helpers for callers that only test success or need the numeric code for a log
+	inline constexpr bool parse_ok(const parse_error e) noexcept { return e == parse_error::ok; }
+	inline constexpr int parse_error_code(const parse_error e) noexcept { return static_cast<int>(e); }
+
+	// Bounds for the decoder.  Both are guards against malformed input, not format
+	// limits: a rank this large cannot be backed by the bytes that declared it.
+	inline constexpr size_t wxf_max_rank = 1000;
+	// Depth limit for the FullForm reader/writer, so nested input cannot exhaust
+	// the stack.
+	inline constexpr size_t wxf_max_fullform_depth = 256;
 
 	enum class WXF_HEAD {
 		// function type
@@ -181,6 +206,7 @@ namespace WXF_PARSER {
 		// move from existing buffer
 		Encoder(std::vector<uint8_t>&& buf) : buffer(std::move(buf)) {}
 
+		// buffer management, so callers can pre-size and inspect the output
 		const size_t size() const { return buffer.size(); }
 		void reserve(const size_t new_size) { buffer.reserve(new_size); }
 		void resize(const size_t new_size) { buffer.resize(new_size); }
@@ -199,6 +225,12 @@ namespace WXF_PARSER {
 		Encoder& push_ustr(T* start, T* end) {
 			buffer.insert(buffer.end(), (uint8_t*)start, (uint8_t*)end); return *this;
 		}
+
+		// ---- local additions for SparseRREF, not present in upstream wxf_parser -------------
+		// These two write the elements into a buffer after a per element transform, so an array
+		// can be stored in a num_type narrower than the type it is given; the upstream API only
+		// accepts data whose element type already matches the num_type.  wxf_support.h relies on
+		// them, so a sync with upstream has to keep this block.
 
 		// generate data as ustr in the back
 		template<typename T, typename F>
@@ -300,13 +332,20 @@ namespace WXF_PARSER {
 			return all_len;
 		}
 
+		// ---- local additions for SparseRREF, not present in upstream wxf_parser -------------
+		// The same narrow num_type writes as above, through a transform or a generator, with
+		// (push_array, push_generated_array) and without (push_array_data,
+		// push_generated_array_data) the array header.  push_array here takes the transform and
+		// keeps the identity default, so a plain four argument call still works; upstream has a
+		// raw overload that refuses a num_type whose width differs from sizeof(T).
+
 		template<typename T, typename F = std::identity>
 			requires std::is_invocable_v<F&, const T&>
 		Encoder& push_array_data(const std::span<T> data, uint8_t num_type, F&& func = std::identity{}) {
 			// backup current size
 			size_t old_size = buffer.size();
 			using value_t = std::remove_cvref_t<std::invoke_result_t<F&, const T&>>;
-			
+
 			if constexpr (std::is_integral_v<value_t>) {
 				const bool consistent_sign = (num_type >> 2) == (std::is_unsigned_v<value_t> ? (16 >> 2) : 0);
 				if (size_of_arr_num_type(num_type) == sizeof(value_t) && consistent_sign) {
@@ -366,12 +405,25 @@ namespace WXF_PARSER {
 				return *this;
 			}
 
-			// push data
+			// the header reports size_of_arr_num_type(num_type) bytes per element, so
+			// the data written for it has to match; push_array_data takes care of the
+			// integral cases by casting, and rejects num_types it cannot serve
 			if constexpr (std::is_integral_v<T>) {
 				const bool supported_num_type = num_type <= 3 || (num_type >= 16 && num_type <= 19);
 				if (!supported_num_type) {
 					std::cerr << "Encoder::push_array: unsupported integer array num_type "
 						<< static_cast<int>(num_type) << "." << std::endl;
+					buffer.resize(old_size);
+					return *this;
+				}
+			}
+			// for the non-integral cases the width has to match exactly, because
+			// push_array_data writes the elements as they are
+			if constexpr (!std::is_integral_v<T>) {
+				if (size_of_arr_num_type(num_type) != sizeof(T)) {
+					std::cerr << "Encoder::push_array: num_type " << static_cast<int>(num_type)
+						<< " means " << size_of_arr_num_type(num_type) << " bytes per element, but "
+						<< sizeof(T) << " bytes were given." << std::endl;
 					buffer.resize(old_size);
 					return *this;
 				}
@@ -437,11 +489,15 @@ namespace WXF_PARSER {
 			return push_generated_array_data(all_len, num_type, std::forward<F>(func));
 		}
 
+		// A packed array is limited by the format to signed integers, reals and
+		// complex values: the unsigned element types (16..19) belong to the numeric
+		// array only.  That is why the element type is constrained to signed here;
+		// use push_numeric_array for unsigned data.
 		template<typename T>
 			requires std::is_integral_v<T>&& std::is_signed_v<T>
 		Encoder& push_packed_array(const std::vector<size_t>& dimension_array, const std::span<const T> data) {
-			int num_type = minimal_signed_bits(std::numeric_limits<T>::max());
-			return push_array(dimension_array, data, WXF_HEAD::array, num_type);
+			const int num_type = minimal_signed_bits((std::numeric_limits<T>::max)());
+			return push_array(dimension_array, data, WXF_HEAD::array, uint8_t(num_type));
 		}
 
 		Encoder& push_packed_array(const std::vector<size_t>& dimension_array, const std::span<const float> data) {
@@ -465,17 +521,17 @@ namespace WXF_PARSER {
 			return push_packed_array(dimension_array, std::span<const T>(data));
 		}
 
+		// A numeric array is the only place where unsigned element types exist
+		// (16..19), so this is the entry point for unsigned data.
 		template<typename T>
 			requires std::is_integral_v<T>
 		Encoder& push_numeric_array(const std::vector<size_t>& dimension_array, const std::span<const T> data) {
-			bool is_signed = std::is_signed_v<T>;
 			int num_type;
-
-			if (is_signed)
-				num_type = minimal_signed_bits(std::numeric_limits<T>::max());
+			if constexpr (std::is_signed_v<T>)
+				num_type = minimal_signed_bits((std::numeric_limits<T>::max)());
 			else
-				num_type = 16 + minimal_unsigned_bits(std::numeric_limits<T>::max());
-			return push_array(dimension_array, data, WXF_HEAD::narray, num_type);
+				num_type = 16 + minimal_unsigned_bits((std::numeric_limits<T>::max)());
+			return push_array(dimension_array, data, WXF_HEAD::narray, uint8_t(num_type));
 		}
 
 		Encoder& push_numeric_array(const std::vector<size_t>& dimension_array, const std::span<const float> data) {
@@ -515,7 +571,7 @@ namespace WXF_PARSER {
 		Token() : type(WXF_HEAD::i8), rank(0), length(0), data(nullptr) {}
 		Token(const WXF_HEAD t, const size_t len, const uint8_t* d) : type(t), rank(0), length(len), data(d) {}
 		Token(const WXF_HEAD t, const std::vector<size_t>& dims, const int num_type, const size_t len, const uint8_t* d) : type(t), data(d) {
-			int r = dims.size();
+			int r = int(dims.size());
 			rank = r;
 			dimensions = (size_t*)malloc((r + 2) * sizeof(size_t));
 			dimensions[0] = num_type;
@@ -533,69 +589,77 @@ namespace WXF_PARSER {
 
 		template<typename T> T* get_ptr() const { return (T*)data; }
 
-		~Token() {
-			if (type == WXF_HEAD::array || type == WXF_HEAD::narray)
-				free(dimensions);
-		}
+		~Token() { free_dimensions(); }
 
-		Token(const Token& other) : type(other.type), rank(other.rank), length(other.length), data(other.data) {
-			if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
+		// `length` and `dimensions` are the same storage, so a copy has to decide
+		// which one to *materialize*: either a deep copy of the block (when the
+		// source still owns it), or a plain copy of the scalar.  A moved-from array
+		// token has `dimensions == nullptr`, and that is exactly the case the old
+		// code missed - it only looked at `type` and memcpy'd the nullptr.
+		Token(const Token& other) : type(other.type), rank(other.rank), data(other.data) {
+			if (other.is_array() && other.dimensions != nullptr) {
 				dimensions = (size_t*)malloc((rank + 2) * sizeof(size_t));
 				std::memcpy(dimensions, other.dimensions, (rank + 2) * sizeof(size_t));
 			}
+			else
+				length = other.length;
 		}
 
-		Token(Token&& other) noexcept : type(other.type), rank(other.rank), length(other.length), data(other.data) {
-			if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
-				dimensions = other.dimensions;
-				other.dimensions = nullptr;
-			}
+		Token(Token&& other) noexcept : type(other.type), rank(other.rank), data(other.data) {
+			if (is_array())
+				dimensions = other.dimensions; // steal the block ...
+			else
+				length = other.length;
+			other.type = WXF_HEAD::i8;         // ... and leave the source in a well-defined
+			other.rank = 0;                   // moved-from state: no longer an array, so
+			other.length = 0;                 // destruction and copying are both harmless
 		}
 
 		Token& operator=(const Token& other) {
-			if (this != &other) {
-				type = other.type;
-				rank = other.rank;
-				length = other.length;
-				data = other.data;
-				if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
-					dimensions = (size_t*)malloc((rank + 2) * sizeof(size_t));
-					std::memcpy(dimensions, other.dimensions, (rank + 2) * sizeof(size_t));
-				}
-			}
+			if (this != &other)
+				assign_from(other, /*steal=*/false);
 			return *this;
 		}
 
 		Token& operator=(Token&& other) noexcept {
-			if (this != &other) {
-				type = other.type;
-				rank = other.rank;
-				length = other.length;
-				data = other.data;
-				if (type == WXF_HEAD::array || type == WXF_HEAD::narray) {
-					dimensions = other.dimensions;
-					other.dimensions = nullptr;
-				}
-			}
+			if (this != &other)
+				steal_from(other);
 			return *this;
 		}
 
 		int64_t get_integer() const {
-			if (type == WXF_HEAD::i8)
-				return *(int8_t*)data;
-			else if (type == WXF_HEAD::i16)
-				return *(int16_t*)data;
-			else if (type == WXF_HEAD::i32)
-				return *(int32_t*)data;
-			else if (type == WXF_HEAD::i64)
-				return *(int64_t*)data;
+			// the payloads in a WXF stream are not guaranteed to be aligned, so
+			// read through memcpy instead of dereferencing a reinterpreted pointer
+			if (type == WXF_HEAD::i8) {
+				int8_t v = 0;
+				std::memcpy(&v, data, sizeof v);
+				return v;
+			}
+			else if (type == WXF_HEAD::i16) {
+				int16_t v = 0;
+				std::memcpy(&v, data, sizeof v);
+				return v;
+			}
+			else if (type == WXF_HEAD::i32) {
+				int32_t v = 0;
+				std::memcpy(&v, data, sizeof v);
+				return v;
+			}
+			else if (type == WXF_HEAD::i64) {
+				int64_t v = 0;
+				std::memcpy(&v, data, sizeof v);
+				return v;
+			}
 			else
 				return 0;
 		}
 
 		double get_real() const {
-			if (type == WXF_HEAD::f64)
-				return *(double*)data;
+			if (type == WXF_HEAD::f64) {
+				double v = 0;
+				std::memcpy(&v, data, sizeof v);
+				return v;
+			}
 			else
 				return 0;
 		}
@@ -611,6 +675,67 @@ namespace WXF_PARSER {
 			else
 				return std::string_view();
 		}
+
+		bool is_array() const { return type == WXF_HEAD::array || type == WXF_HEAD::narray; }
+
+		// an array token owns one block behind `dimensions`; every other type must
+		// leave that union member alone
+		void free_dimensions() {
+			if (is_array()) {
+				free(dimensions);
+				dimensions = nullptr;
+			}
+		}
+
+		// Leave a moved-from token in the default (non-array) state: its block has been
+		// taken, so it must not be treated as an array again.  Running this *after* the
+		// destination has taken the block is what keeps `dimensions` out of a const
+		// path - which is why the union members need no `mutable`.
+		static void mark_moved_from(Token& other) noexcept {
+			other.type = WXF_HEAD::i8;
+			other.rank = 0;
+			other.length = 0;
+		}
+
+		// Shared by copy and move assignment so the two cannot drift apart:
+		//  1. work out the block this token should end up with: a deep copy of the
+		//     source's block (copy), the source's block itself (move), or none,
+		//  2. release the block this token owns *before* overwriting the union -
+		//     releasing after the overwrite is what used to leak it,
+		//  3. materialize exactly one union member and copy the scalar fields.
+		// The source is only ever read here; the move-specific "clear the source" step
+		// lives in steal_from(), where the source is a non-const reference.
+		void assign_from(const Token& other, const bool steal) noexcept {
+			size_t* new_dimensions = nullptr;
+			if (other.is_array() && other.dimensions != nullptr) {
+				if (steal)
+					new_dimensions = other.dimensions;
+				else {
+					new_dimensions = (size_t*)malloc((other.rank + 2) * sizeof(size_t));
+					if (new_dimensions != nullptr)
+						std::memcpy(new_dimensions, other.dimensions, (other.rank + 2) * sizeof(size_t));
+				}
+			}
+
+			free_dimensions();
+
+			type = other.type;
+			rank = other.rank;
+			if (new_dimensions != nullptr)
+				dimensions = new_dimensions;
+			else
+				length = other.length;
+			data = other.data;
+		}
+
+		// the move-assignment entry point
+		void steal_from(Token& other) noexcept {
+			assign_from(other, /*steal=*/true);
+			if (other.is_array()) // an array source only keeps its type when the block
+				mark_moved_from(other); // was nullptr, i.e. when there was nothing to move
+		}
+
+	public:
 
 		template<typename T>
 		std::span<const T> get_arr_span() const {
@@ -745,12 +870,12 @@ namespace WXF_PARSER {
 		const uint8_t* buffer; // the buffer to read
 		size_t pos = 0;
 		size_t size = 0; // the size of the buffer
-		int err = 0; // 0 is ok, otherwise error
+		parse_error err = parse_error::ok; // `ok` means no complaint was raised
 		std::vector<Token> tokens;
 
-		Parser(const uint8_t* buf, const size_t len) : buffer(buf), pos(0), size(len), err(0) {}
-		Parser(const std::vector<uint8_t>& buf) : buffer(buf.data()), pos(0), size(buf.size()), err(0) {}
-		Parser(const std::string_view buf) : buffer((const uint8_t*)buf.data()), pos(0), size(buf.size()), err(0) {}
+		Parser(const uint8_t* buf, const size_t len) : buffer(buf), pos(0), size(len), err(parse_error::ok) {}
+		Parser(const std::vector<uint8_t>& buf) : buffer(buf.data()), pos(0), size(buf.size()), err(parse_error::ok) {}
+		Parser(const std::string_view buf) : buffer((const uint8_t*)buf.data()), pos(0), size(buf.size()), err(parse_error::ok) {}
 
 		// default special member functions
 		Parser() = default;
@@ -760,45 +885,57 @@ namespace WXF_PARSER {
 		Parser(Parser&&) noexcept = default;
 		Parser& operator=(Parser&&) noexcept = default;
 
+		// Read one base-128 varint.  A varint runs off the end of the buffer only
+		// for truncated input, and then there is no value to return: `err` is set
+		// and the caller must stop.  `pos` is always left at a readable position.
 		inline uint64_t read_varint() {
+			const uint8_t* const begin = buffer;
 			const uint8_t* ptr = buffer + pos;
-			const uint8_t* end = buffer + size;
+			const uint8_t* const end = buffer + size;
 			uint64_t result = 0;
-			uint8_t b;
+			int shift = 0;
 
-			if (ptr >= end) return 0;
+			while (ptr < end && shift < 64) {
+				const uint8_t b = *ptr++;
+				result |= uint64_t(b & 0x7F) << shift;
+				if (!(b & 0x80)) {
+					pos = size_t(ptr - begin);
+					return result;
+				}
+				shift += 7;
+			}
 
-			b = *ptr++; result = uint64_t(b & 0x7F);         if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 7;   if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 14;  if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 21;  if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 28;  if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 35;  if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 42;  if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 49;  if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 56;  if (!(b & 0x80) || ptr >= end) goto done;
-			b = *ptr++; result |= uint64_t(b & 0x7F) << 63;
-		done:
-			pos = ptr - buffer;
-			return result;
+			// either the buffer ended on a continuation byte, or ten continuation
+			// bytes claimed a value that needs more than 64 bits
+			pos = size_t(ptr - begin);
+			err = parse_error::truncated;
+			return 0;
 		}
 
 		void parse() {
 			// check the file head
 			if (pos == 0) {
-				if (size < 2 || buffer[0] != 56 || buffer[1] != 58) {
+				if (size < 2 || buffer == nullptr || buffer[0] != 56 || buffer[1] != 58) {
 					std::cerr << "Invalid WXF file" << std::endl;
-					err = 1;
+					err = parse_error::invalid_head;
 					return;
 				}
 				pos = 2;
 			}
 
-			while (pos < size) {
-				WXF_HEAD type = (WXF_HEAD)(buffer[pos]); pos++;
+			// a declared byte count is only usable while the whole payload is
+			// inside the buffer
+			auto payload_fits = [&](const size_t length) {
+				if (length <= size - pos)
+					return true;
+				std::cerr << "Truncated WXF data: " << length
+					<< " bytes declared, " << size - pos << " available at pos " << pos << std::endl;
+				err = parse_error::bad_length;
+				return false;
+			};
 
-				if (pos == size)
-					break;
+			while (pos < size && parse_ok(err)) {
+				WXF_HEAD type = (WXF_HEAD)(buffer[pos]); pos++;
 
 				switch (type) {
 				case WXF_HEAD::i8:
@@ -807,6 +944,8 @@ namespace WXF_PARSER {
 				case WXF_HEAD::i64:
 				case WXF_HEAD::f64: {
 					auto length = size_of_head_num_type(type);
+					if (!payload_fits(length))
+						return;
 					tokens.emplace_back(type, length, buffer + pos);
 					pos += length;
 					break;
@@ -817,6 +956,10 @@ namespace WXF_PARSER {
 				case WXF_HEAD::string:
 				case WXF_HEAD::binary_string: {
 					auto length = read_varint();
+					if (!parse_ok(err))
+						return;
+					if (!payload_fits(length))
+						return;
 					tokens.emplace_back(type, length, buffer + pos);
 					pos += length;
 					break;
@@ -824,6 +967,12 @@ namespace WXF_PARSER {
 				case WXF_HEAD::func:
 				case WXF_HEAD::association: {
 					auto length = read_varint();
+					if (!parse_ok(err))
+						return;
+					// the head of a function is a symbol that follows immediately
+					const size_t head_len = (type == WXF_HEAD::func) ? 1 : 0;
+					if (!payload_fits(head_len))
+						return;
 					tokens.emplace_back(type, length, buffer + pos);
 					break;
 				}
@@ -833,25 +982,56 @@ namespace WXF_PARSER {
 					break;
 				case WXF_HEAD::array:
 				case WXF_HEAD::narray: {
-					int num_type = read_varint();
-					auto r = read_varint();
+					const auto num_type = read_varint();
+					if (!parse_ok(err))
+						return;
+					const auto r = read_varint();
+					if (!parse_ok(err))
+						return;
+					if (r > wxf_max_rank) {
+						std::cerr << "Invalid array rank: " << r << " at pos " << pos << std::endl;
+						err = parse_error::bad_rank;
+						return;
+					}
 					std::vector<size_t> dims(r);
 					size_t all_len = 1;
 					for (size_t i = 0; i < r; i++) {
 						dims[i] = read_varint();
+						if (!parse_ok(err))
+							return;
+						// the flattened length has to stay representable
+						if (dims[i] != 0 && all_len > (std::numeric_limits<size_t>::max)() / dims[i]) {
+							std::cerr << "Invalid array: the element count overflows at pos " << pos << std::endl;
+							err = parse_error::bad_length;
+							return;
+						}
 						all_len *= dims[i];
 					}
-					tokens.emplace_back(type, dims, num_type, all_len, buffer + pos);
-					pos += all_len * size_of_arr_num_type(num_type);
+					const size_t elem_size = size_of_arr_num_type(int(num_type));
+					if (all_len > (size - pos) / elem_size) {
+						std::cerr << "Truncated WXF data: " << all_len << " elements of "
+							<< elem_size << " bytes declared, " << size - pos
+							<< " bytes available at pos " << pos << std::endl;
+						err = parse_error::bad_length;
+						return;
+					}
+					const uint8_t* const data = buffer + pos;
+					pos += all_len * elem_size;
+					tokens.emplace_back(type, dims, int(num_type), all_len, data);
 					break;
 				}
 				default:
 					std::cerr << "Unknown head type: " << (int)type << " pos: " << pos << std::endl;
-					err = 2;
-					break;
+					err = parse_error::unknown_type;
+					return;
 				}
 			}
-			err = 0;
+
+			// a stream with a valid head but no token describes no expression at all
+			if (parse_ok(err) && tokens.empty()) {
+				std::cerr << "Empty WXF data: the head is valid but no token follows" << std::endl;
+				err = parse_error::no_data;
+			}
 		}
 	};
 
@@ -918,13 +1098,19 @@ namespace WXF_PARSER {
 
 	inline expr_tree make_expr_tree(Parser& parser) {
 		expr_tree tree;
-		if (parser.err != 0)
+		if (!parse_ok(parser.err))
 			return tree;
 
 		tree.tokens = std::move(parser.tokens);
 
 		auto total_len = tree.tokens.size();
 		auto& tokens = tree.tokens;
+
+		if (total_len == 0) {
+			std::cerr << "Error: the input contains no token" << std::endl;
+			parser.err = parse_error::no_data;
+			return tree;
+		}
 
 		std::vector<expr_node*> expr_stack; // the stack to store the current father nodes
 		std::vector<size_t> node_stack; // the vector to store the node index
@@ -963,29 +1149,50 @@ namespace WXF_PARSER {
 		expr_stack.push_back(&(tree.root));
 		node_stack.push_back(0);
 
+		// a node that declares no children is complete the moment it is created:
+		// move_to_next_node() only runs once a child has been stored, so without
+		// this List[] (or any f[] / empty Association) would stay on the stack
+		// and the whole tree would be reported as malformed
+		if (tree.root.size() == 0)
+			move_to_next_node();
+
 		// now we need to parse the expression
 		for (; pos < total_len; pos++) {
-			auto& token = tokens[pos];
-			if (token.type == WXF_HEAD::func || token.type == WXF_HEAD::association) {
+			if (node_stack.empty())
+				break; // the declared tree is already complete; extra tokens are ignored
+			auto& tok = tokens[pos];
+			if (tok.type == WXF_HEAD::func || tok.type == WXF_HEAD::association) {
 				// if the token is a function type, we need to create a new node
 				auto node_pos = node_stack.back();
 				auto parent = expr_stack.back();
+				if (node_pos >= parent->size()) {
+					std::cerr << "Error: malformed expression tree at token " << pos << std::endl;
+					parser.err = parse_error::bad_structure;
+					break;
+				}
 				auto& node = parent->children[node_pos];
-				if (token.type == WXF_HEAD::func) {
-					node = expr_node(pos + 1, token.length, token.type);
+				if (tok.type == WXF_HEAD::func) {
+					node = expr_node(pos + 1, tok.length, tok.type);
 					pos++; // skip the head
 				}
 				else
-					node = expr_node(pos, token.length, token.type);
+					node = expr_node(pos, tok.length, tok.type);
 				expr_stack.push_back(&(node)); // push the new node to the stack
 				node_stack.push_back(0); // push the new node index to the stack
+				if (node.size() == 0) // f[] : nothing will ever complete this node
+					move_to_next_node();
 			}
-			else if (token.type == WXF_HEAD::delay_rule || token.type == WXF_HEAD::rule) {
+			else if (tok.type == WXF_HEAD::delay_rule || tok.type == WXF_HEAD::rule) {
 				// if the token is a rule type, we need to create a new node
 				auto node_pos = node_stack.back();
 				auto parent = expr_stack.back();
+				if (node_pos >= parent->size()) {
+					std::cerr << "Error: malformed expression tree at token " << pos << std::endl;
+					parser.err = parse_error::bad_structure;
+					break;
+				}
 				auto& node = parent->children[node_pos];
-				node = expr_node(pos, 2, token.type);
+				node = expr_node(pos, 2, tok.type);
 				expr_stack.push_back(&(node)); // push the new node to the stack
 				node_stack.push_back(0); // push the new node index to the stack
 			}
@@ -993,8 +1200,13 @@ namespace WXF_PARSER {
 				// if the token is not a function type, we need to move to the next node
 				auto node_pos = node_stack.back();
 				auto parent = expr_stack.back();
+				if (node_pos >= parent->size()) {
+					std::cerr << "Error: malformed expression tree at token " << pos << std::endl;
+					parser.err = parse_error::bad_structure;
+					break;
+				}
 				auto& node = parent->children[node_pos];
-				node = expr_node(pos, 0, token.type);
+				node = expr_node(pos, 0, tok.type);
 
 				move_to_next_node();
 			}
@@ -1002,6 +1214,7 @@ namespace WXF_PARSER {
 
 		if (!node_stack.empty()) {
 			std::cerr << "Error: not all nodes are parsed" << std::endl;
+			parser.err = parse_error::bad_structure;
 		}
 
 		return tree;
@@ -1332,7 +1545,14 @@ namespace WXF_PARSER::FullForm {
 			}
 		}
 
-		expression parse_expression() {
+		expression parse_expression(const size_t depth = 0) {
+			if (depth > wxf_max_fullform_depth) {
+				std::cerr << "Parse Error: FullForm is nested deeper than "
+					<< wxf_max_fullform_depth << " levels at position " << currentToken_.position << std::endl;
+				currentToken_ = { lexer::END, "", currentToken_.position };
+				return atom_expression(atom_type::Null, "");
+			}
+
 			atom_expression head = parse_atom();
 
 			if (currentToken_.type == lexer::LBRACKET) {
@@ -1340,11 +1560,11 @@ namespace WXF_PARSER::FullForm {
 				std::vector<expression> args;
 
 				if (currentToken_.type != lexer::RBRACKET) {
-					args.push_back(parse_expression());
+					args.push_back(parse_expression(depth + 1));
 
 					while (currentToken_.type == lexer::COMMA) {
 						consume(lexer::COMMA);
-						args.push_back(parse_expression());
+						args.push_back(parse_expression(depth + 1));
 					}
 				}
 
@@ -1396,7 +1616,13 @@ namespace WXF_PARSER::FullForm {
 namespace WXF_PARSER {
 	// we allow use a map to store function that generating sub-expressions
 	inline void fullform_to_wxf(Encoder& encoder, const FullForm::expression& expr,
-		const std::unordered_map<std::string, std::function<void(Encoder&)>>& map) {
+		const std::unordered_map<std::string, std::function<void(Encoder&)>>& map,
+		const size_t depth = 0) {
+
+		if (depth > wxf_max_fullform_depth) {
+			std::cerr << "Error: FullForm is nested deeper than " << wxf_max_fullform_depth << " levels." << std::endl;
+			return;
+		}
 
 		if (expr.is_atom()) {
 			switch (expr.head_.get_type()) {
@@ -1440,7 +1666,7 @@ namespace WXF_PARSER {
 			encoder.push_function(name, len);
 
 			for (size_t i = 0; i < len; i++) {
-				fullform_to_wxf(encoder, expr.args_[i], map);
+				fullform_to_wxf(encoder, expr.args_[i], map, depth + 1);
 			}
 		}
 	}
