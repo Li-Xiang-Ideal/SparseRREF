@@ -547,6 +547,8 @@ namespace SparseRREF {
 
 		st tensor(dims, nz);
 		tensor.data.rowptr = std::move(rowptr);
+		if (nz == 0)
+			return tensor;
 
 		// colindex is tokens[11]
 		if (WXF_PARSER::size_of_arr_num_type(tokens[11].dimensions[0]) > sizeof(index_t)) {
@@ -708,7 +710,7 @@ namespace SparseRREF {
 	std::vector<uint8_t> sparse_tensor_write_wxf(const sparse_tensor<T, index_t, SPARSE_CSR>& tensor, bool include_head = true, bool mma_layout = false) {
 		using namespace WXF_PARSER;
 
-		if (tensor.alloc() == 0)
+		if (std::find(tensor.dims().begin(), tensor.dims().end(), size_t(0)) != tensor.dims().end())
 			return std::vector<uint8_t>();
 
 		std::string_view ff_template = "SparseArray[Automatic,#dims,0,{1,{#rowptr,#colindex},#vals}]";
@@ -743,6 +745,10 @@ namespace SparseRREF {
 
 
 		func_map["#colindex"] = [&](Encoder& enc) {
+			if (nnz == 0) {
+				enc.push_function("List", 0);
+				return;
+			}
 			auto col_span = std::span(tensor.data.colptr, (rank - 1) * nnz);
 			uint8_t num_type = 0;
 			if (mma_layout) {
@@ -760,6 +766,10 @@ namespace SparseRREF {
 			};
 
 		func_map["#vals"] = [&](Encoder& enc) {
+			if (nnz == 0) {
+				enc.push_function("List", 0);
+				return;
+			}
 			if constexpr (std::is_same_v<T, rat_t> || std::is_same_v<T, int_t> || std::is_same_v<T, ulong>) {
 				auto val_span = std::span(tensor.data.valptr, nnz);
 				if (mma_layout) {
