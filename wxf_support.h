@@ -708,7 +708,7 @@ namespace SparseRREF {
 	std::vector<uint8_t> sparse_tensor_write_wxf(const sparse_tensor<T, index_t, SPARSE_CSR>& tensor, bool include_head = true, bool mma_layout = false) {
 		using namespace WXF_PARSER;
 
-		if (tensor.alloc() == 0)
+		if (std::find(tensor.dims().begin(), tensor.dims().end(), size_t(0)) != tensor.dims().end())
 			return std::vector<uint8_t>();
 
 		std::string_view ff_template = "SparseArray[Automatic,#dims,0,{1,{#rowptr,#colindex},#vals}]";
