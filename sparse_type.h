@@ -931,11 +931,14 @@ namespace SparseRREF {
 				std::copy(l.valptr, l.valptr + nz, valptr);
 				return *this;
 			}
+			const auto old_rank = rank;
 			dims = l.dims;
 			rank = l.rank;
 			rowptr = l.rowptr;
 			if (alloc < nz)
 				reserve(nz);
+			else if (rank != old_rank)
+				colptr = s_realloc<index_t>(colptr, alloc * (rank - 1));
 			std::copy(l.colptr, l.colptr + nz * (rank - 1), colptr);
 			std::copy(l.valptr, l.valptr + nz, valptr);
 			return *this;
@@ -2106,11 +2109,14 @@ namespace SparseRREF {
 				return;
 			}
 			// Note: require sorted/perm to ensure correctness
+			const auto old_rank = data.rank;
 			data.dims = l.data.dims;
 			data.rank = l.data.rank;
 			auto nnz = l.nnz();
 			if (alloc() < nnz)
 				reserve(nnz);
+			else if (old_rank != l.rank() && alloc() != 0)
+				data.colptr = s_realloc<index_t>(data.colptr, alloc() * (l.rank() - 1));
 			std::copy(l.data.valptr, l.data.valptr + nnz, data.valptr);
 			auto newrank = data.rank - 1;
 			for (size_t i = 0; i < newrank; i++)
@@ -2422,6 +2428,7 @@ namespace SparseRREF {
 			// change the dimensions
 			data.dims = new_dims;
 			data.rank = nr + 1;
+			data.reserve(nnz());
 		}
 
 		// reshape, for example {2,100} to {2,5,20}
@@ -2450,6 +2457,7 @@ namespace SparseRREF {
 			data.colptr = newcolptr;
 			data.dims = prepend_num(new_dims, (size_t)1);
 			data.rank = new_dims.size() + 1;
+			data.reserve(nnz());
 		}
 
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(prepend_num(l), val, mode); }
