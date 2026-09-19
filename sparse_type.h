@@ -10,6 +10,8 @@
 #ifndef SPARSE_TYPE_H
 #define SPARSE_TYPE_H
 
+#include <limits>
+
 #include "sparse_rref.h"
 #include "scalar.h"
 
@@ -1942,20 +1944,14 @@ namespace SparseRREF {
 			return B;
 		}
 
+		// the entries of every row have to be non-decreasing. Comparing adjacent entries directly
+		// avoids the perm vector and the parallel adjacent_find that the previous version paid for
+		// every row
 		bool check_sorted() const {
-			for (size_t i = 0; i < dims[0]; i++) {
-				size_t rownnz = rowptr[i + 1] - rowptr[i];
-				if (rownnz < 2)
-					continue;
-				std::vector<size_t> perm = perm_init(rownnz);
-				if (std::adjacent_find(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
-					auto ptra = colptr + (rowptr[i] + a) * (rank - 1);
-					auto ptrb = colptr + (rowptr[i] + b) * (rank - 1);
-					return lexico_compare(ptra, ptrb, rank - 1) > 0;
-					}) != perm.end()) {
-					return false;
-				}
-			}
+			for (size_t i = 0; i < dims[0]; i++)
+				for (size_t j = rowptr[i] + 1; j < rowptr[i + 1]; j++)
+					if (lexico_compare(colptr + (j - 1) * (rank - 1), colptr + j * (rank - 1), rank - 1) > 0)
+						return false;
 			return true;
 		}
 
@@ -2455,29 +2451,56 @@ namespace SparseRREF {
 			data.rank = nr + 1;
 		}
 
-		// reshape, for example {2,100} to {2,5,20}
-		// TODO: check more examples
-		inline void reshape(const std::vector<size_t>& new_dims) {
-			auto old_dims = dims();
-			// same invariant as in flatten: alloc * new_dims.size() entries, not nnz * ...
-			index_t* newcolptr = (data.alloc == 0) ? nullptr : s_malloc<index_t>(data.alloc * new_dims.size());
-			auto r = rank();
-
-			int_t flatten_index = 0;
-			int_t tmp;
+		// The mixed radix conversion of reshape(): the flat index of an entry under old_dims, split
+		// again by new_dims. Acc is uint64_t whenever the product of the dimensions fits in 64 bits
+		// -- every shape that is not astronomically large -- and int_t (a big integer) otherwise,
+		// so the arithmetic is only as wide as it has to be. One implementation, two widths.
+		template <typename Acc>
+		void reshape_impl(const std::vector<size_t>& old_dims, const std::vector<size_t>& new_dims, index_t* newcolptr) const {
+			const auto r = rank();
+			const auto m = new_dims.size();
 			for (size_t i = 0; i < nnz(); i++) {
 				auto ptr = index(i);
-				flatten_index = 0;
-				for (size_t j = 0; j < r; j++) {
-					flatten_index *= old_dims[j];
-					flatten_index += ptr[j];
-				}
-				for (auto j = new_dims.size(); j > 0; j--) {
-					tmp = flatten_index % new_dims[j - 1];
-					flatten_index /= new_dims[j - 1];
-					newcolptr[i * new_dims.size() + j - 1] = tmp.to_si();
+				Acc flat = 0;
+				for (size_t j = 0; j < r; j++)
+					flat = flat * old_dims[j] + ptr[j];
+				for (size_t j = m; j > 0; j--) {
+					const Acc tmp = flat % new_dims[j - 1];
+					flat /= new_dims[j - 1];
+					if constexpr (std::is_same_v<Acc, int_t>)
+						newcolptr[i * m + j - 1] = (index_t)(tmp.to_si());
+					else
+						newcolptr[i * m + j - 1] = (index_t)(tmp);
 				}
 			}
+		}
+
+		// reshape, for example {2,100} to {2,5,20}
+		inline void reshape(const std::vector<size_t>& new_dims) {
+			auto old_dims = dims();
+			if (new_dims == old_dims)
+				return; // the identity: the coordinates already are the ones of new_dims
+
+			// same invariant as in flatten: alloc * new_dims.size() entries, not nnz * ...
+			index_t* newcolptr = (data.alloc == 0) ? nullptr : s_malloc<index_t>(data.alloc * new_dims.size());
+
+			// the flat index is bounded by the product of the dimensions, so a shape whose product
+			// leaves 64 bits is the only one that needs the big integer path
+			uint64_t prod = 1;
+			bool fits_u64 = true;
+			for (const auto d : old_dims) {
+				if (d != 0 && prod > std::numeric_limits<uint64_t>::max() / d) {
+					fits_u64 = false;
+					break;
+				}
+				prod *= d;
+			}
+
+			if (fits_u64)
+				reshape_impl<uint64_t>(old_dims, new_dims, newcolptr);
+			else
+				reshape_impl<int_t>(old_dims, new_dims, newcolptr);
+
 			s_free(data.colptr);
 			data.colptr = newcolptr;
 			data.dims = prepend_num(new_dims, (size_t)1);
