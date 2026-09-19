@@ -19,7 +19,6 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
-#include <execution>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -157,6 +156,43 @@ namespace SparseRREF {
 	// thread pool
 	using thread_pool = BS::thread_pool<>;
 	inline size_t thread_id() { return BS::this_thread::get_index().value(); }
+
+	// A range sort that runs on our own pool: the caller's pool sizes the parallelism, so --threads
+	// governs it. It sort each block of the range in parallel, and then merges the sorted blocks.
+	template <typename RandomIt, typename Cmp>
+	void parallel_sort(RandomIt first, RandomIt last, Cmp&& cmp, thread_pool* pool, const size_t threshold = 1u << 14) {
+		const size_t n = static_cast<size_t>(last - first);
+		if (pool == nullptr || n < threshold || BS::this_thread::get_index().has_value())
+			return std::sort(first, last, cmp);
+
+		const size_t nblocks = std::min(pool->get_thread_count(), n / threshold);
+		if (nblocks < 2)
+			return std::sort(first, last, cmp);
+
+		std::vector<RandomIt> bounds(nblocks + 1);
+		for (size_t b = 0; b <= nblocks; b++)
+			bounds[b] = first + static_cast<std::ptrdiff_t>(n * b / nblocks);
+
+		pool->detach_blocks(0, nblocks, [&](size_t ss, size_t ee) {
+			for (size_t b = ss; b < ee; b++)
+				std::sort(bounds[b], bounds[b + 1], cmp);
+			});
+		pool->wait();
+
+		for (size_t width = 1; width < nblocks; width *= 2) {
+			const size_t groups = (nblocks + 2 * width - 1) / (2 * width);
+			pool->detach_blocks(0, groups, [&](size_t ss, size_t ee) {
+				for (size_t g = ss; g < ee; g++) {
+					const size_t lo = 2 * width * g;
+					const size_t mid = std::min(lo + width, nblocks);
+					const size_t hi = std::min(lo + 2 * width, nblocks);
+					if (mid < hi)
+						std::inplace_merge(bounds[lo], bounds[mid], bounds[hi], cmp);
+				}
+				});
+			pool->wait();
+		}
+	}
 
 	// rref_option
 	// method 0: right and left search

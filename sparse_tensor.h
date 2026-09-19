@@ -45,8 +45,8 @@ namespace SparseRREF {
 		C.reserve(nnzA * nnzB);
 		C.resize(nnzA * nnzB);
 
-		auto permA = A.gen_perm();
-		auto permB = B.gen_perm();
+		auto permA = A.gen_perm(pool);
+		auto permB = B.gen_perm(pool);
 
 		auto fill_row = [&](const size_t r) {
 			const auto posA = permA[r];
@@ -316,8 +316,8 @@ namespace SparseRREF {
 		// and B
 		index_perm_B.insert(index_perm_B.begin(), i2.begin(), i2.end());
 
-		auto permA = A.gen_perm(index_perm_A);
-		auto permB = B.gen_perm(index_perm_B);
+		auto permA = A.gen_perm(index_perm_A, pool);
+		auto permB = B.gen_perm(index_perm_B, pool);
 
 		sparse_tensor<T, index_t, SPARSE_COO> C(dimsC);
 
@@ -981,14 +981,7 @@ namespace SparseRREF {
 		auto by_index = [&](size_t a, size_t b) {
 			return lexico_compare(A.index(equal_ind_list[a]), A.index(equal_ind_list[b]), index_perm) < 0;
 			};
-		// the matched entries are usually a small fraction of the tensor, so the sort is rarely the
-		// bottleneck: above the threshold it is worth the threads, below it the serial version is
-		// faster and a call without a pool (pool == nullptr) stays single threaded
-		constexpr size_t par_sort_threshold = 1u << 16;
-		if (pool != nullptr && equal_ind_list.size() >= par_sort_threshold)
-			std::sort(std::execution::par, perm.begin(), perm.end(), by_index);
-		else
-			std::sort(perm.begin(), perm.end(), by_index);
+		parallel_sort(perm.begin(), perm.end(), by_index, pool);
 
 		std::vector<size_t> rowptr;
 		rowptr.push_back(0);

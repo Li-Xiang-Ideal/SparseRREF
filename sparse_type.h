@@ -1494,11 +1494,11 @@ namespace SparseRREF {
 				// if not sorted, we need to permute the entries
 				if (!check_sorted()) {
 					std::vector<size_t> perm = perm_init(res_nnz);
-					std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
+					parallel_sort(perm.begin(), perm.end(), [&](size_t a, size_t b) {
 						auto ptra = colptr + (rowptr[index] + a) * (rank - 1);
 						auto ptrb = colptr + (rowptr[index] + b) * (rank - 1);
 						return lexico_compare(ptra, ptrb, rank - 1) < 0;
-						});
+						}, pool);
 					permute(perm, B.colptr, rank - 2);
 					permute(perm, B.valptr);
 				}
@@ -1524,11 +1524,11 @@ namespace SparseRREF {
 				}
 				else {
 					std::vector<size_t> perm = perm_init(res_nnz);
-					std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
+					parallel_sort(perm.begin(), perm.end(), [&](size_t a, size_t b) {
 						auto ptra = colptr + (rowptr[index] + a) * (rank - 1);
 						auto ptrb = colptr + (rowptr[index] + b) * (rank - 1);
 						return lexico_compare(ptra, ptrb, rank - 1) < 0;
-						});
+						}, pool);
 					pool->detach_blocks(0, res_nnz, [&](size_t ss, size_t ee) {
 						for (size_t j = ss; j < ee; j++) {
 							auto oldptr = colptr + (rowptr[index] + perm[j]) * (rank - 1);
@@ -1779,11 +1779,11 @@ namespace SparseRREF {
 				std::vector<size_t> perm;
 				if constexpr (!Sorted && !RowspecIsSpan) {
 					perm = perm_init(rowptr[rowspec_idx + 1] - rowptr[rowspec_idx]);
-					std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
+					parallel_sort(perm.begin(), perm.end(), [&](size_t a, size_t b) {
 						auto ptra = colptr + (rowptr[rowspec_idx] + a) * (rank - 1);
 						auto ptrb = colptr + (rowptr[rowspec_idx] + b) * (rank - 1);
 						return lexico_compare(ptra, ptrb, rank - 1) < 0;
-						});
+						}, pool);
 				}
 				// position of the sorted j-th element
 				auto sorted_jth = [&](size_t j) -> size_t {
@@ -1957,18 +1957,23 @@ namespace SparseRREF {
 
 		// multithread version use more memory and it will compress the tensor
 		void sort_indices(thread_pool* pool = nullptr) {
-			if (pool == nullptr) {
-				for (size_t i = 0; i < dims[0]; i++) {
-					size_t rownnz = rowptr[i + 1] - rowptr[i];
-					std::vector<size_t> perm(rownnz);
-					for (size_t j = 0; j < rownnz; j++)
-						perm[j] = j;
-					std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
-						auto ptra = colptr + (rowptr[i] + a) * (rank - 1);
-						auto ptrb = colptr + (rowptr[i] + b) * (rank - 1);
-						return lexico_compare(ptra, ptrb, rank - 1) < 0;
-						});
+			auto sort_row = [&](const size_t row, std::vector<size_t>& perm) {
+				const size_t rownnz = rowptr[row + 1] - rowptr[row];
+				perm.resize(rownnz);
+				for (size_t j = 0; j < rownnz; j++)
+					perm[j] = j;
+				auto less = [&](size_t a, size_t b) {
+					auto ptra = colptr + (rowptr[row] + a) * (rank - 1);
+					auto ptrb = colptr + (rowptr[row] + b) * (rank - 1);
+					return lexico_compare(ptra, ptrb, rank - 1) < 0;
+					};
+				parallel_sort(perm.begin(), perm.end(), less, pool);
+				};
 
+			if (pool == nullptr) {
+				std::vector<size_t> perm;
+				for (size_t i = 0; i < dims[0]; i++) {
+					sort_row(i, perm);
 					permute(perm, colptr + rowptr[i] * (rank - 1), rank - 1);
 					permute(perm, valptr + rowptr[i]);
 				}
@@ -1985,23 +1990,27 @@ namespace SparseRREF {
 			for (size_t i = 0; i < nz; i++)
 				new (n_valptr + i) T();
 
-			for (size_t i = 0; i < dims[0]; i++) {
-				size_t rownnz = rowptr[i + 1] - rowptr[i];
-				std::vector<size_t> perm(rownnz);
-				for (size_t j = 0; j < rownnz; j++)
-					perm[j] = j;
-				std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
-					auto ptra = colptr + (rowptr[i] + a) * (rank - 1);
-					auto ptrb = colptr + (rowptr[i] + b) * (rank - 1);
-					return lexico_compare(ptra, ptrb, rank - 1) < 0;
-					});
+			auto loop_rows = [&](size_t ss, size_t ee) {
+				std::vector<size_t> perm;
+				for (size_t i = ss; i < ee; i++) {
+					sort_row(i, perm);
+					for (size_t j = 0; j < perm.size(); j++) {
+						auto oldptr = colptr + (rowptr[i] + perm[j]) * (rank - 1);
+						auto newptr = n_colptr + (rowptr[i] + j) * (rank - 1);
+						std::copy(oldptr, oldptr + (rank - 1), newptr);
+						n_valptr[rowptr[i] + j] = valptr[rowptr[i] + perm[j]];
+					}
+				}
+				};
 
-				pool->detach_loop(0, rownnz, [&](size_t j) {
-					auto oldptr = colptr + (rowptr[i] + perm[j]) * (rank - 1);
-					auto newptr = n_colptr + (rowptr[i] + j) * (rank - 1);
-					std::copy(oldptr, oldptr + (rank - 1), newptr);
-					n_valptr[rowptr[i] + j] = valptr[rowptr[i] + perm[j]];
-					});
+			if (dims[0] < pool->get_thread_count()) {
+				// few rows: each row gets the pool (and a long one is sorted in parallel), instead of
+				// the rows being shared out (which would leave a single row to one thread)
+				loop_rows(0, dims[0]);
+			}
+			else {
+				// one dispatch for all the rows, one perm vector per block instead of one per row
+				pool->detach_blocks(0, dims[0], [&](size_t ss, size_t ee) { loop_rows(ss, ee); });
 				pool->wait();
 			}
 			for (size_t i = 0; i < alloc; i++)
@@ -2152,11 +2161,12 @@ namespace SparseRREF {
 			}
 			if (!l_sorted) {
 				std::vector<size_t> perm = perm_init(nnz);
-				std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
+				auto by_index = [&](size_t a, size_t b) {
 					auto ptra = l.data.colptr + a * newrank;
 					auto ptrb = l.data.colptr + b * newrank;
 					return lexico_compare(ptra, ptrb, newrank) < 0;
-				});
+					};
+				parallel_sort(perm.begin(), perm.end(), by_index, pool);
 				if (pool == nullptr) {
 					permute(perm, data.colptr, newrank - 1);
 					permute(perm, data.valptr);
@@ -2615,17 +2625,12 @@ namespace SparseRREF {
 		// the entries are usually already in that order, because the callers hand in tensors that were
 		// built sorted or returned by an operation that sorts: verifying it costs one cheap pass, so
 		// the identity permutation is returned as soon as the check succeeds
-		std::vector<size_t> gen_perm_by(const std::vector<size_t>* order) const {
+		std::vector<size_t> gen_perm_by(const std::vector<size_t>* order, thread_pool* pool) const {
 			const auto r = rank();
 			const auto nz = nnz();
 			// the counting passes below keep one bucket per label, so only the orderings whose
 			// dimensions add up to a manageable number of buckets are counted
 			constexpr size_t max_buckets = 1u << 20;
-			// below this many entries, waking the threads costs more than the work that they share
-			constexpr size_t par_threshold = 1u << 14;
-			// a single pass is only worth sharing much later: the tensors that hold a few hundred
-			// thousand entries still walk their index array faster than the threads are started
-			constexpr size_t par_pass_threshold = 1u << 18;
 			bool sorted = true;
 			if (order == nullptr) {
 				for (size_t i = 1; i < nz && sorted; i++)
@@ -2657,29 +2662,11 @@ namespace SparseRREF {
 			// the ordering by comparisons, which is what the counting passes fall back on when they
 			// cannot be used or when they meet an entry that steps outside its dimensions
 			auto by_comparison = [&]() {
-				// the comparators are written out twice instead of going through a common lambda, and so
-				// are the two policies: the branch on order runs once per entry of the sort, where an
-				// extra branch costs more than the pass above, and waking the threads costs more than
-				// the comparisons for a tensor that holds few entries
-				if (nz >= par_threshold) {
-					if (order == nullptr)
-						std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
-							return lexico_compare(index(a), index(b), r) < 0;
-							});
-					else
-						std::sort(std::execution::par, perm.begin(), perm.end(), [&](size_t a, size_t b) {
-							return lexico_compare(index(a), index(b), *order) < 0;
-							});
-					return perm;
-				}
-				if (order == nullptr)
-					std::sort(perm.begin(), perm.end(), [&](size_t a, size_t b) {
-						return lexico_compare(index(a), index(b), r) < 0;
-						});
-				else
-					std::sort(perm.begin(), perm.end(), [&](size_t a, size_t b) {
-						return lexico_compare(index(a), index(b), *order) < 0;
-						});
+				auto less = [&](size_t a, size_t b) {
+					return order == nullptr ? lexico_compare(index(a), index(b), r) < 0
+						: lexico_compare(index(a), index(b), *order) < 0;
+					};
+				parallel_sort(perm.begin(), perm.end(), less, pool);
 				return perm;
 				};
 
@@ -2692,18 +2679,11 @@ namespace SparseRREF {
 					const size_t d = dim(pos);
 
 					count.assign(d, 0);
-					// the labels are read through the permutation, which walks the index array at random
-					// once the pass above has grouped the entries, so a tensor that holds many entries
-					// hands the read to the threads; those labels then sit next to each other, and the
-					// pass that counts them watches them, since a label at or above its dimension would
-					// index outside the buckets, and one entry that says so sends the ordering back to
-					// the comparisons
-					if (nz < par_pass_threshold)
-						for (size_t i = 0; i < nz; i++)
-							label[i] = index(perm[i])[pos];
-					else
-						std::transform(std::execution::par, perm.begin(), perm.end(), label.begin(),
-							[&](const size_t p) { return index(p)[pos]; });
+					// the labels are read through the permutation, which walks the index array at
+					// random; the pass stays serial: it is one read per entry, and the counting pass
+					// below it is serial anyway, so a dispatch would cost more than the pass
+					for (size_t i = 0; i < nz; i++)
+						label[i] = index(perm[i])[pos];
 
 					for (size_t i = 0; i < nz; i++) {
 						const auto value = label[i];
@@ -2728,18 +2708,18 @@ namespace SparseRREF {
 			return by_comparison();
 		}
 
-		std::vector<size_t> gen_perm() const { return gen_perm_by(nullptr); }
+		std::vector<size_t> gen_perm(thread_pool* pool = nullptr) const { return gen_perm_by(nullptr, pool); }
 
-		std::vector<size_t> gen_perm(const std::vector<size_t>& index_perm) const {
+		std::vector<size_t> gen_perm(const std::vector<size_t>& index_perm, thread_pool* pool = nullptr) const {
 			// index_perm is a permutation of the positions of the index vector, so it must have
 			// exactly rank() entries; the caller is expected to check this, we only degrade to the
 			// natural order here instead of handing back a perm of the wrong size
 			if (index_perm.size() != rank()) {
 				std::cerr << "Error: gen_perm: index_perm size is not equal to rank" << std::endl;
-				return gen_perm();
+				return gen_perm(pool);
 			}
 
-			return gen_perm_by(&index_perm);
+			return gen_perm_by(&index_perm, pool);
 		}
 
 		void transpose_replace(const std::vector<size_t>& perm, thread_pool* pool = nullptr, const bool sort_ind = true) {

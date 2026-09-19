@@ -19,8 +19,6 @@ Some algorithms are inspired by [Spasm](https://github.com/cbouilla/spasm), but 
 
 The code mainly depends on [FLINT](https://flintlib.org/) to support arithmetic, and [BS::thread_pool](https://github.com/bshoshany/thread-pool), [wxf_parser](https://github.com/munuxi/wxf_parser) and [argparse](https://github.com/p-ranav/argparse) (they are included) are also used, for the thread pool, the WXF format and argument parsing.
 
-Using the `sparse_tensor` functions also requires linking the tbb (Threading Building Blocks) library (for GCC and Clang), since the parallel STL of C++20 is used there.
-
 ### What to compute?
 
 For a sparse matrix $M$, the code computes its RREF $\Lambda$ with row and column permutations by default (`--method 0`). In practice, this is the most efficient way to solve a linear system or to obtain the kernel. Instead of permuting the rows and columns explicitly, we keep the row and column ordering of the matrix, i.e. the i-th row/column of $\Lambda$ is the i-th row/column of $M$, and the permutation is given implicitly by the pivots, which are a list of pairs (row, col). In the ordering of pivots, the submatrix $\Lambda[\text{rows in pivots},\text{cols in pivots}]$ of $\Lambda$ is an identity matrix (if `--no-backward-substitution` is enabled, it is upper triangular). 
