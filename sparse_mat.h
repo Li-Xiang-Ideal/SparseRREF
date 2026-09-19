@@ -28,6 +28,11 @@ namespace SparseRREF {
 			if (donelist[i] != index_sval<index_t>())
 				continue;
 			if (mat[i].nnz() == 1) {
+				// a column of negative weight is never a pivot column (see pivots_search);
+				// using it here and discarding the pivot afterwards left a row that the
+				// rational reconstruction could not agree on across primes
+				if (opt->col_weight(mat[i](0)) < 0)
+					continue;
 				if (!collist[mat[i](0)]) {
 					localcounter++;
 					pivlist[i] = mat[i](0);
@@ -76,6 +81,11 @@ namespace SparseRREF {
 			if (donelist[i] != index_sval<index_t>())
 				continue;
 			if (mat[i].nnz() == 1) {
+				// a column of negative weight is never a pivot column (see pivots_search);
+				// using it here and discarding the pivot afterwards left a row that the
+				// rational reconstruction could not agree on across primes
+				if (opt->col_weight(mat[i](0)) < 0)
+					continue;
 				if (!collist[mat[i](0)]) {
 					localcounter++;
 					pivlist[i] = mat[i](0);
