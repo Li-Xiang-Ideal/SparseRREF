@@ -810,12 +810,21 @@ namespace SparseRREF {
 		using const_index_p = const index_t*;
 		using interval_t = std::pair<index_t, index_t>;
 
-		// empty constructor
-		sparse_tensor_struct() {
-			rank = 0;
+		// dims and rowptr must not be empty, so that nnz(), check_sorted() and row() are defined on
+		// every instance: the empty tensor is dims {0} / rank 1 / rowptr {0,0}, which is safe in
+		// both representations (COO nnz() is rowptr[1], CSR nnz() is rowptr[dims[0]])
+		void init_empty() {
+			dims.assign(1, 0);
+			rank = 1;
+			rowptr.assign(2, 0);
 			alloc = 0;
 			colptr = nullptr;
 			valptr = nullptr;
+		}
+
+		// empty constructor
+		sparse_tensor_struct() {
+			init_empty();
 		}
 
 		// Constructor with dimensions
@@ -844,22 +853,24 @@ namespace SparseRREF {
 				valptr[i] = l.valptr[i];
 		}
 
-		// Move constructor
-		sparse_tensor_struct(sparse_tensor_struct&& l) noexcept {
-			dims = l.dims;
+		// Take over l's buffers (and its rowptr: no O(rank) copy on every move) and leave l empty
+		void steal_from(sparse_tensor_struct& l) noexcept {
+			dims = std::move(l.dims);
+			rowptr = std::move(l.rowptr);
 			rank = l.rank;
-			rowptr = l.rowptr;
 			alloc = l.alloc;
 			colptr = l.colptr;
-			l.colptr = nullptr;
 			valptr = l.valptr;
-			l.valptr = nullptr;
-			l.alloc = 0; // important for no repeating clear
-			std::fill(l.rowptr.begin(), l.rowptr.end(), 0);
+			l.init_empty();
 		}
 
-		void clear() {
-			std::fill(rowptr.begin(), rowptr.end(), 0);
+		// Move constructor
+		sparse_tensor_struct(sparse_tensor_struct&& l) noexcept {
+			steal_from(l);
+		}
+
+		// free the buffers; the capacity drops to 0, dims/rowptr are left alone
+		void release() {
 			if (alloc == 0)
 				return;
 			for (size_t i = 0; i < alloc; i++)
@@ -871,15 +882,22 @@ namespace SparseRREF {
 			alloc = 0;
 		}
 
+		// become the canonical empty tensor (O(1): no O(nrow) fill, and dims[0] == 0 makes
+		// check_sorted()/sort_indices() skip the rows, so they never touch the null colptr)
+		void clear() {
+			release();
+			init_empty();
+		}
+
 		~sparse_tensor_struct() {
-			clear();
+			release();
 		}
 
 		void reserve(const size_t size) {
 			if (size == alloc)
 				return;
 			if (size == 0) {
-				clear();
+				release(); // capacity only: the shape and the rowptr stay as they are
 				return;
 			}
 			if (alloc == 0) {
@@ -951,17 +969,8 @@ namespace SparseRREF {
 		sparse_tensor_struct& operator=(sparse_tensor_struct&& l) noexcept {
 			if (this == &l)
 				return *this;
-			clear();
-			dims = l.dims;
-			rank = l.rank;
-			rowptr = l.rowptr;
-			alloc = l.alloc;
-			colptr = l.colptr;
-			l.colptr = nullptr;
-			valptr = l.valptr;
-			l.valptr = nullptr;
-			l.alloc = 0; // important for no repeating clear
-			std::fill(l.rowptr.begin(), l.rowptr.end(), 0);
+			release(); // everything below is overwritten by steal_from
+			steal_from(l);
 			return *this;
 		}
 
@@ -1972,7 +1981,7 @@ namespace SparseRREF {
 
 			auto nz = nnz();
 			if (nz == 0) {
-				clear();
+				release(); // nothing to sort: keep the shape, just drop the unused capacity
 				return;
 			}
 			auto n_colptr = s_malloc<index_t>(nz * (rank - 1));
@@ -2313,7 +2322,7 @@ namespace SparseRREF {
 		}
 
 		// only for test
-		void print_test() {
+		void print_test() const {
 			for (size_t i = 0; i < data.dims[0]; i++) {
 				for (size_t j = data.rowptr[i]; j < data.rowptr[i + 1]; j++) {
 					std::cout << i << " ";
@@ -2434,20 +2443,24 @@ namespace SparseRREF {
 				for (size_t j = 0; j < nr; j++)
 					init_ptr[i * nr + j] = newindex[j];
 			}
-			if (nnz() != 0)
-				data.colptr = s_realloc(data.colptr, nr * nnz());
+			// colptr must stay able to hold alloc * (rank - 1) = nr * alloc entries, because the
+			// copy constructor reads exactly that many; sizing the buffer by nnz and then shrinking
+			// alloc to nnz (with reserve) throws the spare capacity away and makes the next
+			// push_back reallocate and grow again
+			if (data.alloc != 0)
+				data.colptr = s_realloc(data.colptr, nr * data.alloc);
 
 			// change the dimensions
 			data.dims = new_dims;
 			data.rank = nr + 1;
-			data.reserve(nnz());
 		}
 
 		// reshape, for example {2,100} to {2,5,20}
 		// TODO: check more examples
 		inline void reshape(const std::vector<size_t>& new_dims) {
 			auto old_dims = dims();
-			index_t* newcolptr = (nnz() == 0) ? nullptr : s_malloc<index_t>(nnz() * new_dims.size());
+			// same invariant as in flatten: alloc * new_dims.size() entries, not nnz * ...
+			index_t* newcolptr = (data.alloc == 0) ? nullptr : s_malloc<index_t>(data.alloc * new_dims.size());
 			auto r = rank();
 
 			int_t flatten_index = 0;
@@ -2469,7 +2482,6 @@ namespace SparseRREF {
 			data.colptr = newcolptr;
 			data.dims = prepend_num(new_dims, (size_t)1);
 			data.rank = new_dims.size() + 1;
-			data.reserve(nnz());
 		}
 
 		inline void insert(const index_v& l, const T& val, bool mode = true) { data.insert(prepend_num(l), val, mode); }
@@ -2820,56 +2832,48 @@ namespace SparseRREF {
 			return *this;
 		}
 
-		sparse_tensor& operator=(sparse_tensor<T, index_t, SPARSE_CSR>&& l) noexcept {
-			data = std::move(l.data);
+		// The stolen data is in the CSR layout; turn it into the COO one: the row index goes in
+		// front of every entry, rowptr becomes {0, nnz} (which frees the CSR row pointer array),
+		// and dims gets the artificial leading 1. The stride is widened in place, backwards, so
+		// that no second tensor-sized index buffer is needed (the source of an entry can only be
+		// overlapped by that entry's own row slot, which is written last).
+		void csr_to_coo_layout() noexcept {
 			auto r = data.rank;
 			auto n_row = data.dims[0];
 
-			// recompute the index
-			index_t* newcolptr = (data.alloc == 0) ? nullptr : s_malloc<index_t>(data.alloc * r);
-			auto newcolptr_j = newcolptr;
-			auto nowcolptr_j = data.colptr;
-			for (size_t i = 0; i < n_row; i++) {
-				for (size_t j = data.rowptr[i]; j < data.rowptr[i + 1]; j++) {
-					newcolptr_j[0] = i;
-					s_copy(newcolptr_j + 1, nowcolptr_j, r - 1);
-					newcolptr_j += r;
-					nowcolptr_j += r - 1;
+			if (data.alloc == 0) {
+				s_free(data.colptr); // no capacity: nothing to widen, only the buffer to drop
+				data.colptr = nullptr;
+			}
+			else {
+				data.colptr = s_realloc<index_t>(data.colptr, data.alloc * r);
+			}
+			auto colptr = data.colptr;
+			for (size_t i = n_row; i-- > 0;) {
+				for (size_t j = data.rowptr[i + 1]; j-- > data.rowptr[i];) {
+					auto oldptr = colptr + j * (r - 1);
+					auto newptr = colptr + j * r;
+					for (size_t k = r - 1; k-- > 0;)
+						newptr[k + 1] = oldptr[k];
+					newptr[0] = i;
 				}
 			}
-			s_free(data.colptr);
-			data.colptr = newcolptr;
 
 			data.rowptr = { 0, data.rowptr.back() };
 			data.dims = prepend_num(data.dims, (size_t)1);
 			data.rank++;
+		}
+
+		sparse_tensor& operator=(sparse_tensor<T, index_t, SPARSE_CSR>&& l) noexcept {
+			data = std::move(l.data);
+			csr_to_coo_layout();
 
 			return *this;
 		}
 
 		sparse_tensor(sparse_tensor<T, index_t, SPARSE_CSR>&& l) noexcept {
 			data = std::move(l.data);
-			auto r = data.rank;
-			auto n_row = data.dims[0];
-
-			// recompute the index
-			index_t* newcolptr = (data.alloc == 0) ? nullptr : s_malloc<index_t>(data.alloc * r);
-			auto newcolptr_j = newcolptr;
-			auto nowcolptr_j = data.colptr;
-			for (size_t i = 0; i < n_row; i++) {
-				for (size_t j = data.rowptr[i]; j < data.rowptr[i + 1]; j++) {
-					newcolptr_j[0] = i;
-					s_copy(newcolptr_j + 1, nowcolptr_j, r - 1);
-					newcolptr_j += r;
-					nowcolptr_j += r - 1;
-				}
-			}
-			s_free(data.colptr);
-			data.colptr = newcolptr;
-
-			data.rowptr = { 0, data.rowptr.back() };
-			data.dims = prepend_num(data.dims, (size_t)1);
-			data.rank++;
+			csr_to_coo_layout();
 		}
 
 		sparse_tensor(const sparse_mat<T, index_t>& mat, thread_pool* pool = nullptr) {
@@ -2881,7 +2885,7 @@ namespace SparseRREF {
 			return *this;
 		}
 
-		void print_test() {
+		void print_test() const {
 			for (size_t j = 0; j < data.rowptr[1]; j++) {
 				for (size_t k = 0; k < data.rank - 1; k++)
 					std::cout << (size_t)(data.colptr[j * (data.rank - 1) + k]) << " ";
