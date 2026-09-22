@@ -643,10 +643,36 @@ namespace SparseRREF {
 
 			for (size_t i = 0; i < nrow; i++) {
 				for (size_t j = 0; j < rows[i].nnz(); j++) {
-					res[rows[i](j)].push_back(i, rows[i][j]);
+					if constexpr (std::is_same_v<T, bool>)
+						res[rows[i](j)].push_back(i);
+					else
+						res[rows[i](j)].push_back(i, rows[i][j]);
 				}
 			}
 			return res;
+		}
+
+		void transpose_replace() {
+			std::vector<size_t> colnnz(ncol, 0);
+			for (size_t i = 0; i < nrow; i++) {
+				for (size_t j = 0; j < rows[i].nnz(); j++) {
+					colnnz[rows[i](j)]++;
+				}
+			}
+
+			sparse_mat<T, index_t> res(ncol, nrow);
+			for (size_t i = 0; i < nrow; i++) {
+				for (size_t j = 0; j < rows[i].nnz(); j++) {
+					auto& newrow = res[rows[i](j)];
+					newrow.reserve(colnnz[rows[i](j)]);
+					if constexpr (std::is_same_v<T, bool>)
+						newrow.push_back(i);
+					else
+						newrow.push_back(i, std::move(rows[i][j]));
+				}
+				rows[i].clear();
+			}
+			*this = std::move(res);
 		}
 
 		// take a span of rows
