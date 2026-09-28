@@ -442,6 +442,8 @@ EXTERN_C DLLEXPORT int sprref_rat_tensor_contract(WolframLibraryData ld, mint Ar
 		{
 			WXF_PARSER::Parser parserA(in_strA, lengthA);
 			parserA.parse();
+			if (!WXF_PARSER::parse_ok(parserA.err))
+				return LIBRARY_FUNCTION_ERROR;
 			auto A = sparse_tensor_read_wxf<rat_t, int>(parserA.tokens, F, pool_ptr);
 			tensorA = std::move(A);
 		}
@@ -449,6 +451,8 @@ EXTERN_C DLLEXPORT int sprref_rat_tensor_contract(WolframLibraryData ld, mint Ar
 		{
 			WXF_PARSER::Parser parserB(in_strB, lengthB);
 			parserB.parse();
+			if (!WXF_PARSER::parse_ok(parserB.err))
+				return LIBRARY_FUNCTION_ERROR;
 			auto B = sparse_tensor_read_wxf<rat_t, int>(parserB.tokens, F, pool_ptr);
 			tensorB = std::move(B);
 		}
@@ -553,12 +557,16 @@ EXTERN_C DLLEXPORT int sprref_rat_matmul(WolframLibraryData ld, mint Argc, MArgu
 		{
 			WXF_PARSER::Parser parserA(in_strA, lengthA);
 			parserA.parse();
+			if (!WXF_PARSER::parse_ok(parserA.err))
+				return LIBRARY_FUNCTION_ERROR;
 			matA = sparse_mat_read_wxf<rat_t, int>(parserA.tokens, F);
 		}
 
 		{
 			WXF_PARSER::Parser parserB(in_strB, lengthB);
 			parserB.parse();
+			if (!WXF_PARSER::parse_ok(parserB.err))
+				return LIBRARY_FUNCTION_ERROR;
 			matB = sparse_mat_read_wxf<rat_t, int>(parserB.tokens, F);
 		}
 
@@ -811,6 +819,8 @@ EXTERN_C DLLEXPORT int sprref_rat_rref(WolframLibraryData ld, mint Argc, MArgume
 
 		WXF_PARSER::Parser parser(in_str, length);
 		parser.parse();
+		if (!WXF_PARSER::parse_ok(parser.err))
+			return LIBRARY_FUNCTION_ERROR;
 		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.tokens, F);
 
 		rref_option_t opt;
@@ -1007,6 +1017,8 @@ EXTERN_C DLLEXPORT int sprref_rat_matinv(WolframLibraryData ld, mint Argc, MArgu
 
 		WXF_PARSER::Parser parser(in_str, length);
 		parser.parse();
+		if (!WXF_PARSER::parse_ok(parser.err))
+			return LIBRARY_FUNCTION_ERROR;
 		auto mat = sparse_mat_read_wxf<rat_t, int>(parser.tokens, F);
 
 		rref_option_t opt;
