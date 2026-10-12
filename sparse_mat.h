@@ -348,12 +348,134 @@ namespace SparseRREF {
 	}
 
 
+	// For a pivot column, the rows holding a nonzero in it. Only the pivot columns are built:
+	// the pivot rows are counted into them over one static split, then written in the same
+	// split. The counters are indexed by block, not by thread -- the pool may schedule the two
+	// passes differently.
+	template <typename index_t>
+	struct pivot_transpose_t {
+		std::vector<index_t> cols; // the pivot columns, increasing
+		std::vector<index_t> data; // the rows holding cols[o], in cols order
+		std::vector<size_t> ptr;   // ptr[o] .. ptr[o + 1] is the range of cols[o]
+
+		// the rows holding column c, empty when c is not a pivot column
+		std::span<const index_t> rows_of(const index_t c) const {
+			const auto it = std::lower_bound(cols.begin(), cols.end(), c);
+			if (it == cols.end() || *it != c)
+				return {};
+			const size_t o = (size_t)(it - cols.begin());
+			return std::span<const index_t>(data.data() + ptr[o], ptr[o + 1] - ptr[o]);
+		}
+	};
+
+	template <typename T, typename index_t>
+	pivot_transpose_t<index_t> build_pivot_transpose(const sparse_mat<T, index_t>& mat,
+		const std::vector<pivot_t<index_t>>& pivots, thread_pool& pool) {
+
+		const size_t rank = pivots.size();
+		pivot_transpose_t<index_t> res;
+		res.ptr.assign(rank + 1, 0);
+		if (rank == 0)
+			return res;
+
+		res.cols.resize(rank);
+		for (size_t i = 0; i < rank; i++)
+			res.cols[i] = pivots[i].c;
+		std::sort(res.cols.begin(), res.cols.end());
+
+		// Every entry looks its column up once, so which map pays depends on how many columns are
+		// pivot columns. A bitmap plus a search over the pivot columns rejects the other entries
+		// with one test, but when most columns are pivots nothing is rejected and the search is
+		// paid for nearly every entry; a dense column -> ordinal table is one access, at ncol
+		// entries per call (measured over 12.3M entries with 83% pivot columns: 22 ms against
+		// 168 ms). The table is only taken when it is bounded by the pivot count.
+		const bool dense_ord = rank * 64 >= mat.ncol;
+		std::vector<index_t> ord;
+		std::vector<uint64_t> bits;
+		if (dense_ord) {
+			ord.assign(mat.ncol, index_sval<index_t>());
+			for (size_t o = 0; o < rank; o++)
+				ord[(size_t)res.cols[o]] = (index_t)o;
+		}
+		else {
+			bits.assign((mat.ncol >> 6) + 1, 0);
+			for (auto c : res.cols)
+				bits[(size_t)c >> 6] |= mask_table[(size_t)c & 63];
+		}
+
+		const entry_blocks_t blks(0, rank, pool.get_thread_count());
+		const size_t nblk = blks.nblk;
+		// counters per (block, pivot column), turned into cursors by the scan below
+		std::vector<size_t> cursor(nblk * rank, 0);
+
+		// both passes are written once and handed a monomorphic lookup, so the inner loop carries
+		// no test on which map is in use
+		auto count_block = [&](const auto& lookup, const size_t blk) {
+			auto* my = cursor.data() + blk * rank;
+			for (size_t i = blks.start(blk); i < blks.end(blk); i++)
+				for (auto c : mat[pivots[i].r].index_span()) {
+					const size_t o = lookup(c);
+					if (o < rank)
+						my[o]++;
+				}
+			};
+		auto write_block = [&](const auto& lookup, const size_t blk) {
+			for (size_t i = blks.start(blk); i < blks.end(blk); i++) {
+				const auto r = pivots[i].r;
+				for (auto c : mat[r].index_span()) {
+					const size_t o = lookup(c);
+					if (o < rank)
+						res.data[cursor[blk * rank + o]++] = r;
+				}
+			}
+			};
+		auto prefix = [&]() {
+			size_t nnz = 0;
+			for (size_t o = 0; o < rank; o++) {
+				res.ptr[o] = nnz;
+				for (size_t blk = 0; blk < nblk; blk++) {
+					const size_t n = cursor[blk * rank + o];
+					cursor[blk * rank + o] = nnz;
+					nnz += n;
+				}
+			}
+			res.ptr[rank] = nnz;
+			res.data.resize(nnz);
+			};
+
+		if (dense_ord) {
+			auto lookup = [&](const index_t c) -> size_t {
+				const auto o = ord[(size_t)c];
+				return (o == index_sval<index_t>()) ? rank : (size_t)o;
+				};
+			pool.detach_sequence(0, nblk, [&](const size_t blk) { count_block(lookup, blk); });
+			pool.wait();
+			prefix();
+			pool.detach_sequence(0, nblk, [&](const size_t blk) { write_block(lookup, blk); });
+			pool.wait();
+		}
+		else {
+			auto lookup = [&](const index_t c) -> size_t {
+				if (!((bits[(size_t)c >> 6] >> ((size_t)c & 63)) & 1ull))
+					return rank; // not a pivot column, never queried
+				return (size_t)(std::lower_bound(res.cols.begin(), res.cols.end(), c) - res.cols.begin());
+				};
+			pool.detach_sequence(0, nblk, [&](const size_t blk) { count_block(lookup, blk); });
+			pool.wait();
+			prefix();
+			pool.detach_sequence(0, nblk, [&](const size_t blk) { write_block(lookup, blk); });
+			pool.wait();
+		}
+
+		return res;
+	}
+
 	// upper solver : ordering = -1
 	// lower solver : ordering = 1
 	// tranmat in this version is precomputed
 	template <typename T, typename index_t>
 	void triangular_solver(sparse_mat<T, index_t>& mat,
-		const sparse_mat<bool, index_t>& tranmat,
+		const pivot_transpose_t<index_t>& tranmat,
 		const std::vector<pivot_t<index_t>>& pivots,
 		const field_t& F, rref_option_t opt, int ordering) {
 		bool verbose = opt->verbose;
@@ -384,8 +506,7 @@ namespace SparseRREF {
 			}
 			auto [row, col] = pivots[index];
 			thecol.clear();
-			for (size_t j = 0; j < tranmat[col].nnz(); j++) {
-				auto r = tranmat[col](j);
+			for (auto r : tranmat.rows_of(col)) {
 				if (rowlist[r] && r != row)
 					thecol.push_back(r);
 			}
@@ -442,29 +563,11 @@ namespace SparseRREF {
 		const field_t& F, rref_option_t opt, int ordering) {
 
 		auto& pool = opt->pool;
-		auto nthreads = pool.get_thread_count();
 
 		if (opt->abort)
 			return;
 
-		size_t mtx_size;
-		if (nthreads > 16)
-			mtx_size = 65536;
-		else
-			mtx_size = (size_t)1 << nthreads;
-		std::vector<std::mutex> mtxes(mtx_size);
-
-		// we only need to compute the transpose of the submatrix involving pivots
-		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
-		pool.detach_loop(0, pivots.size(), [&](size_t i) {
-			auto [r, c] = pivots[i];
-			for (auto [ind, val] : mat[r]) {
-				std::lock_guard<std::mutex> lock(mtxes[ind % mtx_size]);
-				tranmat[ind].push_back(r);
-			}
-			});
-		pool.wait();
-		
+		const auto tranmat = build_pivot_transpose(mat, pivots, pool);
 		triangular_solver(mat, tranmat, pivots, F, opt, ordering);
 	}
 
@@ -516,6 +619,128 @@ namespace SparseRREF {
 		return result;
 	}
 
+	// A set of column indices supporting O(1) insert/erase/test/enumeration. On top
+	// of the plain bit_array we keep an exact counter (so nnz() is O(1)) and a bitmap
+	// with one bit per *word* of the bit_array that may be non-empty, so that the
+	// final enumeration only visits the words that were touched instead of the whole
+	// ncol/64 range. The word summary is only ever set, never cleared (clearing it
+	// would need a branch on every erase); a stale bit is harmless because the
+	// enumeration skips empty words and clears the summary on the way out.
+	struct alignas(64) nonzero_cols {
+		bit_array bits;
+		bit_array word_bits;
+		size_t nz = 0;
+
+		explicit nonzero_cols(size_t ncol) : bits(ncol), word_bits((ncol >> 6) + 1) {}
+
+		void clear() {
+			bits.clear();
+			word_bits.clear();
+			nz = 0;
+		}
+
+		void insert(const size_t val) {
+			auto idx = val >> 6;
+			bits.data[idx] |= mask_table[val & 63];
+			word_bits.data[idx >> 6] |= mask_table[idx & 63];
+			nz++;
+		}
+
+		void erase(const size_t val) {
+			bits.erase(val);
+			nz--;
+		}
+
+		void xor_insert(const size_t val) {
+			if (bits.test(val)) {
+				bits.erase(val);
+				nz--;
+			}
+			else {
+				insert(val);
+			}
+		}
+
+		bool test(const size_t val) const {
+			return bits.test(val);
+		}
+
+		size_t nnz() const {
+			return nz;
+		}
+
+		// visit(pos, index) in increasing index order, clearing the structure on the way out
+		template <typename Fn>
+		void enumerate_and_clear(Fn&& visit) {
+			size_t pos = 0;
+			auto& wdata = word_bits.data;
+			for (size_t i = 0; i < wdata.size(); i++) {
+				uint64_t wb = wdata[i];
+				if (wb == 0)
+					continue;
+				wdata[i] = 0;
+				while (wb) {
+					auto idx = (i << 6) + ctz(wb);
+					wb &= wb - 1;
+					uint64_t word = bits.data[idx];
+					bits.data[idx] = 0;
+					auto base = idx << 6;
+					while (word) {
+						visit(pos, base + ctz(word));
+						pos++;
+						word &= word - 1;
+					}
+				}
+			}
+			nz = 0;
+		}
+
+		// write the set indices in increasing order into ptr, then clear the structure
+		template <typename T>
+		void nonzero_and_clear(T* ptr) {
+			enumerate_and_clear([&](const size_t pos, const size_t idx) { ptr[pos] = (T)idx; });
+		}
+
+		// the same, picking the values of src up in the same pass and resetting those slots: the
+		// reset is a store to a line the read just brought in, so it is free, and it keeps the
+		// rule "the cache is zero outside the set" for every caller
+		template <typename T, typename V>
+		void nonzero_and_clear(T* ptr, V* src, V* vals) {
+			enumerate_and_clear([&](const size_t pos, const size_t idx) {
+				ptr[pos] = (T)idx;
+				vals[pos] = src[idx];
+				src[idx] = 0;
+				});
+		}
+	};
+
+	// The per thread dense cache of one output row: a slot is always written before it is read
+	// (an entry that the set does not hold stores a 0 in its slot), so a trivially constructible
+	// T is taken raw -- the ncol * nthreads zeros used to dominate a wide product. Over QQ the
+	// slot has to be constructed before it can be assigned, so that field keeps the vector.
+	template <typename T>
+	struct dense_cache_t {
+		T* ptr = nullptr;
+		std::vector<T> zeroed;
+
+		explicit dense_cache_t(const size_t n) {
+			if constexpr (std::is_trivially_constructible_v<T>)
+				ptr = s_malloc<T>(n);
+			else {
+				zeroed = std::vector<T>(n);
+				ptr = zeroed.data();
+			}
+		}
+		~dense_cache_t() {
+			if constexpr (std::is_trivially_constructible_v<T>)
+				s_free(ptr);
+		}
+		dense_cache_t(const dense_cache_t&) = delete;
+		dense_cache_t& operator=(const dense_cache_t&) = delete;
+
+		T* data() { return ptr; }
+	};
+
 	// A = B * C
 	template <typename T, typename index_t>
 	sparse_mat<T, index_t> sparse_mat_mul(
@@ -523,12 +748,19 @@ namespace SparseRREF {
 		const field_t& F, thread_pool* pool = nullptr) {
 
 		sparse_mat<T, index_t> A(B.nrow, C.ncol);
+		// The pool costs a task and a scratch per thread, and the scratch is sized by ncol, so
+		// short rows are better done serially; the crossover is roughly a fixed number of
+		// products per thread.
+		const size_t products = B.nnz() * (C.nrow ? C.nnz() / C.nrow : 0);
+		if (pool != nullptr && products < mul_parallel_threshold * pool->get_thread_count())
+			pool = nullptr;
+
 		auto nthreads = 1;
 		if (pool)
 			nthreads = pool->get_thread_count();
 
-		std::vector<T> cache_densed_mat(A.ncol * nthreads);
-		std::vector<SparseRREF::bit_array> nonzero_c(nthreads, A.ncol);
+		dense_cache_t<T> cache_densed_mat(A.ncol * nthreads);
+		std::vector<nonzero_cols> nonzero_c(nthreads, nonzero_cols(A.ncol));
 
 		auto pp = F.get_prime();
 
@@ -542,8 +774,8 @@ namespace SparseRREF {
 				return;
 			}
 			auto cache_dense_vec = cache_densed_mat.data() + id * A.ncol;
+			// the set is empty here: nonzero_and_clear emptied it at the end of the row above
 			auto& nonzero_c_vec = nonzero_c[id];
-			nonzero_c_vec.clear();
 
 			T scalar = therow[0];
 			ulong e_pr;
@@ -582,13 +814,10 @@ namespace SparseRREF {
 				}
 			}
 
-			auto pos = nonzero_c_vec.nonzero();
-			A[i].reserve(pos.size());
-			A[i].resize(pos.size());
-			for (size_t j = 0; j < pos.size(); j++) {
-				A[i](j) = pos[j];
-				A[i][j] = cache_dense_vec[pos[j]];
-			}
+			const size_t nz = nonzero_c_vec.nnz();
+			A[i].reserve(nz);
+			A[i].resize(nz);
+			nonzero_c_vec.nonzero_and_clear(A[i].indices, cache_dense_vec, A[i].entries);
 			};
 
 		if (pool) {
@@ -604,77 +833,6 @@ namespace SparseRREF {
 
 		return A;
 	}
-
-	// A set of column indices supporting O(1) insert/erase/test/enumeration. On top
-	// of the plain bit_array we keep an exact counter (so nnz() is O(1)) and a bitmap
-	// with one bit per *word* of the bit_array that may be non-empty, so that the
-	// final enumeration only visits the words that were touched instead of the whole
-	// ncol/64 range. The word summary is only ever set, never cleared (clearing it
-	// would need a branch on every erase); a stale bit is harmless because the
-	// enumeration skips empty words and clears the summary on the way out.
-	struct alignas(64) nonzero_cols {
-		bit_array bits;
-		bit_array word_bits;
-		size_t nz = 0;
-
-		explicit nonzero_cols(size_t ncol) : bits(ncol), word_bits((ncol >> 6) + 1) {}
-
-		void insert(const size_t val) {
-			auto idx = val >> 6;
-			bits.data[idx] |= mask_table[val & 63];
-			word_bits.data[idx >> 6] |= mask_table[idx & 63];
-			nz++;
-		}
-
-		void erase(const size_t val) {
-			bits.erase(val);
-			nz--;
-		}
-
-		void xor_insert(const size_t val) {
-			if (bits.test(val)) {
-				bits.erase(val);
-				nz--;
-			}
-			else {
-				insert(val);
-			}
-		}
-
-		bool test(const size_t val) const {
-			return bits.test(val);
-		}
-
-		size_t nnz() const {
-			return nz;
-		}
-
-		// write the set indices in increasing order into ptr, then clear the structure
-		template <typename T>
-		void nonzero_and_clear(T* ptr) {
-			size_t pos = 0;
-			auto& wdata = word_bits.data;
-			for (size_t i = 0; i < wdata.size(); i++) {
-				uint64_t wb = wdata[i];
-				if (wb == 0)
-					continue;
-				wdata[i] = 0;
-				while (wb) {
-					auto idx = (i << 6) + ctz(wb);
-					wb &= wb - 1;
-					uint64_t word = bits.data[idx];
-					bits.data[idx] = 0;
-					auto base = idx << 6;
-					while (word) {
-						ptr[pos] = (T)(base + ctz(word));
-						pos++;
-						word &= word - 1;
-					}
-				}
-			}
-			nz = 0;
-		}
-	};
 
 	// a helper class to store the buffer for schur_complete
 	// it is used to avoid frequent memory allocation and deallocation
@@ -781,11 +939,7 @@ namespace SparseRREF {
 			mat[k].reserve(nnz, false);
 		}
 		mat[k].resize(nnz);
-		nonzero_c.nonzero_and_clear(mat[k].indices);
-		for (size_t i = 0; i < nnz; i++) {
-			mat[k][i] = tmpvec[mat[k](i)];
-			tmpvec[mat[k](i)] = 0; // clear tmpvec for next use
-		}
+		nonzero_c.nonzero_and_clear(mat[k].indices, tmpvec, mat[k].entries);
 	}
 
 	// tempvec is of useless, only nonzero_c is used
@@ -897,11 +1051,7 @@ namespace SparseRREF {
 			mat[k].reserve(nnz, false);
 		}
 		mat[k].resize(nnz);
-		nonzero_c.nonzero_and_clear(mat[k].indices);
-		for (size_t i = 0; i < nnz; i++) {
-			mat[k][i] = tmpvec[mat[k](i)];
-			tmpvec[mat[k](i)] = 0; // clear tmpvec for next use
-		}
+		nonzero_c.nonzero_and_clear(mat[k].indices, tmpvec, mat[k].entries);
 	}
 
 	// Progress bookkeeping of the triangular back substitution, shared by all
@@ -924,7 +1074,7 @@ namespace SparseRREF {
 	// the result is identical.
 	template <typename T, typename index_t>
 	void triangular_solver_2_rec(sparse_mat<T, index_t>& mat,
-		const sparse_mat<bool, index_t>& tranmat,
+		const pivot_transpose_t<index_t>& tranmat,
 		const std::vector<pivot_t<index_t>>& all_pivots,
 		const field_t& F, rref_option_t opt,
 		schur_helper_buffer<T, index_t>& g_helper, size_t n_split, size_t rank, size_t& process,
@@ -948,8 +1098,7 @@ namespace SparseRREF {
 			for (auto [r, c] : sub_pivots)
 				mark[r] = 2;
 			for (auto [r, c] : sub_pivots) {
-				for (size_t i = 0; i < tranmat[c].nnz(); i++) {
-					auto rr = tranmat[c](i);
+				for (auto rr : tranmat.rows_of(c)) {
 					if (mark[rr] == 0) {
 						mark[rr] = 1;
 						leftrows.push_back(rr);
@@ -1040,23 +1189,8 @@ namespace SparseRREF {
 		if (opt->abort)
 			return;
 
-		size_t mtx_size;
-		if (nthreads > 16)
-			mtx_size = 65536;
-		else
-			mtx_size = (size_t)1 << nthreads;
-		std::vector<std::mutex> mtxes(mtx_size);
-
-		// we only need to compute the transpose of the submatrix involving pivots
-		sparse_mat<bool, index_t> tranmat(mat.ncol, mat.nrow);
-		pool.detach_loop(0, pivots.size(), [&](size_t i) {
-			auto [r, c] = pivots[i];
-			for (auto [ind, val] : mat[r]) {
-				std::lock_guard<std::mutex> lock(mtxes[ind % mtx_size]);
-				tranmat[ind].push_back(r);
-			}
-			});
-		pool.wait();
+		// built once for all the batches below
+		const auto tranmat = build_pivot_transpose(mat, pivots, pool);
 
 		size_t process = 0;
 		// TODO: better split strategy
@@ -1778,7 +1912,7 @@ namespace SparseRREF {
 				matq[i](j) = matul[i](j);
 				int_t mod1 = matul[i][j];
 				if (isok)
-					isok = rational_reconstruct(matq[i][j], mod1, mod);
+					isok = Flint::rational_reconstruct(matq[i][j], mod1, mod);
 			}
 		}
 
@@ -1855,22 +1989,22 @@ namespace SparseRREF {
 			// structurally different from matz, so stop before the CRT loop below
 			if (opt->abort)
 				break;
-			if (opt->is_back_sub) {
-				opt->verbose = false;
-				triangular_solver_2(matul, pivots, F, opt);
-			}
 			std::vector<int> flags(nthreads, 1);
+			// the CRT constants only depend on the two moduli
+			const Flint::crt_ui_stream_t crt(mod, prime);
 
 			pool.detach_loop<size_t>(0, leftrows.size(), [&](size_t i) {
 				if (opt->abort)
 					return;
 				size_t row = leftrows[i];
 				auto id = SparseRREF::thread_id();
+				int flag = flags[id];
 				for (size_t j = 0; j < matul[row].nnz(); j++) {
-					matz[row][j] = CRT(matz[row][j], mod, matul[row][j], prime);
-					if (flags[id])
-						flags[id] = rational_reconstruct(matq[row][j], matz[row][j], mod1);
+					crt.next(matz[row][j], matul[row][j]);
+					if (flag)
+						flag = Flint::rational_reconstruct(matq[row][j], matz[row][j], mod1);
 				}
+				flags[id] = flag;
 				});
 
 			pool.wait();

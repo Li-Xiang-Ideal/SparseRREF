@@ -196,6 +196,7 @@ namespace SparseRREF {
 	inline constexpr size_t pack_parallel_threshold = 1u << 17;    // tensor_contract()
 	inline constexpr size_t scan_parallel_threshold = 1u << 17;    // tensor_contract(), two indices
 	inline constexpr size_t join_parallel_threshold = 1u << 15;    // einstein_sum()
+	inline constexpr size_t mul_parallel_threshold = 1u << 14;     // sparse_mat_mul(), products per thread
 	inline constexpr size_t counting_max_buckets = 1u << 20;       // the counting passes (gen_perm())
 
 	// A range sort that runs on our own pool: the caller's pool sizes the parallelism, so --threads

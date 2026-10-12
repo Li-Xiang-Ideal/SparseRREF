@@ -506,6 +506,28 @@ namespace Flint {
 		return result;
 	}
 
+	// CRT of one residue with a stream of small moduli: the constants of the pair (m1, m2) are
+	// built once, and next() updates the residue in place to CRT(r1 mod m1, r2 mod m2) in
+	// [0, m1 * m2). r1 has to be in [0, m1) already.
+	struct crt_ui_stream_t {
+		const int_t& m1;
+		ulong m2 = 0, m2inv = 0, c = 0; // c = m1^{-1} mod m2
+		nmod_t mod = {};
+
+		crt_ui_stream_t(const int_t& m1_, const ulong m2_) : m1(m1_) {
+			m2 = m2_;
+			nmod_init(&mod, m2);
+			m2inv = mod.ninv;
+			c = n_invmod(fmpz_fdiv_ui(m1.data(), m2), m2);
+		}
+
+		void next(int_t& r1, const ulong r2) const {
+			const ulong r1mod = fmpz_get_nmod(r1.data(), mod);
+			const ulong s = n_mulmod2_preinv(n_submod(r2, r1mod, m2), c, m2, m2inv);
+			fmpz_addmul_ui(r1.data(), m1.data(), s);
+		}
+	};
+
 #ifdef USE_MIMALLOC
 	static void* mi_gmp_realloc(void* ptr, size_t old_size, size_t new_size) {
 		void* new_ptr = mi_realloc(ptr, new_size);
