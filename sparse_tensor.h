@@ -43,6 +43,13 @@ namespace SparseRREF {
 		const size_t nnzA = A.nnz();
 		const size_t nnzB = B.nnz();
 
+		// every pair of entries gives one entry of the result, and the number of pairs can leave the
+		// range of size_t: the capacity below would then be smaller than what the fill writes
+		if (nnzA > std::numeric_limits<size_t>::max() / nnzB) {
+			report_error("tensor_product: the result would hold more entries than size_t can count");
+			return C;
+		}
+
 		C.reserve(nnzA * nnzB);
 		C.resize(nnzA * nnzB);
 
@@ -524,15 +531,10 @@ namespace SparseRREF {
 			}
 		}
 
-		// the values in the order of the permutations: the loops below walk the runs in that order, so
-		// reading them through the permutation would gather at random. Nothing is copied when the
-		// permutation is the identity
-		std::vector<T> val_A, val_B;
-		if (!idA) {
-			val_A.resize(A.nnz());
-			for (size_t k = 0; k < A.nnz(); k++)
-				val_A[k] = A.val(permA_at(k));
-		}
+		// the values of B in the order of the permutation: the merge below walks the runs of B in that
+		// order, so reading them through the permutation would gather at random; the values of A are
+		// read once per run, which a gather is fine for, so they are not copied
+		std::vector<T> val_B;
 		if (!idB) {
 			val_B.resize(B.nnz());
 			if (pool != nullptr && B.nnz() >= pack_parallel_threshold) {
@@ -545,7 +547,7 @@ namespace SparseRREF {
 			}
 		}
 		// the value at a position of the permuted order, from the copy or from the tensor itself
-		auto val_A_at = [&](const size_t k) -> const T& { return idA ? A.val(k) : val_A[k]; };
+		auto val_A_at = [&](const size_t k) -> const T& { return A.val(permA_at(k)); };
 		auto val_B_at = [&](const size_t k) -> const T& { return idB ? B.val(k) : val_B[k]; };
 
 		auto equal_except = [](const index_t* a, const index_t* b, const std::vector<size_t>& perm, const size_t len) {
@@ -986,10 +988,15 @@ namespace SparseRREF {
 			size_t hole = 0;
 			for (size_t i = 0; i < nblocks; i++) {
 				if (hole != 0) {
-					std::memmove(C.data.colptr + (start_pos[i] - hole) * C.rank(),
-						C.data.colptr + start_pos[i] * C.rank(), written[i] * C.rank() * sizeof(index_t));
-					std::memmove(C.data.valptr + (start_pos[i] - hole), C.data.valptr + start_pos[i],
-						written[i] * sizeof(T));
+					// element wise, not a memmove: a memmove bit copies the values, and the copies it
+					// leaves in the moved-from slots are destroyed by release() as well, which frees
+					// their data twice for a type with a destructor
+					const size_t dst = start_pos[i] - hole;
+					std::move(C.data.colptr + start_pos[i] * C.rank(),
+						C.data.colptr + (start_pos[i] + written[i]) * C.rank(),
+						C.data.colptr + dst * C.rank());
+					std::move(C.data.valptr + start_pos[i], C.data.valptr + start_pos[i] + written[i],
+						C.data.valptr + dst);
 				}
 				hole += start_pos[i + 1] - start_pos[i] - written[i];
 			}
