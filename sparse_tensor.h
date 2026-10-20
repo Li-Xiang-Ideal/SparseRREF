@@ -12,6 +12,7 @@
 
 #include "sparse_type.h"
 #include <cstdint>
+#include <cstring>
 #include <limits>
 
 namespace SparseRREF {
@@ -42,20 +43,33 @@ namespace SparseRREF {
 		const size_t nnzA = A.nnz();
 		const size_t nnzB = B.nnz();
 
+		// every pair of entries gives one entry of the result, and the number of pairs can leave the
+		// range of size_t: the capacity below would then be smaller than what the fill writes
+		if (nnzA > std::numeric_limits<size_t>::max() / nnzB) {
+			report_error("tensor_product: the result would hold more entries than size_t can count");
+			return C;
+		}
+
 		C.reserve(nnzA * nnzB);
 		C.resize(nnzA * nnzB);
 
-		auto permA = A.gen_perm(pool);
-		auto permB = B.gen_perm(pool);
+		// an already ordered tensor needs no permutation at all, and that is the usual case: the check
+		// is one cheap pass over the indices, and when it succeeds the permutation (one size_t per
+		// entry) is never built
+		const bool idA = A.is_ordered_by(), idB = B.is_ordered_by();
+		auto permA = idA ? std::vector<size_t>() : A.gen_perm(pool);
+		auto permB = idB ? std::vector<size_t>() : B.gen_perm(pool);
+		auto permA_at = [&](const size_t k) -> size_t { return idA ? k : permA[k]; };
+		auto permB_at = [&](const size_t k) -> size_t { return idB ? k : permB[k]; };
 
 		auto fill_row = [&](const size_t r) {
-			const auto posA = permA[r];
+			const auto posA = permA_at(r);
 			const auto indexA = A.index(posA);
 			const auto valA = A.val(posA);
 			index_t* colptr = C.data.colptr + r * nnzB * rank;
 			T* valptr = C.data.valptr + r * nnzB;
 			for (size_t k = 0; k < nnzB; k++) {
-				const auto posB = permB[k];
+				const auto posB = permB_at(k);
 				s_copy(colptr + k * rank, indexA, rankA);
 				s_copy(colptr + k * rank + rankA, B.index(posB), rankB);
 				valptr[k] = scalar_mul(valA, B.val(posB), F);
@@ -63,8 +77,7 @@ namespace SparseRREF {
 			};
 
 		// every row costs the same, so handing out the rows hands out the work evenly
-		constexpr size_t par_product_threshold = 1u << 17;
-		if (pool != nullptr && nnzA * nnzB >= par_product_threshold) {
+		if (pool != nullptr && nnzA * nnzB >= product_parallel_threshold) {
 			const size_t nthread = pool->get_thread_count();
 			if (nnzA >= 2 * nthread) {
 				const size_t nblocks = nnzA < 64 * nthread ? nthread : 8 * nthread;
@@ -115,15 +128,20 @@ namespace SparseRREF {
 
 		sparse_tensor<T, index_t, SPARSE_COO> C(A.dims(), A.nnz() + B.nnz());
 
-		auto Aperm = A.gen_perm();
-		auto Bperm = B.gen_perm();
+		// an already ordered tensor needs no permutation at all: the check is one cheap pass over the
+		// indices, and when it succeeds the permutation (one size_t per entry) is never built
+		const bool idA = A.is_ordered_by(), idB = B.is_ordered_by();
+		auto Aperm = idA ? std::vector<size_t>() : A.gen_perm();
+		auto Bperm = idB ? std::vector<size_t>() : B.gen_perm();
+		auto Aperm_at = [&](const size_t k) -> size_t { return idA ? k : Aperm[k]; };
+		auto Bperm_at = [&](const size_t k) -> size_t { return idB ? k : Bperm[k]; };
 
 		// double pointer
 		size_t i = 0, j = 0;
 		// C.zero();
 		while (i < A.nnz() && j < B.nnz()) {
-			auto posA = Aperm[i];
-			auto posB = Bperm[j];
+			auto posA = Aperm_at(i);
+			auto posB = Bperm_at(j);
 			auto indexA = A.index(posA);
 			auto indexB = B.index(posB);
 			int cmp = lexico_compare(indexA, indexB, rank);
@@ -145,16 +163,19 @@ namespace SparseRREF {
 			}
 		}
 		while (i < A.nnz()) {
-			auto posA = Aperm[i];
+			auto posA = Aperm_at(i);
 			C.push_back(A.index(posA), A.val(posA));
 			i++;
 		}
 		while (j < B.nnz()) {
-			auto posB = Bperm[j];
+			auto posB = Bperm_at(j);
 			C.push_back(B.index(posB), B.val(posB));
 			j++;
 		}
 
+		// the capacity was sized for the worst case, A.nnz() + B.nnz(); the entries that cancelled and
+		// the ones only one of the two tensors holds leave part of it unused
+		C.shrink_to_fit();
 		return C;
 	}
 
@@ -310,34 +331,37 @@ namespace SparseRREF {
 				index_perm_B.push_back(k);
 			}
 		}
-		// B is ordered by the contract tuple and then by its free indices, so that the entries that
-		// share a contract tuple are consecutive and a row of the result is built by looking up the
-		// contract tuple of each of its entries in B, instead of by matching every pair of rows of A
-		// and B
+		// B is ordered by its contract tuple first: the entries that share one are then consecutive, so
+		// a row of the result is built by looking each entry of A up in B instead of matching every pair
+		// of rows
 		index_perm_B.insert(index_perm_B.begin(), i2.begin(), i2.end());
 
-		auto permA = A.gen_perm(index_perm_A, pool);
-		auto permB = B.gen_perm(index_perm_B, pool);
-
+		// an empty operand leaves the result empty: nothing below has to be built for it, and in
+		// particular the other operand is not ordered
 		sparse_tensor<T, index_t, SPARSE_COO> C(dimsC);
+		if (A.nnz() == 0 || B.nnz() == 0)
+			return C;
+
+		// a tensor that already is in the contracted order needs no permutation, which is what the
+		// callers hand in: the check is one cheap pass, and when it succeeds the permutation -- one
+		// size_t per entry -- is never built
+		const bool idA = A.is_ordered_by(&index_perm_A), idB = B.is_ordered_by(&index_perm_B);
+		auto permA = idA ? std::vector<size_t>() : A.gen_perm(index_perm_A, pool);
+		auto permB = idB ? std::vector<size_t>() : B.gen_perm(index_perm_B, pool);
+		auto permA_at = [&](const size_t k) -> size_t { return idA ? k : permA[k]; };
+		auto permB_at = [&](const size_t k) -> size_t { return idB ? k : permB[k]; };
 
 		auto i1i2_size = i1.size();
 		auto left_size_A = A.rank() - i1i2_size;
 		auto left_size_B = B.rank() - i1i2_size;
 
-		// an empty operand leaves the caches below empty, so there is nothing to read from them
-		if (A.nnz() == 0 || B.nnz() == 0)
-			return C;
-
-		// the contract tuple and the free tuple of every entry, in the order of the permutations: the
-		// loops below then compare neighbouring entries without following an index permutation
-		// a tuple is packed into a number in mixed radix whenever its dimensions allow it, because a
-		// packed key compares with one comparison instead of one per position, and because the keys of
-		// the entries that start a run can be kept in a flat array, which makes the binary searches
-		// below walk that array instead of chasing rowptrB. A tuple that does not fit keeps its cache
-		// and is compared position by position
-		constexpr size_t max_buckets = 1u << 20;
-		constexpr size_t par_pack_threshold = 1u << 17;
+		// the contract and free tuples of every entry, in the order of the permutations, so that the
+		// loops below compare neighbouring entries without following an index permutation. A tuple is
+		// packed into a mixed radix number when its dimensions allow it, so that it compares with one
+		// comparison and the keys of the runs sit in one flat array; a tuple that does not fit keeps its
+		// cache and is compared position by position
+		// what a slot of the direct lookup table holds while no run of B starts at that tuple
+		constexpr uint32_t no_run = std::numeric_limits<uint32_t>::max();
 		std::vector<size_t> cstride(i1i2_size, 1), stride_leftA(left_size_A, 1), stride_leftB(left_size_B, 1);
 		bool keyed_contract = i1i2_size > 0, keyed_leftA = left_size_A > 0, keyed_leftB = left_size_B > 0;
 		for (size_t l = i1i2_size; l-- > 1;) {
@@ -365,6 +389,19 @@ namespace SparseRREF {
 			stride_leftB[l - 1] = stride_leftB[l] * dim;
 		}
 
+		// the loops above build the product of the dimensions past the first axis, and a key also adds
+		// value * stride[0] of the first one: a key space that does not fit in a word would wrap around
+		// and let two tuples share a key, so the packing is dropped and the tuples are compared
+		constexpr size_t size_max = std::numeric_limits<size_t>::max();
+		if (keyed_contract && (dimsA[i1[0]] == 0 || cstride[0] > size_max / dimsA[i1[0]]))
+			keyed_contract = false;
+		if (keyed_leftA && left_size_A >= 2
+			&& (dimsA[index_perm_A[0]] == 0 || stride_leftA[0] > size_max / dimsA[index_perm_A[0]]))
+			keyed_leftA = false;
+		if (keyed_leftB && left_size_B >= 2
+			&& (dimsB[index_perm_B[i1i2_size]] == 0 || stride_leftB[0] > size_max / dimsB[index_perm_B[i1i2_size]]))
+			keyed_leftB = false;
+
 		std::vector<index_t> index_A_cache, index_B_cache;
 		std::vector<index_t> index_leftB_cache(left_size_B * B.nnz());
 		std::vector<size_t> key_contract_A, key_contract_B, key_leftA, key_leftB;
@@ -372,16 +409,19 @@ namespace SparseRREF {
 			key_contract_A.resize(A.nnz());
 			key_contract_B.resize(B.nnz());
 		}
-		if (keyed_leftA)
+		// the key of a free part that is a single index is that index, which is already in hand, so
+		// those key arrays are not built and key_leftA_at / key_leftB_at read the index where it is
+		const bool single_leftA = left_size_A == 1;
+		const bool single_leftB = left_size_B == 1;
+		if (keyed_leftA && !single_leftA)
 			key_leftA.resize(A.nnz());
-		if (keyed_leftB)
+		if (keyed_leftB && !single_leftB)
 			key_leftB.resize(B.nnz());
 
-		// a label below zero would not order like the tuple once packed, so the keys are dropped when
-		// an entry says otherwise, and the tuples are then compared position by position
+		// a label below zero does not order like the packed tuple, so the keys are dropped then
 		std::atomic<bool> negative{ false };
 		for (size_t k = 0; k < A.nnz() && (keyed_contract || keyed_leftA); k++) {
-			auto ptr = A.index(permA[k]);
+			auto ptr = A.index(permA_at(k));
 			if (keyed_contract) {
 				size_t key = 0;
 				for (size_t l = 0; l < i1i2_size; l++) {
@@ -393,14 +433,21 @@ namespace SparseRREF {
 				key_contract_A[k] = key;
 			}
 			if (keyed_leftA) {
-				size_t key = 0;
-				for (size_t l = 0; l < left_size_A; l++) {
-					const auto value = ptr[index_perm_A[l]];
-					if (value < 0)
+				if (single_leftA) {
+					// a single free index is its own key, so only its sign is left to report
+					if (ptr[index_perm_A[0]] < 0)
 						negative.store(true, std::memory_order_relaxed);
-					key += static_cast<size_t>(value) * stride_leftA[l];
 				}
-				key_leftA[k] = key;
+				else {
+					size_t key = 0;
+					for (size_t l = 0; l < left_size_A; l++) {
+						const auto value = ptr[index_perm_A[l]];
+						if (value < 0)
+							negative.store(true, std::memory_order_relaxed);
+						key += static_cast<size_t>(value) * stride_leftA[l];
+					}
+					key_leftA[k] = key;
+				}
 			}
 		}
 
@@ -408,7 +455,7 @@ namespace SparseRREF {
 		// inner loop of the contraction, so this pass is the longest serial stretch left in the
 		// parallel path and it is handed to the pool
 		auto pack_B = [&](const size_t k) {
-			auto ptr = B.index(permB[k]);
+			auto ptr = B.index(permB_at(k));
 			for (size_t l = 0; l < left_size_B; l++)
 				index_leftB_cache[k * left_size_B + l] = ptr[index_perm_B[i1i2_size + l]];
 			if (keyed_contract) {
@@ -422,19 +469,26 @@ namespace SparseRREF {
 				key_contract_B[k] = key;
 			}
 			if (keyed_leftB) {
-				size_t key = 0;
-				for (size_t l = 0; l < left_size_B; l++) {
-					const auto value = ptr[index_perm_B[i1i2_size + l]];
-					if (value < 0)
+				if (single_leftB) {
+					// same as A: the free index is the key, and it has just been copied to the cache
+					if (index_leftB_cache[k] < 0)
 						negative.store(true, std::memory_order_relaxed);
-					key += static_cast<size_t>(value) * stride_leftB[l];
 				}
-				key_leftB[k] = key;
+				else {
+					size_t key = 0;
+					for (size_t l = 0; l < left_size_B; l++) {
+						const auto value = ptr[index_perm_B[i1i2_size + l]];
+						if (value < 0)
+							negative.store(true, std::memory_order_relaxed);
+						key += static_cast<size_t>(value) * stride_leftB[l];
+					}
+					key_leftB[k] = key;
+				}
 			}
 			};
 
 		const size_t nthread = pool == nullptr ? 1 : pool->get_thread_count();
-		if (pool != nullptr && B.nnz() >= par_pack_threshold) {
+		if (pool != nullptr && B.nnz() >= pack_parallel_threshold) {
 			pool->detach_loop(0, B.nnz(), pack_B, 4 * nthread);
 			pool->wait();
 		}
@@ -452,35 +506,49 @@ namespace SparseRREF {
 			key_leftA.clear();
 			key_leftB.clear();
 		}
+		// the key of an entry in the order of the permutations, from the key array or, for a free part
+		// that is a single index, from the index itself
+		const bool keyed_leftA_single = keyed_leftA && single_leftA;
+		const bool keyed_leftB_single = keyed_leftB && single_leftB;
+		auto key_leftA_at = [&](const size_t k) -> size_t {
+			return keyed_leftA_single ? static_cast<size_t>(A.index(permA_at(k))[index_perm_A[0]]) : key_leftA[k];
+			};
+		auto key_leftB_at = [&](const size_t k) -> size_t {
+			return keyed_leftB_single ? static_cast<size_t>(index_leftB_cache[k * left_size_B]) : key_leftB[k];
+			};
 		if (!keyed_contract) {
 			index_A_cache.resize(i1i2_size * A.nnz());
 			index_B_cache.resize(i1i2_size * B.nnz());
 			for (size_t k = 0; k < A.nnz(); k++) {
-				auto ptr = A.index(permA[k]);
+				auto ptr = A.index(permA_at(k));
 				for (size_t l = 0; l < i1i2_size; l++)
 					index_A_cache[k * i1i2_size + l] = ptr[i1[l]];
 			}
 			for (size_t k = 0; k < B.nnz(); k++) {
-				auto ptr = B.index(permB[k]);
+				auto ptr = B.index(permB_at(k));
 				for (size_t l = 0; l < i1i2_size; l++)
 					index_B_cache[k * i1i2_size + l] = ptr[i2[l]];
 			}
 		}
 
-		// the values of the entries in the order of the permutations: the loops below walk the runs in
-		// that order, so reading the values through the permutation would gather them at random and
-		// miss the cache on every step; the copy that builds these arrays is sequential
-		std::vector<T> val_A(A.nnz()), val_B(B.nnz());
-		for (size_t k = 0; k < A.nnz(); k++)
-			val_A[k] = A.val(permA[k]);
-		if (pool != nullptr && B.nnz() >= par_pack_threshold) {
-			pool->detach_loop(0, B.nnz(), [&](const size_t k) { val_B[k] = B.val(permB[k]); }, 4 * nthread);
-			pool->wait();
+		// the values of B in the order of the permutation: the merge below walks the runs of B in that
+		// order, so reading them through the permutation would gather at random; the values of A are
+		// read once per run, which a gather is fine for, so they are not copied
+		std::vector<T> val_B;
+		if (!idB) {
+			val_B.resize(B.nnz());
+			if (pool != nullptr && B.nnz() >= pack_parallel_threshold) {
+				pool->detach_loop(0, B.nnz(), [&](const size_t k) { val_B[k] = B.val(permB_at(k)); }, 4 * nthread);
+				pool->wait();
+			}
+			else {
+				for (size_t k = 0; k < B.nnz(); k++)
+					val_B[k] = B.val(permB_at(k));
+			}
 		}
-		else {
-			for (size_t k = 0; k < B.nnz(); k++)
-				val_B[k] = B.val(permB[k]);
-		}
+		// the value at a position of the permuted order, from the copy or from the tensor itself
+		auto val_A_at = [&](const size_t k) -> const T& { return A.val(permA_at(k)); };
+		auto val_B_at = [&](const size_t k) -> const T& { return idB ? B.val(k) : val_B[k]; };
 
 		auto equal_except = [](const index_t* a, const index_t* b, const std::vector<size_t>& perm, const size_t len) {
 			for (size_t i = 0; i < len; i++) {
@@ -490,19 +558,19 @@ namespace SparseRREF {
 			return true;
 			};
 
-		// the rows of A: consecutive entries that share the free part, which the keys of the free part
-		// of A tell apart without touching the index vectors again
+		// the rows of A: consecutive entries that share the free part, which the keys of A tell apart
+		// without touching the index vectors again
 		std::vector<size_t> rowptrA;
 		rowptrA.push_back(0);
 		if (keyed_leftA) {
 			for (size_t k = 1; k < A.nnz(); k++) {
-				if (key_leftA[k] != key_leftA[k - 1])
+				if (key_leftA_at(k) != key_leftA_at(k - 1))
 					rowptrA.push_back(k);
 			}
 		}
 		else {
 			for (size_t k = 1; k < A.nnz(); k++) {
-				if (!equal_except(A.index(permA[rowptrA.back()]), A.index(permA[k]), index_perm_A, left_size_A))
+				if (!equal_except(A.index(permA_at(rowptrA.back())), A.index(permA_at(k)), index_perm_A, left_size_A))
 					rowptrA.push_back(k);
 			}
 		}
@@ -528,42 +596,74 @@ namespace SparseRREF {
 
 		const size_t runsB = rowptrB.size() - 1;
 
-		// the contract tuple of the entries that start the runs, so that the search below reads one
-		// flat array, and, when the contract tuple is a single label that is small enough, the run
-		// that holds each label, so that the search of the run of an entry of A is one array read
-		std::vector<size_t> run_key, run_of_value;
+		// the contract tuple of the entries that start the runs, so that the search below reads one flat
+		// array, and, when the tuple space is small enough to address directly, the run of each tuple,
+		// so that looking the run of an entry of A up is one array read and not a binary search
+		std::vector<size_t> run_key;
+		std::vector<uint32_t> run_of_key;
 		if (keyed_contract) {
 			run_key.resize(runsB);
 			for (size_t r = 0; r < runsB; r++)
 				run_key[r] = key_contract_B[rowptrB[r]];
-		}
-		if (keyed_contract && i1i2_size == 1 && dimsA[i1[0]] > 0 && dimsA[i1[0]] <= max_buckets) {
-			run_of_value.assign(dimsA[i1[0]], std::numeric_limits<size_t>::max());
-			for (size_t r = 0; r < runsB; r++)
-				run_of_value[run_key[r]] = r;
+
+			// a run index is 32 bits, so a tensor with more runs keeps the binary search; the two caps
+			// keep the table within 64 bytes per run and 64 MB in total, since a wide but sparsely used
+			// tuple space is answered by the search anyway
+			constexpr size_t max_run_table = 1u << 24;
+			const size_t first_dim = dimsA[i1[0]];
+			const bool tuples_fit = first_dim != 0 && cstride[0] <= std::numeric_limits<size_t>::max() / first_dim;
+			const size_t tuples = tuples_fit ? cstride[0] * first_dim : 0;
+			if (runsB < no_run && tuples_fit && tuples <= max_run_table && tuples <= 16 * runsB + (1u << 16)) {
+				run_of_key.assign(tuples, no_run);
+				for (size_t r = 0; r < runsB; r++) {
+					// an index outside its dimension, which a hand made tensor can hold, falls outside
+					// the table: such a run is left out, as the search skips a tuple no run holds
+					if (run_key[r] < tuples)
+						run_of_key[run_key[r]] = static_cast<uint32_t>(r);
+				}
+			}
 		}
 
+		// when there is no table, the run of an entry of A costs a search, and the three passes look it
+		// up again each time: the first one remembers it here and the other two read it back. Only the
+		// run index is stored, its boundaries follow from rowptrB
+		std::vector<uint32_t> run_of_entry;
+		// only the parallel path looks a run up more than once, so only it keeps the cache
+		if (run_of_key.empty() && runsB < no_run && pool != nullptr && rowptrA.size() - 1 >= 2 * nthread)
+			run_of_entry.assign(A.nnz(), no_run);
+
 		// the runs of B that a row of A reaches: the entries of a row are ordered by their contract
-		// tuple, so the run of B that holds a contract tuple is found by binary search, and the search
-		// of the next entry starts at the run found for the previous one; when the contract tuple is a
-		// single small label the lookup table answers in one read, and no search is needed at all.
-		// The work of a row is the number of entries of B it reads, which the rows are handed out by
-		// when the contraction runs on several threads
+		// tuple, so its run is found by binary search, starting at the run of the previous entry, or by
+		// one read of the lookup table when the tuple space is small enough.
+		// The work of a row is the number of entries of B it reads, which is what the rows are handed
+		// out by when the contraction runs on several threads
 		auto select = [&](const size_t k, std::vector<size_t>& run_first, std::vector<size_t>& run_last,
-			std::vector<T>* run_val) {
-			const bool tabulated = !run_of_value.empty();
+			std::vector<T>* run_val, const bool work_only = false) {
+			const bool tabulated = !run_of_key.empty();
+			// the passes after the work pass read the run of an entry back instead of searching it,
+			// so the test is hoisted out of the loop
+			const bool cached_runs = !run_of_entry.empty();
 			size_t work = 0;
 			size_t lo = 0;
 			for (size_t ptrA = rowptrA[k]; ptrA < rowptrA[k + 1]; ptrA++) {
 				size_t run;
 
+				// the passes after the one that searched read the run back from the cache
+				if (!work_only && cached_runs) {
+					const uint32_t cached = run_of_entry[ptrA];
+					if (cached == no_run)
+						continue;
+					run = cached;
+				}
+				else {
 				if (tabulated) {
-					const size_t value = key_contract_A[ptrA];
-					if (value >= run_of_value.size())
+					const size_t key = key_contract_A[ptrA];
+					if (key >= run_of_key.size())
 						continue;
-					run = run_of_value[value];
-					if (run == std::numeric_limits<size_t>::max())
+					const uint32_t r = run_of_key[key];
+					if (r == no_run)
 						continue;
+					run = r;
 				}
 				else if (keyed_contract) {
 					const size_t key = key_contract_A[ptrA];
@@ -609,81 +709,116 @@ namespace SparseRREF {
 					run = low;
 				}
 
+					// the pass that searched remembers the run for the passes that follow it
+					if (cached_runs)
+						run_of_entry[ptrA] = static_cast<uint32_t>(run);
+				}
+
 				// the contract tuples of a row are distinct, so the runs it reaches are disjoint
-				run_first.push_back(rowptrB[run]);
-				run_last.push_back(rowptrB[run + 1]);
+				if (!work_only) {
+					run_first.push_back(rowptrB[run]);
+					run_last.push_back(rowptrB[run + 1]);
+				}
 				work += rowptrB[run + 1] - rowptrB[run];
 				if (run_val != nullptr)
-					run_val->push_back(val_A[ptrA]);
+					run_val->push_back(val_A_at(ptrA));
 			}
 			return work;
 			};
 
-		auto method = [&](sparse_tensor<T, index_t>& C, size_t ss, size_t ee) {
+		// what the row loop below writes to: the result itself, or, in the parallel path, a first pass
+		// that only counts positions, since a block has to know where its slice starts to write into it
+		struct count_sink {
+			// counts merged positions: no value is computed and no tuple copied for this sink
+			size_t n = 0;
+			void push_back(const index_v&, const T&) { n++; }
+			};
+		struct slice_sink {
+			sparse_tensor<T, index_t, SPARSE_COO>* target = nullptr;
+			size_t pos = 0;
+			void push_back(const index_v& l, const T& val) {
+				s_copy(target->data.colptr + pos * target->rank(), l.data(), target->rank());
+				target->data.valptr[pos] = val;
+				pos++;
+				};
+			};
+
+		auto method = [&]<typename Sink>(Sink& C, size_t ss, size_t ee) {
+			// the pass that only counts positions is the one that counts into count_sink
+			constexpr bool structural = std::is_same_v<Sink, count_sink>;
 			index_v indexC(dimsC.size());
 
-			// the runs of B that the row that is being built reaches, the entry of A that reaches each
-			// of them, the entry of B each run is read at, and the heap that merges the runs; the
-			// buffers are reused across the rows
+			// the row that is being built: the runs of B it reaches, the entry of A that reaches each of
+			// them, the entry of B each run is read at, and the heap that merges them; reused per row
 			std::vector<size_t> run_first, run_last, pos;
 			std::vector<std::pair<size_t, size_t>> heap;
 			std::vector<T> run_val;
+
+			// the value the counting sink never reads
+			[[maybe_unused]] const T dummy = 0;
+
+			// hand the entry at free_part to the sink: the structural pass counts it, the pass that fills
+			// the result computes its value and writes it when it does not cancel
+			auto emit = [&](const index_p free_part, auto&& value) {
+				if constexpr (structural) {
+					C.push_back(indexC, dummy);
+				}
+				else {
+					const T& entry = value(); // a reference, so a computed temporary is not copied
+					if (entry != 0) {
+						if (left_size_B != 0)
+							s_copy(indexC.data() + left_size_A, free_part, left_size_B);
+						C.push_back(indexC, entry);
+					}
+				}
+				};
 
 			for (size_t k = ss; k < ee; k++) {
 				// from rowptrA[k] to rowptrA[k + 1] are the same
 				auto startA = rowptrA[k];
 
 				for (size_t l = 0; l < left_size_A; l++)
-					indexC[l] = A.index(permA[startA])[index_perm_A[l]];
+					indexC[l] = A.index(permA_at(startA))[index_perm_A[l]];
 
 				run_first.clear();
 				run_last.clear();
 				run_val.clear();
-				select(k, run_first, run_last, &run_val);
+				// the structural pass does not need the values of A
+				select(k, run_first, run_last, structural ? nullptr : &run_val);
 
 				const size_t m = run_first.size();
 				if (m == 0)
 					continue;
 
-				// the free tuples of a run are ordered and distinct, so a row that reaches a single run
-				// that keeps at least one free index is written out as it is
+				// a run holds ordered distinct free tuples, so a row that reaches one is written as is
 				if (m == 1 && left_size_B > 0) {
-					for (size_t ptrB = run_first[0]; ptrB < run_last[0]; ptrB++) {
-						const T entry = scalar_mul(run_val[0], val_B[ptrB], F);
-						if (entry != 0) {
-							s_copy(indexC.data() + left_size_A, index_leftB_cache.data() + ptrB * left_size_B,
-								left_size_B);
-							C.push_back(indexC, entry);
-						}
-					}
+					for (size_t ptrB = run_first[0]; ptrB < run_last[0]; ptrB++)
+						emit(index_leftB_cache.data() + ptrB * left_size_B,
+							[&] { return scalar_mul(run_val[0], val_B_at(ptrB), F); });
 				}
-				// the runs of such a contraction hold one entry each, since a run is a maximal group of
-				// entries that share the whole index vector when there is no free index, so the row adds
-				// up to one entry of the result and there is nothing to merge
+				// with no free index a run holds the entries that share the whole index vector, so the
+				// row adds up to a single position and there is nothing to merge
 				else if (left_size_B == 0) {
-					T entry = 0;
-					for (size_t j = 0; j < m; j++) {
-						for (size_t ptrB = run_first[j]; ptrB < run_last[j]; ptrB++)
-							entry = scalar_add(entry, scalar_mul(run_val[j], val_B[ptrB], F), F);
-					}
-					if (entry != 0)
-						C.push_back(indexC, entry);
+					emit(nullptr, [&] { // one position at most: there is no free tuple to merge
+						T entry = 0;
+						for (size_t j = 0; j < m; j++) {
+							for (size_t ptrB = run_first[j]; ptrB < run_last[j]; ptrB++)
+								entry = scalar_add(entry, scalar_mul(run_val[j], val_B_at(ptrB), F), F);
+						}
+						return entry;
+						});
 				}
 				// two runs merge with two pointers, which beats a heap of two entries
 				else if (m == 2) {
 					size_t p0 = run_first[0], p1 = run_first[1];
-					const bool keyed = !key_leftB.empty();
+					const bool keyed = keyed_leftB;
 					auto advance = [&](const size_t j, const size_t ptrB) {
-						const T entry = scalar_mul(run_val[j], val_B[ptrB], F);
-						if (entry != 0) {
-							s_copy(indexC.data() + left_size_A, index_leftB_cache.data() + ptrB * left_size_B,
-								left_size_B);
-							C.push_back(indexC, entry);
-						}
+						emit(index_leftB_cache.data() + ptrB * left_size_B,
+							[&] { return scalar_mul(run_val[j], val_B_at(ptrB), F); });
 						};
 					auto compare_free = [&](const size_t a, const size_t b) {
 						if (keyed)
-							return key_leftB[a] < key_leftB[b] ? -1 : key_leftB[a] > key_leftB[b] ? 1 : 0;
+							return key_leftB_at(a) < key_leftB_at(b) ? -1 : key_leftB_at(a) > key_leftB_at(b) ? 1 : 0;
 						return lexico_compare(index_leftB_cache.data() + a * left_size_B,
 							index_leftB_cache.data() + b * left_size_B, left_size_B);
 						};
@@ -699,13 +834,10 @@ namespace SparseRREF {
 							p1++;
 						}
 						else {
-							const T entry = scalar_add(scalar_mul(run_val[0], val_B[p0], F),
-								scalar_mul(run_val[1], val_B[p1], F), F);
-							if (entry != 0) {
-								s_copy(indexC.data() + left_size_A, index_leftB_cache.data() + p0 * left_size_B,
-									left_size_B);
-								C.push_back(indexC, entry);
-							}
+							emit(index_leftB_cache.data() + p0 * left_size_B, [&] {
+								return scalar_add(scalar_mul(run_val[0], val_B_at(p0), F),
+									scalar_mul(run_val[1], val_B_at(p1), F), F);
+								});
 							p0++;
 							p1++;
 						}
@@ -715,24 +847,20 @@ namespace SparseRREF {
 					while (p1 < run_last[1])
 						advance(1, p1++);
 				}
-				// a row that reaches several runs, or a run that keeps no free index, is built by merging
-				// them: the free tuples of one run are ordered, so the smallest of the entries that wait
-				// at the front of the runs comes first, and the entries that share a free tuple are added
-				// up
+				// several runs are merged: the smallest of the entries that wait at their fronts comes
+				// first, and the ones that share a free tuple are added up
 				else {
 					pos.resize(m);
 
-					const bool keyed = !key_leftB.empty();
+					const bool keyed = keyed_leftB;
 
-					// the heap holds the key of the entry that waits at the front of a run next to the
-					// slot of that run: the order of two runs is then one comparison of two words that
-					// sit in the same array, where reading the key through the position table is a load
-					// that depends on the heap entry; a run whose free tuple has no key is ordered by
-					// walking its tuple
+					// the heap holds the key of the entry at the front of a run next to the slot of that
+					// run, so that two runs compare with one comparison; without keys their free tuples
+					// are walked instead
 					heap.clear();
 					for (size_t j = 0; j < m; j++) {
 						pos[j] = run_first[j];
-						heap.emplace_back(keyed ? key_leftB[pos[j]] : 0, j);
+						heap.emplace_back(keyed ? key_leftB_at(pos[j]) : 0, j);
 					}
 
 					auto free_front = [&](const size_t j) {
@@ -743,32 +871,49 @@ namespace SparseRREF {
 							return a.first > b.first;
 						return lexico_compare(free_front(a.second), free_front(b.second), left_size_B) > 0;
 						};
+					// restore the heap after its front has been replaced: one sift down, where popping and
+					// pushing would adjust it twice
+					auto sift_down = [&](size_t i) {
+						const size_t n = heap.size();
+						for (;;) {
+							size_t c = 2 * i + 1;
+							if (c >= n)
+								break;
+							if (c + 1 < n && later(heap[c], heap[c + 1]))
+								c++;
+							if (!later(heap[i], heap[c]))
+								break;
+							std::swap(heap[i], heap[c]);
+							i = c;
+						}
+						};
 					std::make_heap(heap.begin(), heap.end(), later);
 
 					while (!heap.empty()) {
-						// free_min stays valid: the cache is not modified below, only the positions are
+						// free_min stays valid: only the positions move below, not the cache
 						const index_p free_min = free_front(heap.front().second);
 						const size_t key_min = heap.front().first;
 						T entry = 0;
 
-						// every run whose front holds the smallest free tuple contributes to the same
-						// entry of the result
+						// the runs whose front holds the smallest free tuple share one entry
 						do {
 							const size_t j = heap.front().second;
-							std::pop_heap(heap.begin(), heap.end(), later);
-							heap.pop_back();
-							entry = scalar_add(entry, scalar_mul(run_val[j], val_B[pos[j]], F), F);
+							const size_t ptr = pos[j];
+							// a run that still has entries keeps its place, an exhausted one loses its front
 							if (++pos[j] < run_last[j]) {
-								heap.emplace_back(keyed ? key_leftB[pos[j]] : 0, j);
-								std::push_heap(heap.begin(), heap.end(), later);
+								heap.front() = { keyed ? key_leftB_at(pos[j]) : 0, j };
+								sift_down(0);
 							}
+							else {
+								std::pop_heap(heap.begin(), heap.end(), later);
+								heap.pop_back();
+							}
+							if constexpr (!structural)
+								entry = scalar_add(entry, scalar_mul(run_val[j], val_B_at(ptr), F), F);
 						} while (!heap.empty() && (keyed ? heap.front().first == key_min
 							: lexico_compare(free_front(heap.front().second), free_min, left_size_B) == 0));
 
-						if (entry != 0) {
-							s_copy(indexC.data() + left_size_A, free_min, left_size_B);
-							C.push_back(indexC, entry);
-						}
+						emit(free_min, [&]() -> const T& { return entry; });
 					}
 				}
 			}
@@ -780,6 +925,8 @@ namespace SparseRREF {
 
 			if (rows < 2 * nthread) {
 				method(C, 0, rows);
+				// this path grows C by push_back, so its capacity can be twice what it holds
+				C.shrink_to_fit();
 				return C;
 			}
 
@@ -789,8 +936,9 @@ namespace SparseRREF {
 			// row to row, so the rows are handed to the blocks by that work instead of by their number
 			std::vector<size_t> work_till(rows + 1, 0);
 			pool->detach_loop(0, rows, [&](const size_t k) {
+				// only the work is needed, so the two vectors stay empty and no row allocates
 				std::vector<size_t> run_first, run_last;
-				work_till[k + 1] = select(k, run_first, run_last, nullptr);
+				work_till[k + 1] = select(k, run_first, run_last, nullptr, true);
 				}, nblocks);
 			pool->wait();
 			for (size_t k = 0; k < rows; k++)
@@ -812,37 +960,54 @@ namespace SparseRREF {
 			}
 			ranges[nblocks - 1].second = rows;
 
-			std::vector<sparse_tensor<T, index_t, SPARSE_COO>> Cs(nblocks, C);
+			// count the positions of every block first -- an upper bound, since a position whose sum
+			// cancels is not written -- so that each block can then write compactly into its own slice.
+			// The counts are stored as the offsets, so the count of a block is the difference of two
+			std::vector<size_t> start_pos(nblocks + 1, 0);
+			pool->detach_sequence(0, nblocks, [&](const size_t i) {
+				count_sink sink;
+				method(sink, ranges[i].first, ranges[i].second);
+				start_pos[i + 1] = sink.n;
+				});
+			pool->wait();
+			for (size_t i = 0; i < nblocks; i++)
+				start_pos[i + 1] += start_pos[i];
 
-			pool->detach_sequence(0, nblocks, [&](size_t i) {
-				method(Cs[i], ranges[i].first, ranges[i].second);
+			C.reserve(start_pos[nblocks]);
+			C.resize(start_pos[nblocks]);
+			std::vector<size_t> written(nblocks, 0);
+			pool->detach_sequence(0, nblocks, [&](const size_t i) {
+				slice_sink sink{ &C, start_pos[i] };
+				method(sink, ranges[i].first, ranges[i].second);
+				written[i] = sink.pos - start_pos[i];
 				});
 			pool->wait();
 
-			// merge the results
-			size_t allnnz = 0;
-			std::vector<size_t> start_pos(nblocks);
+			// a cancelled position leaves a hole at the end of the slice of its block, so the slices
+			// behind the first hole slide down; without a hole this only walks the blocks
+			size_t hole = 0;
 			for (size_t i = 0; i < nblocks; i++) {
-				start_pos[i] = allnnz;
-				allnnz += Cs[i].nnz();
+				if (hole != 0) {
+					// element wise, not a memmove: a memmove bit copies the values, and the copies it
+					// leaves in the moved-from slots are destroyed by release() as well, which frees
+					// their data twice for a type with a destructor
+					const size_t dst = start_pos[i] - hole;
+					std::move(C.data.colptr + start_pos[i] * C.rank(),
+						C.data.colptr + (start_pos[i] + written[i]) * C.rank(),
+						C.data.colptr + dst * C.rank());
+					std::move(C.data.valptr + start_pos[i], C.data.valptr + start_pos[i] + written[i],
+						C.data.valptr + dst);
+				}
+				hole += start_pos[i + 1] - start_pos[i] - written[i];
 			}
-
-			C.reserve(allnnz);
-			C.resize(allnnz);
-			pool->detach_loop(0, nblocks, [&](size_t i) {
-				const auto tmpnnz = Cs[i].nnz();
-				T* valptr = C.data.valptr + start_pos[i];
-				index_p colptr = C.data.colptr + start_pos[i] * C.rank();
-				s_copy(colptr, Cs[i].data.colptr, tmpnnz * C.rank());
-				s_copy(valptr, Cs[i].data.valptr, tmpnnz);
-				Cs[i].clear();
-				});
-			pool->wait();
+			C.resize(start_pos[nblocks] - hole);
 
 			return C;
 		}
 		else {
 			method(C, 0, rowptrA.size() - 1);
+			// as above: the merge reserves exactly, this path does not
+			C.shrink_to_fit();
 			return C;
 		}
 	}
@@ -932,8 +1097,7 @@ namespace SparseRREF {
 		std::vector<size_t> equal_ind_list;
 
 		// search for the same indices
-		constexpr size_t par_scan_threshold = 1u << 17;
-		if (pool != nullptr && A.nnz() >= par_scan_threshold) {
+		if (pool != nullptr && A.nnz() >= scan_parallel_threshold) {
 			// the scan is a plain pass over the tensor and is what the serial version spends most of
 			// its time on, so above the threshold it is worth handing its blocks to the pool
 			const size_t nthread = pool->get_thread_count();
@@ -1003,7 +1167,7 @@ namespace SparseRREF {
 
 		// the merge cost scales with the number of matched entries, so a small match set stays on one
 		// thread even when a pool is available, since the dispatch overhead would dominate
-		if (pool != nullptr && equal_ind_list.size() >= par_scan_threshold
+		if (pool != nullptr && equal_ind_list.size() >= scan_parallel_threshold
 			&& rowptr.size() - 1 >= 2 * pool->get_thread_count()) {
 			const size_t nrows = rowptr.size() - 1;
 			const size_t nthread = pool->get_thread_count();
@@ -1097,6 +1261,9 @@ namespace SparseRREF {
 			}
 		}
 
+		// the sequential path above grows C by push_back, so the result can hold twice what it needs;
+		// the parallel merge already reserved exactly
+		C.shrink_to_fit();
 		return C;
 	}
 
@@ -1374,7 +1541,6 @@ namespace SparseRREF {
 		std::vector<std::vector<size_t>> entry_value(nthread, std::vector<size_t>(nlabels, 0));
 		std::vector<std::vector<size_t>> new_key(nthread, std::vector<size_t>(nlabels, 0));
 		std::vector<size_t> join_slot, new_slot, fuse_slot, drop_slot;
-		constexpr size_t par_join_nnz = 1u << 15;
 
 		for (size_t i = 0; i < nt; i++) {
 			if (acc.count == 0)
@@ -1476,7 +1642,7 @@ namespace SparseRREF {
 				}
 				};
 
-			if (pool != nullptr && nnz >= par_join_nnz) {
+			if (pool != nullptr && nnz >= join_parallel_threshold) {
 				auto fill = [&](const size_t ss, const size_t ee) {
 					const size_t id = thread_id();
 					for (size_t e = ss; e < ee; e++)
@@ -1550,6 +1716,9 @@ namespace SparseRREF {
 			C.push_back(index, acc.vals[a]);
 		}
 
+		// the accumulator was sized for every product of the join, and the entries that cancelled to
+		// zero are skipped above, so the table is usually larger than the result
+		C.shrink_to_fit();
 		return C;
 	}
 
@@ -1611,6 +1780,15 @@ namespace SparseRREF {
 						std::cerr << "Error: sparse_tensor_read: wrong format in the tensor file" << std::endl;
 						return sparse_tensor<T, index_t, SPARSE_COO>();
 					}
+					// the file gives its coordinates in the 1-based form of the exchange formats: a 0
+					// would wrap around below and reach the tensor as a negative index, and a coordinate
+					// outside its level, or past what an index can hold, would be carried in as one that
+					// no query can match
+					if (coord == 0 || coord > dims[count]
+						|| coord - 1 > static_cast<uint64_t>(std::numeric_limits<index_t>::max())) {
+						std::cerr << "Error: sparse_tensor_read: an index is out of range" << std::endl;
+						return sparse_tensor<T, index_t, SPARSE_COO>();
+					}
 					index.push_back(static_cast<index_t>(coord - 1));
 					count++;
 				}
@@ -1640,6 +1818,16 @@ namespace SparseRREF {
 			if (val_ok != 0) {
 				std::cerr << "Error: sparse_tensor_read: the value is not a number: "
 					<< line.substr(start) << std::endl;
+				return sparse_tensor<T, index_t, SPARSE_COO>();
+			}
+
+			// the value is the last field of its line: a field after it would be read as part of the
+			// value by set_str, which stops at the first character it cannot use, and the rest would be
+			// dropped without a word
+			const size_t value_end = line.find(' ', start);
+			if (value_end != std::string::npos
+				&& line.find_first_not_of(" \t\r\n", value_end) != std::string::npos) {
+				std::cerr << "Error: sparse_tensor_read: wrong format in the tensor file" << std::endl;
 				return sparse_tensor<T, index_t, SPARSE_COO>();
 			}
 
