@@ -378,7 +378,11 @@ namespace SparseRREF {
 		}
 
 		// imp_val
-		if (tokens[4].get_integer() != 0) {
+		const bool imp_val_is_machine_integer = tokens[4].type == WXF_PARSER::WXF_HEAD::i8 ||
+			tokens[4].type == WXF_PARSER::WXF_HEAD::i16 ||
+			tokens[4].type == WXF_PARSER::WXF_HEAD::i32 ||
+			tokens[4].type == WXF_PARSER::WXF_HEAD::i64;
+		if (!imp_val_is_machine_integer || tokens[4].get_integer() != 0) {
 			std::cerr << "Error: sparse_tensor_read: the implicit value is not 0" << std::endl;
 			return st();
 		}
@@ -519,7 +523,10 @@ namespace SparseRREF {
 				copy_arr(tokens[12], tensor.data.valptr);
 			else if constexpr (std::is_same_v<T, ulong>) {
 				copy_modify_arr(tokens[12], tensor.data.valptr, [&](auto v) {
-					return nmod_set_si(v, F.mod);
+					if constexpr (std::is_signed_v<decltype(v)>)
+						return nmod_set_si(v, F.mod);
+					else
+						return nmod_set_ui(v, F.mod);
 					});
 			}
 		}
